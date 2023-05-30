@@ -1,0 +1,11 @@
+WHITESPACE = _{ " " }
+
+command = { "NODE" }
+
+ident = @{ ASCII_ALPHANUMERIC+ }
+
+node = { "BITCOIND" | "LND" }
+
+line = { command ~ ident ~ node }
+
+page = { SOI ~ (line ~ NEWLINE)* ~ EOI }
