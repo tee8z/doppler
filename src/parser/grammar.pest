@@ -4,8 +4,8 @@ command = { "NODE" }
 
 ident = @{ ASCII_ALPHANUMERIC+ }
 
-node = { "BITCOIND" | "LND" }
+node_kind = { "BITCOIND" | "LND" }
 
-line = { command ~ ident ~ node }
+line = { command ~ ident ~ node_kind }
 
 page = { SOI ~ (line ~ NEWLINE)* ~ EOI }
