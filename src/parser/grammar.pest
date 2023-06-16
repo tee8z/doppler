@@ -1,11 +1,17 @@
 WHITESPACE = _{ " " }
 
-command = { "NODE" }
+COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
+
+node_command = { "NODE" ~ ident ~ node_kind }
+
+env_command = { "ENV" ~ env_option ~ ident }
 
 ident = @{ ASCII_ALPHANUMERIC+ }
 
 node_kind = { "BITCOIND" | "LND" }
 
-line = { command ~ ident ~ node_kind }
+env_option = { "DOCKER_NETWORK" }
+
+line = { node_command | env_command }
 
 page = { SOI ~ (line ~ NEWLINE)* ~ EOI }

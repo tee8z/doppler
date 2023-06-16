@@ -1,6 +1,6 @@
 use anyhow::Result;
-use doppler::{Commands, DopplerParser, NodeKind, Rule};
-use log::info;
+use doppler::{start_bitcoind, DopplerParser, EnvOption, NodeKind, Options, Rule};
+use log::debug;
 use pest::{iterators::Pair, Parser};
 use std::fs;
 
@@ -13,32 +13,66 @@ fn main() {
         .next()
         .unwrap();
 
+    let mut options = Options::default();
+
     for line in parsed.into_inner() {
         match line.as_rule() {
-            Rule::line => handle_line(line).expect("valid line"),
+            Rule::line => handle_line(&mut options, line).expect("valid line"),
             Rule::EOI => return,
             _ => unreachable!(),
         }
     }
 }
 
-fn handle_line(line: Pair<Rule>) -> Result<()> {
-    let mut inner = line.into_inner();
-    let command = inner.next().expect("valid command");
-    match command.try_into().expect("command pair") {
-        Commands::Node => {
+fn handle_line(options: &mut Options, line: Pair<Rule>) -> Result<()> {
+    let mut line_inner = line.into_inner();
+    debug!("line_inner: {:?}", line_inner);
+
+    let command = line_inner.next().expect("valid command");
+    let mut inner = command.clone().into_inner();
+    match command.clone().as_rule() {
+        Rule::node_command => {
             let ident = inner.next().expect("ident").as_str();
             let kind = inner
                 .next()
                 .expect("node")
                 .try_into()
                 .expect("valid node kind");
-            handle_node_command(ident, kind)
+            handle_node_command(options, ident, kind)
         }
+        Rule::env_command => {
+            let option = inner
+                .next()
+                .expect("option")
+                .try_into()
+                .expect("valid env option");
+            let value = inner.next().expect("value").as_str();
+            handle_env_command(options, option, value)
+        }
+        _ => Ok(()),
     }
 }
 
-fn handle_node_command(ident: &str, kind: NodeKind) -> Result<()> {
-    info!("ident: {:?}, kind: {:?}", ident, kind);
-    Ok(())
+fn handle_node_command(options: &mut Options, ident: &str, kind: NodeKind) -> Result<()> {
+    debug!(
+        "options: {:?}, ident: {:?}, kind: {:?}",
+        options, ident, kind
+    );
+    match kind {
+        NodeKind::Bitcoind => start_bitcoind(options, ident),
+        _ => unimplemented!("deploying kind {:?} not implemented yet", kind),
+    }
+}
+
+fn handle_env_command(options: &mut Options, option: EnvOption, value: &str) -> Result<()> {
+    debug!(
+        "options: {:?}, option: {:?}, value: {:?}",
+        options, option, value
+    );
+    match option {
+        EnvOption::DockerNetwork => {
+            options.network_name = Some(value.to_owned());
+            Ok(())
+        }
+    }
 }
