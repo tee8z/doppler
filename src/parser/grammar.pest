@@ -12,6 +12,9 @@ node_kind = { "BITCOIND" | "LND" }
 
 env_option = { "DOCKER_NETWORK" }
 
+ui_kind = { "THUNDER_HUB" }
+
 line = { node_command | env_command }
 
 page = { SOI ~ (line ~ NEWLINE)* ~ EOI }
+
