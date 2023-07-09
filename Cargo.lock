@@ -45,6 +45,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "conf_parser"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "635da10ee3ff263e19dd8203bcdf9e60e438bda4e4644199f96e412153dcfa0d"
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -78,6 +84,7 @@ name = "doppler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "conf_parser",
  "env_logger",
  "hex",
  "log",

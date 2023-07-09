@@ -13,7 +13,7 @@ fn main() {
         .next()
         .unwrap();
 
-    let mut options = Options::default();
+    let mut options = Options::new();
 
     for line in parsed.into_inner() {
         match line.as_rule() {

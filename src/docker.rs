@@ -1,48 +1,17 @@
+use crate::conf_handler::{get_bitcoind_config, get_lnd_config, Options};
+
 use anyhow::Result;
-use log::debug;
-use std::fs::{create_dir_all, File};
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use log::{debug, info};
 use std::process::Command;
 use std::str;
 
 const BITCOIND_IMAGE: &str = "polarlightning/bitcoind:25.0";
 const LND_IMAGE: &str = "polarlightning/lnd:0.16.2-beta";
 
-#[derive(Default, Debug)]
-pub struct Options {
-    pub network_name: Option<String>,
-    pub bitcoind_lnd_pairs: Vec<NodePairing>,
-}
-
-#[derive(Default, Debug)]
-pub struct NodePairing {
-    pub bitcoind: Bitcoind,
-    pub lnd: Option<Lnd>,
-}
-
-#[derive(Default, Debug)]
-pub struct Bitcoind {
-    pub name: String,
-    pub network: String,
-    pub rpchost: String,
-    pub user: String,
-    pub password: String,
-    pub zmqpubrawblock: String,
-    pub zmqpubrawtx: String,
-}
-
-#[derive(Default, Debug)]
-pub struct Lnd {
-    pub name: String,
-    pub pubkey: String,
-    pub alias: String,
-    pub server_url: String,
-    pub macaroon_path: String,
-    pub certificate_path: String,
-}
-
 pub fn create_docker_network(options: &mut Options) -> Result<()> {
+    if check_if_network_exists(options)? {
+        return Ok(());
+    }
     let output = Command::new("docker")
         .args([
             "network",
@@ -60,68 +29,16 @@ pub fn create_docker_network(options: &mut Options) -> Result<()> {
     Ok(())
 }
 
-fn get_bitcoind_vol(ident: &str) -> Result<String, anyhow::Error> {
-    let original = get_absolute_path("config/bitcoin.conf")?;
-    let destination_dir = &format!("data/{}/.bitcoin", ident);
-    let _ = copy_file(
-        original.to_str().unwrap(),
-        &destination_dir.clone(),
-        "bitcoin.conf",
-    )?;
-    let full_path = get_absolute_path(destination_dir)?
-        .to_str()
-        .unwrap()
-        .to_string();
-    Ok(full_path)
-}
-
-fn get_lnd_vol(ident: &str) -> Result<String, anyhow::Error> {
-    let original = get_absolute_path("config/lnd.conf")?;
-    let destination_dir = &format!("data/{}/.lnd", ident);
-    let _ = copy_file(
-        original.to_str().unwrap(),
-        &destination_dir.clone(),
-        "lnd.conf",
-    )?;
-    let full_path = get_absolute_path(destination_dir)?
-        .to_str()
-        .unwrap()
-        .to_string();
-    Ok(full_path)
-}
-
-fn get_absolute_path(relative_path: &str) -> Result<PathBuf, anyhow::Error> {
-    let current_dir = std::env::current_dir()?;
-    let absolute_path = current_dir.join(relative_path);
-
-    Ok(absolute_path)
-}
-
-fn copy_file(
-    source_file: &str,
-    destination_directory: &str,
-    conf_name: &str,
-) -> Result<PathBuf, anyhow::Error> {
-    let mut source: File = File::open(source_file)?;
-    let destination_file = format!("{}/{}", destination_directory, conf_name);
-    if Path::new(destination_directory).exists() {
-        //TODO: figure out how to update conf file in directory between runs
-        return get_absolute_path(&destination_file);
-    }
-
-    create_dir_all(destination_directory)?;
-    let mut destination = File::create(destination_file.clone())?;
-    let mut buffer = [0; 1024];
-    loop {
-        let n = source.read(&mut buffer)?;
-        if n == 0 {
-            break;
-        }
-
-        destination.write_all(&buffer[..n])?;
-    }
-
-    get_absolute_path(&destination_file)
+fn check_if_network_exists(options: &mut Options) -> Result<bool, anyhow::Error> {
+    let output = Command::new("docker")
+        .args([
+            "network",
+            "inspect",
+            (options.network_name.as_ref().unwrap()),
+        ])
+        .output()?;
+    let err_output = str::from_utf8(&output.stderr)?;
+    Ok(!err_output.contains("No such network"))
 }
 
 fn clear_old_image(ident: &str) -> Result<()> {
@@ -139,45 +56,61 @@ fn clear_old_image(ident: &str) -> Result<()> {
 pub fn start_bitcoind(options: &mut Options, ident: &str) -> Result<()> {
     create_docker_network(options)?;
     clear_old_image(ident).unwrap();
-    let bitcoind_vol = get_bitcoind_vol(ident).unwrap();
-    debug!("{} bitcoind vol: {}", ident, bitcoind_vol);
-
+    let mut bitcoind_conf = get_bitcoind_config(options, ident).unwrap();
+    debug!("{} bitcoind vol: {}", ident, bitcoind_conf.path_vol);
+    let rpc_port = options.new_port();
+    let container_name = format!("doppler-{}", ident);
     let output = Command::new("docker")
         .args([
             "run",
             "--detach",
             "--name",
-            &format!("doppler-{}", ident),
+            &container_name,
             "--volume",
-            &format!("{}:/home/bitcoin/.bitcoin:rw", bitcoind_vol),
+            &format!("{}:/home/bitcoin/.bitcoin:rw", bitcoind_conf.path_vol),
             "--network",
             (options.network_name.as_ref().unwrap()),
+            "-p",
+            &format!("{}:{}", rpc_port, bitcoind_conf.rpcport),
             BITCOIND_IMAGE,
         ])
         .output()?;
-
+    bitcoind_conf.name = Some(container_name.clone());
     debug!(
         "output.stdout: {}, output.stderr: {}",
         str::from_utf8(&output.stdout)?,
         str::from_utf8(&output.stderr)?
     );
+    info!(
+        "connect to {} via rpc using port {} with username {} and password {}",
+        container_name, rpc_port, bitcoind_conf.user, bitcoind_conf.password
+    );
+    options.bitcoinds.push(bitcoind_conf);
+
     Ok(())
 }
 
 pub fn start_lnd(options: &mut Options, ident: &str) -> Result<()> {
-    let lnd_vol = get_lnd_vol(ident).unwrap();
-    debug!("{} volume: {}", ident, lnd_vol);
+    let mut lnd_conf = get_lnd_config(options, ident).unwrap();
+    debug!("{} volume: {}", ident, lnd_conf.path_vol);
     clear_old_image(ident).unwrap();
+    let rest_port = options.new_port();
+    let grpc_port = options.new_port();
+    let container_name = format!("doppler-{}", ident);
     let output = Command::new("docker")
         .args([
             "run",
             "--detach",
             "--name",
-            &format!("doppler-{}", ident),
+            &container_name,
             "--volume",
-            &format!("{}:/home/lnd/.lnd:rw", lnd_vol),
+            &format!("{}:/home/lnd/.lnd:rw", lnd_conf.path_vol),
             "--network",
             (options.network_name.as_ref().unwrap()),
+            "-p",
+            &format!("{}:{}", rest_port, lnd_conf.rest_port),
+            "-p",
+            &format!("{}:{}", grpc_port, lnd_conf.grpc_port),
             LND_IMAGE,
         ])
         .output()?;
@@ -187,5 +120,13 @@ pub fn start_lnd(options: &mut Options, ident: &str) -> Result<()> {
         str::from_utf8(&output.stdout)?,
         str::from_utf8(&output.stderr)?
     );
+    info!(
+        "connect to {} via rest using port {} and via grpc using port {}", // with admin.macaroon found at {}",
+        container_name,
+        rest_port,
+        grpc_port, //lnd_conf.macaroon_path.clone().unwrap(),
+    );
+    lnd_conf.name = Some(container_name);
+    options.lnds.push(lnd_conf);
     Ok(())
 }
