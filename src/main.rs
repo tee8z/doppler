@@ -1,5 +1,5 @@
 use anyhow::Result;
-use doppler::{start_bitcoind, DopplerParser, EnvOption, NodeKind, Options, Rule};
+use doppler::{start_bitcoind, start_lnd, DopplerParser, EnvOption, NodeKind, Options, Rule};
 use log::debug;
 use pest::{iterators::Pair, Parser};
 use std::fs;
@@ -60,6 +60,7 @@ fn handle_node_command(options: &mut Options, ident: &str, kind: NodeKind) -> Re
     );
     match kind {
         NodeKind::Bitcoind => start_bitcoind(options, ident),
+        NodeKind::LND => start_lnd(options, ident),
         _ => unimplemented!("deploying kind {:?} not implemented yet", kind),
     }
 }

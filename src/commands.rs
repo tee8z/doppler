@@ -44,3 +44,22 @@ impl<'a> TryFrom<Pair<'a, Rule>> for EnvOption {
         }
     }
 }
+
+#[derive(Debug)]
+pub enum UIKind {
+    ThunderHub,
+}
+
+impl<'a> TryFrom<Pair<'a, Rule>> for UIKind {
+    type Error = anyhow::Error;
+
+    fn try_from(value: Pair<Rule>) -> Result<Self, Self::Error> {
+        match value.as_rule() {
+            Rule::ui_kind => match value.as_str() {
+                "THUNDER_HUB" => Ok(UIKind::ThunderHub),
+                _ => bail!("invalid ui_kind"),
+            },
+            _ => bail!("paid should be a ui_kind"),
+        }
+    }
+}
