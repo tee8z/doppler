@@ -12,7 +12,6 @@ pub enum NodeKind {
 impl<'a> TryFrom<Pair<'a, Rule>> for NodeKind {
     type Error = anyhow::Error;
 
-    // Required method
     fn try_from(value: Pair<Rule>) -> Result<Self, Self::Error> {
         match value.as_rule() {
             Rule::node_kind => match value.as_str() {
