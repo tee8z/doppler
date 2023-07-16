@@ -2,19 +2,25 @@ WHITESPACE = _{ " " }
 
 COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
 
-node_command = { "NODE" ~ ident ~ node_kind }
-
-env_command = { "ENV" ~ env_option ~ ident }
-
 ident = @{ ASCII_ALPHANUMERIC+ }
 
-node_kind = { "BITCOIND" | "LND" }
+num = @{ ASCII_DIGIT+ }
 
-env_option = { "DOCKER_NETWORK" }
+node_kind = { "BITCOIND" | "LND" | "CORELN" | "ECLAIR" }
 
-ui_kind = { "THUNDER_HUB" }
+node_def = { node_kind ~ ident }
 
-line = { node_command | env_command }
+pair_command = {  node_kind ~ ident ~ "PAIR" ~ ident }
 
-page = { SOI ~ (line ~ NEWLINE)* ~ EOI }
+sub_command = { (ident | num )* }
+
+node_open_chan_command = { ident ~ "OPENCHANNEL" ~ ident ~ sub_command }
+
+conf = { pair_command | node_def }
+
+node_action = { node_open_chan_command }
+
+up = { "UP" }
+
+page = { SOI ~ (COMMENT | ((conf ~ NEWLINE)* ~ (up ~ NEWLINE) ~ (node_action ~ NEWLINE)*)) ~ EOI }
 
