@@ -6,21 +6,26 @@ ident = @{ ASCII_ALPHANUMERIC+ }
 
 num = @{ ASCII_DIGIT+ }
 
-node_kind = { "BITCOIND" | "LND" | "CORELN" | "ECLAIR" }
+time_digits = { "s" | "m" | "h" }
+
+node_kind = { "BITCOIND_MINER" | "BITCOIND" | "LND" | "CORELN" | "ECLAIR" }
 
 node_def = { node_kind ~ ident }
 
-pair_command = {  node_kind ~ ident ~ "PAIR" ~ ident }
+node_pair = { node_kind ~ ident ~ "PAIR" ~ ident }
 
-sub_command = { (ident | num )* }
+node_miner = { node_kind ~ ident ~ (num)* ~ time_digits }
 
-node_open_chan_command = { ident ~ "OPENCHANNEL" ~ ident ~ sub_command }
-
-conf = { pair_command | node_def }
-
-node_action = { node_open_chan_command }
+conf = { node_pair | node_miner | node_def }
 
 up = { "UP" }
 
-page = { SOI ~ (COMMENT | ((conf ~ NEWLINE)* ~ (up ~ NEWLINE) ~ (node_action ~ NEWLINE)*)) ~ EOI }
+sub_command = { (ident | num )* }
+
+node_action_type = { "OPEN_CHANNEL" | "SEND_LN"}
+
+node_action_amt = { ident ~ node_action_type ~ ident ~ "AMT" ~ (num | num ~ sub_command) }
+
+
+page = { SOI ~ (COMMENT | ((conf ~ NEWLINE)* ~ (up ~ NEWLINE) ~ (node_action_amt ~ NEWLINE )*)) ~ EOI }
 

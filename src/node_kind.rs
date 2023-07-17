@@ -1,14 +1,16 @@
-use crate::Rule;
 use anyhow::bail;
 use pest::iterators::Pair;
 use std::convert::TryFrom;
 
+use crate::Rule;
+
 #[derive(Debug)]
 pub enum NodeKind {
     Bitcoind,
-    LND,
-    CORELN,
-    ECLAIR,
+    BitcoindMiner,
+    Lnd,
+    CoreLn,
+    Eclair,
 }
 
 impl<'a> TryFrom<Pair<'a, Rule>> for NodeKind {
@@ -18,9 +20,10 @@ impl<'a> TryFrom<Pair<'a, Rule>> for NodeKind {
         match value.as_rule() {
             Rule::node_kind => match value.as_str() {
                 "BITCOIND" => Ok(NodeKind::Bitcoind),
-                "LND" => Ok(NodeKind::LND),
-                "ECLAIR" => Ok(NodeKind::ECLAIR),
-                "CORELN" => Ok(NodeKind::CORELN),
+                "BITCOIND_MINER" => Ok(NodeKind::BitcoindMiner),
+                "LND" => Ok(NodeKind::Lnd),
+                "ECLAIR" => Ok(NodeKind::Eclair),
+                "CORELN" => Ok(NodeKind::CoreLn),
                 _ => bail!("invalid node_kind"),
             },
             _ => bail!("pair should be a node_kind"),
