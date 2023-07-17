@@ -17,3 +17,8 @@ docker logs doppler-<node name>
 ```
 ./scripts/clear_volumes.sh
 ```
+
+### How to test parse grammar
+```
+RUST_LOG=TRACE cargo run --bin parsetest
+```
