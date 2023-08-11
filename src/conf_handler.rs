@@ -1,22 +1,51 @@
 use anyhow::Error;
 use conf_parser::processer::FileConf;
-use docker_compose_types::{Compose, Service, Services, ComposeNetworks};
+use docker_compose_types::{Compose, ComposeNetworks, Service, Services};
 use indexmap::map::IndexMap;
 use std::{
     fs::create_dir_all,
     io,
     path::{Path, PathBuf},
-    vec,
+    vec, sync::{atomic::{AtomicBool, Ordering}, Arc},
 };
 
-use crate::NETWORK;
+use crate::{NETWORK, MinerTime};
 
 #[derive(Default, Debug)]
 pub struct Options {
     pub bitcoinds: Vec<Bitcoind>,
     pub lnds: Vec<Lnd>,
     ports: Vec<i64>,
+    pub compose_path: Option<String>,
     pub services: IndexMap<String, Option<Service>>,
+    pub kill_signal: ThreadController,
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct ThreadController {
+    kill_signal: Arc<AtomicBool>,
+}
+
+impl ThreadController {
+    fn new() -> Self {
+        ThreadController {
+            kill_signal: Arc::new(AtomicBool::new(false)),
+        }
+    }
+    pub fn terminate(&self) {
+        self.kill_signal.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_terminated(&self) -> bool {
+        self.kill_signal.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for ThreadController {
+    fn drop(&mut self) {
+        // Set the kill signal to true when the ThreadController is dropped
+        self.kill_signal.store(true, Ordering::Relaxed);
+    }
 }
 
 impl Options {
@@ -26,7 +55,9 @@ impl Options {
             bitcoinds: vec::Vec::new(),
             lnds: vec::Vec::new(),
             ports: starting_port,
+            compose_path: None,
             services: indexmap::IndexMap::new(),
+            kill_signal: ThreadController::new(),
         }
     }
     pub fn new_port(&mut self) -> i64 {
@@ -38,7 +69,7 @@ impl Options {
     pub fn save_compose(&mut self, file_path: &str) -> Result<(), io::Error> {
         let target_file = std::path::Path::new(file_path);
         let mut networks = IndexMap::new();
-        networks.insert(NETWORK.to_owned(),  docker_compose_types::MapOrEmpty::Empty);
+        networks.insert(NETWORK.to_owned(), docker_compose_types::MapOrEmpty::Empty);
         let compose = Compose {
             version: Some("3.8".to_string()),
             services: Services(self.services.clone()),
@@ -56,6 +87,8 @@ impl Options {
 
 #[derive(Default, Debug)]
 pub struct Bitcoind {
+    pub conf: FileConf,
+    pub data_dir: String,
     pub container_name: Option<String>,
     pub name: Option<String>,
     pub rpchost: String,
@@ -65,10 +98,12 @@ pub struct Bitcoind {
     pub zmqpubrawblock: String,
     pub zmqpubrawtx: String,
     pub path_vol: String,
+    pub miner_time: Option<MinerTime>,
 }
 
 #[derive(Default, Debug)]
 pub struct Lnd {
+    pub container_name: Option<String>,
     pub name: Option<String>,
     pub pubkey: Option<String>,
     pub alias: String,
