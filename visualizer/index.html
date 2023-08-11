@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>LND Graph Visualization</title>
+    <style>
+        #graphContainer {
+            width: 500px;
+            height: 500px;
+            position: relative;
+        }
+
+        .node {
+            position: absolute;
+            border: 2px solid blue;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: lightblue;
+        }
+
+        .line {
+            position: absolute;
+            border: 1px solid gray;
+            z-index: -1;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="graphContainer"></div>
+
+    <script>
+        async function config() {
+            let configData = await fetch("./config.json");
+            return configData.json();
+        }
+        async function fetchData() {
+            const configData = await config();
+            const first_node = configData.nodes[0];
+            console.log(first_node);
+            try {
+                if (first_node && first_node.name && first_node.host && first_node.macaroon) {
+                    const requestOptions = {
+                        method: 'GET',
+                        rejectUnauthorized: false,
+                        json:true,
+                        headers: {
+                            'Grpc-Metadata-macaroon': first_node.macaroon,
+                        }
+                    };
+                    console.log(requestOptions);
+                    const response = await fetch(`https://${first_node.host}/v1/graph`, requestOptions);
+                    console.log(response);
+                    const graphData = await response.json();
+
+                    return graphData;
+                }
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                return null;
+            }
+        }
+
+        function visualizeGraph(graphData) {
+            const container = document.getElementById('graphContainer');
+
+            if (!graphData) {
+                container.innerHTML = 'Failed to fetch data';
+                return;
+            }
+
+            graphData.nodes.forEach(node => {
+                const nodeElement = document.createElement('div');
+                nodeElement.className = 'node';
+                nodeElement.style.left = `${node.x * 100}px`;
+                nodeElement.style.top = `${node.y * 100}px`;
+                nodeElement.textContent = node.pub_key.substring(0, 6); // Display first 6 characters of pub_key
+                container.appendChild(nodeElement);
+            });
+
+            graphData.edges.forEach(edge => {
+                const lineElement = document.createElement('div');
+                lineElement.className = 'line';
+                lineElement.style.width = `${edge.distance}px`;
+                lineElement.style.transform = `rotate(${edge.angle}rad) translateX(-50%)`;
+                container.appendChild(lineElement);
+            });
+        }
+
+        async function main() {
+            const graphData = await fetchData();
+            visualizeGraph(graphData);
+        }
+
+        main();
+    </script>
+</body>
+
+</html>

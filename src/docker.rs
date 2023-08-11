@@ -1,21 +1,36 @@
+use crate::{
+    fund_node, get_absolute_path, get_bitcoinds, get_lnds, get_node_info, mine_bitcoin,
+    pair_bitcoinds, start_mining, Lnd, Options,
+};
+use anyhow::{anyhow, Error};
+use serde::{Deserialize, Serialize};
+use serde_json::to_string;
+use slog::{debug, error, info, Logger};
+use std::fs::File;
+use std::io::Read;
+use std::process::Command;
+use std::str::from_utf8;
 use std::thread;
 use std::time::Duration;
-use std::{process::Command, str::from_utf8};
-
-use crate::{fund_node, get_node_info, pair_bitcoinds, start_mining};
-use crate::{mine_bitcoin, Options};
-use anyhow::{anyhow, Error};
-use log::debug;
-use log::error;
-use log::info;
 
 pub const NETWORK: &str = "doppler";
+
+pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> Result<(), Error> {
+    options.compose_path = Some(compose_path.clone().to_owned());
+    options.load_compose()?;
+    debug!(options.global_logger(), "loaded docker-compose file");
+    get_bitcoinds(options)?;
+    debug!(options.global_logger(), "loaded bitcoinds");
+    get_lnds(options)?;
+    debug!(options.global_logger(), "loaded lnds");
+    Ok(())
+}
 
 pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Error> {
     options.compose_path = Some(compose_path.to_owned());
 
     pair_bitcoinds(options)?;
-    
+
     options.save_compose(compose_path).map_err(|err| {
         anyhow!(
             "Failed to save docker-compose file @ {}: {}",
@@ -26,13 +41,13 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     start_docker_compose(options)?;
 
     //simple wait for docker-compose to spin up
-    thread::sleep(Duration::from_secs(5));
+    thread::sleep(Duration::from_secs(6));
 
     //TODO: make optional to be mining in the background
     start_miners(options)?;
-    setup_nodes(options)?;
+    setup_nodes(options, options.global_logger())?;
     mine_initial_blocks(options)?;
-  
+    update_visualizer_conf(options)?;
     Ok(())
 }
 
@@ -46,6 +61,7 @@ fn start_docker_compose(options: &mut Options) -> Result<(), Error> {
         ])
         .output()?;
     debug!(
+        options.global_logger(),
         "output.stdout: {}, output.stderr: {}",
         from_utf8(&output.stdout)?,
         from_utf8(&output.stderr)?
@@ -53,14 +69,12 @@ fn start_docker_compose(options: &mut Options) -> Result<(), Error> {
     Ok(())
 }
 fn start_miners(options: &mut Options) -> Result<(), Error> {
-    let compose_path = options.compose_path.as_ref().unwrap();
-
     // kick of miners in background, mine every x interval
     options
         .bitcoinds
         .iter()
         .filter(|bitcoind| bitcoind.miner_time.is_some())
-        .for_each(|bitcoind| start_mining(options.kill_signal.clone(), bitcoind, &compose_path.clone()).unwrap());
+        .for_each(|bitcoind| start_mining(options.clone(), bitcoind).unwrap());
 
     Ok(())
 }
@@ -79,7 +93,9 @@ fn mine_initial_blocks(options: &mut Options) -> Result<(), Error> {
     }
     let miner_container = miner.unwrap().container_name.clone();
     let miner_data_dir = miner.unwrap().data_dir.clone();
+    let logger = &options.global_logger();
     mine_bitcoin(
+        logger,
         compose_path.to_owned(),
         miner_container.unwrap(),
         miner_data_dir,
@@ -88,7 +104,7 @@ fn mine_initial_blocks(options: &mut Options) -> Result<(), Error> {
     Ok(())
 }
 
-fn setup_nodes(options: &mut Options) -> Result<(), Error> {
+fn setup_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
     let compose_path = options.compose_path.as_ref().unwrap();
     let miner = options
         .bitcoinds
@@ -99,23 +115,73 @@ fn setup_nodes(options: &mut Options) -> Result<(), Error> {
             "at least one miner is required to be setup for this cluster to run"
         ));
     }
+
     options.lnds.iter_mut().for_each(|node| {
-        let result = get_node_info(node, compose_path.clone()).and_then(|_| {
+        let compose_path_clone = compose_path.clone();
+        let result = get_node_info(&logger, node, compose_path_clone.clone()).and_then(|_| {
             info!(
+                logger,
                 "container: {} pubkey: {}",
                 node.container_name.clone().unwrap(),
                 node.pubkey.clone().unwrap()
             );
-            fund_node(node, miner.unwrap().clone(), compose_path.clone())
+            fund_node(
+                &logger,
+                node,
+                &miner.unwrap().clone(),
+                compose_path_clone.clone(),
+            )
         });
 
         match result {
             Ok(_) => info!(
+                logger,
                 "container: {} funded",
                 node.container_name.clone().unwrap_or_default()
             ),
-            Err(e) => error!("failed to start/fund node: {}", e),
+            Err(e) => error!(logger, "failed to start/fund node: {}", e),
         }
     });
     Ok(())
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct VisualizerConfig {
+    nodes: Vec<VisualizerNode>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct VisualizerNode {
+    name: String,
+    host: String,
+    macaroon: String,
+}
+
+fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
+    let mut config = VisualizerConfig { nodes: vec![] };
+    options.lnds.iter_mut().for_each(|node| {
+        let macaroon = get_admin_macaroon(node).expect("failed to get admin macaroon");
+        let host = format!("localhost:{}", node.rest_port);
+        let name = node.name.clone().unwrap();
+        let visualizer_node = VisualizerNode {
+            name,
+            host,
+            macaroon,
+        };
+        config.nodes.push(visualizer_node);
+    });
+    let json_string = to_string(&config)?;
+    let config_json = get_absolute_path("./visualizer/config.json")?;
+    std::fs::write(config_json, json_string)?;
+
+    Ok(())
+}
+
+fn get_admin_macaroon(node: &mut Lnd) -> Result<String, Error> {
+    let macaroon_path = node.macaroon_path.clone().unwrap();
+    let mut file = File::open(macaroon_path)?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+    let mac_as_hex = hex::encode(buffer);
+    Ok(mac_as_hex)
 }

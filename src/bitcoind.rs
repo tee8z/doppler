@@ -1,9 +1,9 @@
-use crate::{copy_file, get_absolute_path, Bitcoind, Options, NETWORK, ThreadController};
+use crate::{copy_file, get_absolute_path, Bitcoind, Options, ThreadController, NETWORK};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
-use docker_compose_types::{Command, Networks, Ports, Service, Volumes, EnvFile};
-use log::{debug, error, info};
-use std::{fs::File, process, str::from_utf8, thread, time::Duration};
+use docker_compose_types::{Command, EnvFile, Networks, Ports, Service, Volumes};
+use slog::{debug, error, info, Logger};
+use std::{fs::File, process, str::from_utf8, thread, thread::spawn, time::Duration};
 
 const BITCOIND_IMAGE: &str = "polarlightning/bitcoind:25.0";
 
@@ -29,7 +29,10 @@ pub fn build_bitcoind(
 ) -> Result<()> {
     let mut bitcoind_conf = get_bitcoind_config(options, name).unwrap();
     bitcoind_conf.miner_time = miner_time.clone();
-    debug!("{} bitcoind vol: {}", name, bitcoind_conf.path_vol);
+    debug!(
+        options.global_logger(),
+        "{} bitcoind vol: {}", name, bitcoind_conf.path_vol
+    );
 
     let rpc_port = options.new_port();
     let container_name = match miner_time.is_some() {
@@ -56,6 +59,73 @@ pub fn build_bitcoind(
     options.bitcoinds.push(bitcoind_conf);
 
     Ok(())
+}
+
+pub fn get_bitcoinds(options: &mut Options) -> Result<()> {
+    let logger = options.global_logger();
+    let bitcoinds: Vec<Bitcoind> = options
+        .clone()
+        .services
+        .into_iter()
+        .filter(|service| service.0.contains("bitcoind"))
+        .map(|service| {
+            let container_name = service.0;
+            let bitcoind_name = container_name.split('-').last().unwrap();
+            get_existing_bitcoind_config(bitcoind_name, container_name.clone(), logger.clone())
+        })
+        .filter_map(|res| res.ok())
+        .collect();
+    options.bitcoinds = bitcoinds;
+    Ok(())
+}
+
+fn get_existing_bitcoind_config(
+    name: &str,
+    container_name: String,
+    logger: Logger,
+) -> Result<Bitcoind, Error> {
+    let bitcoind_config: &String = &format!("data/{}/.bitcoin/bitcoin.conf", name);
+    let full_path = get_absolute_path(bitcoind_config)?
+        .to_str()
+        .unwrap()
+        .to_string();
+    let source: File = File::open(full_path.clone())?;
+    let conf = conf_parser::processer::read_to_file_conf_mut(&source).map_err(|e| {
+        error!(logger, "failed to read bitcoind conf file: {}", e);
+        e
+    })?;
+    let regtest_section = get_regtest_section(conf).map_err(|e| {
+        error!(
+            logger,
+            "failed to get regtest section from bitcoind conf file: {}", e
+        );
+        e
+    })?;
+
+    Ok(Bitcoind {
+        conf: conf.to_owned(),
+        name: Some(name.to_owned()),
+        data_dir: "/home/bitcoin/.bitcoin".to_owned(),
+        miner_time: None,
+        container_name: Some(container_name),
+        path_vol: full_path,
+        user: regtest_section.get_property("rpcuser"),
+        password: regtest_section.get_property("rpcpassword"),
+        rpchost: regtest_section.get_property("rpcport"),
+        rpcport: regtest_section.get_property("rpcport"),
+        zmqpubrawblock: regtest_section
+            .get_property("zmqpubrawblock")
+            .split(':')
+            .last()
+            .unwrap()
+            .to_owned(),
+        zmqpubrawtx: regtest_section
+            .get_property("zmqpubrawtx")
+            .split(':')
+            .last()
+            .unwrap()
+            .to_owned(),
+    })
 }
 
 pub fn get_bitcoind_config(options: &mut Options, name: &str) -> Result<Bitcoind, Error> {
@@ -118,6 +188,11 @@ fn set_regtest_section(conf: &mut FileConf, options: &mut Options) -> Result<Sec
         "zmqpubrawtx",
         &format!("tcp://0.0.0.0:{}", options.new_port()),
     );
+    let regtest_section = get_regtest_section(conf)?;
+    Ok(regtest_section.to_owned())
+}
+
+fn get_regtest_section(conf: &mut FileConf) -> Result<Section, Error> {
     let regtest_section = conf
         .sections
         .get("regtest")
@@ -158,30 +233,47 @@ pub fn pair_bitcoinds(options: &mut Options) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn start_mining(main_thread: ThreadController, bitcoind: &Bitcoind, compose_path: &str) -> Result<()> {
+pub fn start_mining(options: Options, bitcoind: &Bitcoind) -> Result<()> {
     let datadir: String = bitcoind.data_dir.clone();
     let container = bitcoind.container_name.clone().unwrap();
     let miner_time = bitcoind.miner_time.clone().unwrap().to_owned();
-    let compose_path = compose_path.to_string();
+    let compose_path = options.compose_path.clone().unwrap().to_string();
+    let logger = options.global_logger();
+    let options_clone = options.clone();
     match create_wallet(
+        &logger,
         compose_path.clone(),
         container.clone(),
         datadir.clone(),
     ) {
         Ok(_) => (),
         Err(e) => error!(
-            "container {} failed to create wallet: {}",
-            container, e
+            logger,
+            "container {} failed to create wallet: {}", container, e
         ),
     }
-    let _thread_handle = thread::spawn(move || {
-        mine_bitcoin_continously(main_thread, container, datadir, compose_path, miner_time);
+
+    spawn(move || {
+        let thread_logger = logger.clone();
+        mine_bitcoin_continously(
+            &thread_logger,
+            options.main_thread_active.clone(),
+            options.main_thread_paused.clone(),
+            container,
+            datadir,
+            compose_path,
+            miner_time,
+        );
+        let thread_handle = thread::current();
+        options_clone.add_thread(thread_handle);
     });
     Ok(())
 }
 
 fn mine_bitcoin_continously(
-    main_thread: ThreadController,
+    logger: &Logger,
+    main_thread_active: ThreadController,
+    main_thread_paused: ThreadController,
     container_name: String,
     datadir: String,
     compose_path: String,
@@ -193,36 +285,44 @@ fn mine_bitcoin_continously(
         'h' => Duration::from_secs(miner_time.miner_interval_amt * 60 * 60),
         _ => unimplemented!(),
     };
-    while !main_thread.is_terminated() {
+    while main_thread_active.val() {
         thread::sleep(sleep_time);
-        match mine_bitcoin(
-            compose_path.clone(),
-            container_name.clone(),
-            datadir.clone(),
-            1,
-        ) {
-            Ok(_) => (),
-            Err(e) => error!(
-                "container {} failed to mine blocks: {}",
+        let thread_logger = logger.clone();
+        if !main_thread_paused.val() {
+            match mine_bitcoin(
+                &thread_logger,
+                compose_path.clone(),
                 container_name.clone(),
-                e
-            ),
+                datadir.clone(),
+                1,
+            ) {
+                Ok(_) => (),
+                Err(e) => error!(
+                    logger,
+                    "container {} failed to mine blocks: {}",
+                    container_name.clone(),
+                    e
+                ),
+            }
         }
     }
 }
 pub fn mine_bitcoin(
+    logger: &Logger,
     compose_path: String,
     container_name: String,
     datadir: String,
     num_blocks: i64,
 ) -> Result<String, Error> {
     let address = create_address(
+        logger,
         compose_path.clone(),
         container_name.clone(),
         datadir.clone(),
     )?;
 
     mine_to_address(
+        logger,
         compose_path,
         container_name,
         datadir,
@@ -233,7 +333,32 @@ pub fn mine_bitcoin(
     Ok(address)
 }
 
+pub fn node_mine_bitcoin(options: &mut Options, to_mine: String, num: i64) -> Result<(), Error> {
+    let bitcoind_miner = get_btcd_by_name(options, to_mine.as_str())?;
+    let compose_path = options.compose_path.clone();
+    let logger = &options.global_logger();
+
+    mine_bitcoin(
+        logger,
+        compose_path.unwrap(),
+        bitcoind_miner.container_name.clone().unwrap(),
+        bitcoind_miner.data_dir.clone(),
+        num,
+    )?;
+    Ok(())
+}
+
+pub fn get_btcd_by_name<'a>(options: &'a Options, name: &str) -> Result<&'a Bitcoind, Error> {
+    let bitcoind = options
+        .bitcoinds
+        .iter()
+        .find(|btcd| btcd.name == Some(name.to_owned()))
+        .unwrap_or_else(|| panic!("invalid bitcoind node name to: {:?}", name));
+    Ok(bitcoind)
+}
+
 pub fn create_wallet(
+    logger: &Logger,
     compose_path: String,
     container_name: String,
     datadir: String,
@@ -253,6 +378,7 @@ pub fn create_wallet(
         container_name.as_ref(),
     ];
     info!(
+        logger,
         "container: {} command (create wallet): `docker-compose {}`",
         container_name,
         command.join(" ")
@@ -268,6 +394,7 @@ pub fn create_wallet(
 }
 
 pub fn create_address(
+    logger: &Logger,
     compose_path: String,
     container_name: String,
     datadir: String,
@@ -288,6 +415,7 @@ pub fn create_address(
         "getnewaddress",
     ];
     info!(
+        logger,
         "container: {} command (create address): `docker-compose {}`",
         container_name,
         command.join(" ")
@@ -306,6 +434,7 @@ pub fn create_address(
 }
 
 pub fn mine_to_address(
+    logger: &Logger,
     compose_path: String,
     container_name: String,
     datadir: String,
@@ -328,6 +457,7 @@ pub fn mine_to_address(
         &address,
     ];
     info!(
+        logger,
         "container: {} command (mine to address): `docker-compose {}`",
         container_name,
         command.join(" ")
@@ -339,6 +469,7 @@ pub fn mine_to_address(
         .unwrap();
     if !output.status.success() {
         error!(
+            logger,
             "failed to mine to address: {} {}",
             from_utf8(&output.stdout).unwrap().to_owned(),
             from_utf8(&output.stderr).unwrap().to_owned()
