@@ -1,27 +1,34 @@
 use anyhow::Error;
 use conf_parser::processer::FileConf;
-use docker_compose_types::{Compose, ComposeNetworks, Service, Services};
+use docker_compose_types::{
+    Compose, ComposeNetworks, Ipam, MapOrEmpty,
+    Service, Services,
+};
 use indexmap::map::IndexMap;
-use slog::{error, info, Logger};
+use ipnetwork::IpNetwork;
+use slog::{error, Logger};
 use std::{
     fs::{create_dir_all, File},
     io::{self, ErrorKind, Read},
+    net::Ipv4Addr,
     path::{Path, PathBuf},
+    str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
     thread::Thread,
-    vec,
+    vec
 };
 
-use crate::{MinerTime, NETWORK};
+use crate::{generate_ipv4_sequence_in_subnet, MinerTime, NETWORK, SUBNET};
 
 #[derive(Debug, Clone)]
 pub struct Options {
     pub bitcoinds: Vec<Bitcoind>,
     pub lnds: Vec<Lnd>,
     ports: Vec<i64>,
+    ip_addresses: Vec<Ipv4Addr>,
     pub compose_path: Option<String>,
     pub services: IndexMap<String, Option<Service>>,
     pub main_thread_active: ThreadController,
@@ -54,10 +61,18 @@ impl ThreadController {
 impl Options {
     pub fn new(logger: Logger) -> Self {
         let starting_port = vec![9089];
+        let starting_ip = "10.5.0.2";
+        let cidr = IpNetwork::from_str(starting_ip).unwrap();
+        let start_ip = match cidr {
+            IpNetwork::V4(cidr_v4) => cidr_v4.network(),
+            _ => panic!("Only IPv4 is supported"),
+        };
+
         Self {
             bitcoinds: vec::Vec::new(),
             lnds: vec::Vec::new(),
             ports: starting_port,
+            ip_addresses: vec![start_ip],
             compose_path: None,
             services: indexmap::IndexMap::new(),
             main_thread_active: ThreadController::new(true),
@@ -82,10 +97,27 @@ impl Options {
         self.ports.push(next_port);
         next_port
     }
+    pub fn new_ipv4(&mut self) -> Ipv4Addr {
+        let last_ip = self.ip_addresses.last().unwrap();
+        let next_ip = generate_ipv4_sequence_in_subnet(self.global_logger(), SUBNET, last_ip);
+        self.ip_addresses.push(next_ip);
+        next_ip
+    }
     pub fn save_compose(&mut self, file_path: &str) -> Result<(), io::Error> {
         let target_file = std::path::Path::new(file_path);
         let mut networks = IndexMap::new();
-        networks.insert(NETWORK.to_owned(), docker_compose_types::MapOrEmpty::Empty);
+        let network = docker_compose_types::NetworkSettings {
+            driver: Some("bridge".to_owned()),
+            ipam: Some(Ipam {
+                driver: None,
+                config: vec![docker_compose_types::IpamConfig {
+                    subnet: SUBNET.to_string(),
+                    gateway: Some("10.5.0.1".to_string()),
+                }],
+            }),
+            ..Default::default()
+        };
+        networks.insert(NETWORK.to_owned(), MapOrEmpty::Map(network));
         let compose = Compose {
             version: Some("3.8".to_string()),
             services: Services(self.services.clone()),
@@ -130,8 +162,8 @@ impl Options {
 pub struct Bitcoind {
     pub conf: FileConf,
     pub data_dir: String,
-    pub container_name: Option<String>,
-    pub name: Option<String>,
+    pub container_name: String,
+    pub name: String,
     pub rpchost: String,
     pub rpcport: String,
     pub user: String,
@@ -144,17 +176,36 @@ pub struct Bitcoind {
 
 #[derive(Default, Debug, Clone)]
 pub struct Lnd {
-    pub container_name: Option<String>,
-    pub name: Option<String>,
+    pub container_name: String,
+    pub name: String,
     pub pubkey: Option<String>,
     pub alias: String,
     pub rest_port: String,
     pub grpc_port: String,
     pub p2p_port: String,
-    pub server_url: Option<String>,
-    pub macaroon_path: Option<String>,
-    pub certificate_path: Option<String>,
+    pub server_url: String,
+    pub rpc_server: String,
+    pub macaroon_path: String,
+    pub certificate_path: String,
     pub path_vol: String,
+    pub ip: String,
+}
+
+impl Lnd {
+    pub fn get_rpc_server_command(&self)-> String{
+       format!("--rpcserver={}:10000", self.ip)
+    }
+    pub fn get_macaroon_command(&self) -> String {
+        "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon".to_owned()
+    }
+    pub fn get_connection_url(&self) -> String {
+        format!(
+            "{}@{}:{}",
+            self.pubkey.as_ref().unwrap(),
+            self.container_name,
+            self.p2p_port.clone()
+        )
+    }
 }
 
 pub fn get_absolute_path(relative_path: &str) -> Result<PathBuf, Error> {
