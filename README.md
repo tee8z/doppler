@@ -4,6 +4,7 @@
 
 The DSL should empower developers to compose a concise script that configures an entire cluster of nodes running a single docker network, even if they are of different implementation types, to suit precise testing requirements. This should provide a sensation similar to working with a set of Lego blocks, where all the necessary components are at your fingertips, ready to be assembled based on the idea at hand.
 
+#### How to use:
 - More information on how to use this tool can be found here: [USAGE.md](./docs/USAGE.md)
 
 #### Supports:
@@ -15,19 +16,28 @@ The DSL should empower developers to compose a concise script that configures an
 - [x] allowing to set values in LND's native configuration file
 - [x] setup all the networking deterministically
 - [x] OPEN_CHANNEL
-- [x] SEND_LN
+- [x] SEND_LN (amp/keysend/bolt11 via subcommand)
+- [x] SEND_ONCHAIN (only taproot addresses)
+- [x] LOOP a set of commands over an optional interval
+- [x] CLOSE_CHANNEL
 
 ##### TODO:
 - [ ] support more than LND (should support coreln, eclair, and at least one LDK implementation)
-- [ ] add a UI to the nodes to view in the browser (thunderhub, ride-the-lightning, etc.)
-- [ ] allow for repeate calls of commands every x interval (a user defined amount of time)
-- [ ] make mining in the background optional after fundning the lightning nodes
-- [ ] allow to set how many funds individual lightning nodes get at start up
-- [ ] allow to re-use existing cluster to see the same pattern of events
-- [ ] add pause between when the network gets stood up and the rest of the actions occur so an external application can be connected
-- [ ] SEND_ONCHAIN
-- [ ] CLOSE_CHANNEL
+- [ ] add a UI to each nodes to view in the browser (thunderhub, ride-the-lightning, etc.)
+- [ ] make mining in the background optional after funding the lightning nodes
+- [ ] allow to set how many funds individual lightning nodes get at start up (make optional)
+- [ ] BUMP_FEE - needs to be done via REST as cli doesn't have an option for this yet
+- [ ] CLOSE_CHANNEL - come up with grammar allowing scripts to close a specific channel
+- [ ] BATCH_OPEN - build grammar for creating batch opening of channels
+- [ ] add documentation and more examples showing how the grammar works/how to use doppler
+- [ ] add a cluster level UI to see how all the nodes  connect (started, but need to finish in ./visualizer)
+- [ ] add instructions on how to view the visualizer
+- [ ] add "get_info" and some additional data to be shown in the visualizer
 
 ### Acknowledgments
 * Thank you [polar](https://github.com/jamaljsr/polar) for having such easy docker images to work with
 * Thank you litch for creating [lightning-conformance](https://github.com/litch/lightning-conformance) which helped inspire this project
+* Thank you w3irdrobot for getting this project started and helping pick the tool to build the grammar in rust
+
+### Disclaimer 
+* This is very much a work in progress, but feel free to use what works today and PR's are welcome!

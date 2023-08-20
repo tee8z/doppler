@@ -1,7 +1,10 @@
 ### How to run
 ```
-RUST_LOG=DEBUG cargo run --bin doppler
+cargo run --bin doppler "parsetest.doppler"
 ```
+- `parsetest.doppler` is the path to the `.doppler` file to use for the cluster
+- Update the file called `parsetest.doppler` to be the setup of a cluster. 
+The one part of the repo provides examples of how to use the grammar today
 
 ### How to view logs of container
 ```
@@ -16,6 +19,11 @@ docker logs doppler-<node name>
 ### Clear docker data
 ```
 ./scripts/clear_volumes.sh
+```
+
+### Reset cluster with current script
+```
+./scripts/reset.sh
 ```
 
 ### How to test parse grammar

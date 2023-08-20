@@ -1,4 +1,5 @@
 WHITESPACE = _{ " " }
+EMPTY_LINE = _{"" ~ NEWLINE}
 
 COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
 
@@ -16,16 +17,35 @@ node_pair = { node_kind ~ ident ~ "PAIR" ~ ident }
 
 node_miner = { node_kind ~ ident ~ (num)* ~ time_digits }
 
+skip_conf = { "SKIP_CONF" }
 conf = { node_pair | node_miner | node_def }
+every = { "EVERY" }
+loop = { "LOOP" }
+start  = { ((loop ~ num ~ every ~ num ~ time_digits ) | (loop ~ num) | (loop ~ every ~ num ~ time_digits ))  }
+end = { "END" }
+
+loop_block = _{
+    // The first line in the block
+    PEEK_ALL ~ PUSH("  "+ | "\t"+) ~ loop_content ~
+    // Subsequent lines in the block
+    (PEEK_ALL ~ loop_content)* ~
+    // Remove the last layer of indentation from the stack when exiting the block
+    DROP
+}
+
+loop_content = {
+    (start |  ln_node_action | btc_node_action | end) ~ NEWLINE ~ loop_block*
+}
 
 up = { "UP" }
+flag = { "--" }
+sub_command = { ( flag ~ ident | num )* }
 
-sub_command = { (ident | num )* }
+ln_node_action_type = { "OPEN_CHANNEL" | "SEND_LN" | "SEND_ON_CHAIN" | "CLOSE_CHANNEL" }
+ln_node_action = { (ident ~ ln_node_action_type ~ ident ~ "AMT" ~ (num ~ sub_command | num )) | (ident ~ ln_node_action_type ~ ( ident ~ sub_command | ident)) }
 
-node_action_type = { "OPEN_CHANNEL" | "SEND_LN"}
+btc_node_action_type = { "MINE_BLOCKS" }
+btc_node_action = { (ident ~ btc_node_action_type ~ ( num ~ sub_command | num)) }
 
-node_action_amt = { ident ~ node_action_type ~ ident ~ "AMT" ~ (num | num ~ sub_command) }
-
-
-page = { SOI ~ (COMMENT | ((conf ~ NEWLINE)* ~ (up ~ NEWLINE) ~ (node_action_amt ~ NEWLINE )*)) ~ EOI }
+page = { SOI ~ (COMMENT |  ( ((skip_conf ~ NEWLINE) | (conf ~ NEWLINE)* ~ (up ~ NEWLINE) )  ~ ( EMPTY_LINE | (ln_node_action ~ NEWLINE ) | (btc_node_action ~ NEWLINE ) | (loop_content* ~ NEWLINE ) )*) ) ~ EOI }
 

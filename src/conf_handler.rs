@@ -2,54 +2,57 @@ use anyhow::Error;
 use conf_parser::processer::FileConf;
 use docker_compose_types::{Compose, ComposeNetworks, Service, Services};
 use indexmap::map::IndexMap;
+use slog::{error, info, Logger};
 use std::{
-    fs::create_dir_all,
-    io,
+    fs::{create_dir_all, File},
+    io::{self, ErrorKind, Read},
     path::{Path, PathBuf},
-    vec, sync::{atomic::{AtomicBool, Ordering}, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    thread::Thread,
+    vec,
 };
 
-use crate::{NETWORK, MinerTime};
+use crate::{MinerTime, NETWORK};
 
-#[derive(Default, Debug)]
+#[derive(Debug, Clone)]
 pub struct Options {
     pub bitcoinds: Vec<Bitcoind>,
     pub lnds: Vec<Lnd>,
     ports: Vec<i64>,
     pub compose_path: Option<String>,
     pub services: IndexMap<String, Option<Service>>,
-    pub kill_signal: ThreadController,
+    pub main_thread_active: ThreadController,
+    pub main_thread_paused: ThreadController,
+    pub loop_stack: IndexMap<String, String>,
+    global_logger: Logger,
+    thread_handlers: Arc<Mutex<Vec<Thread>>>,
 }
 
 #[derive(Default, Debug, Clone)]
 pub struct ThreadController {
-    kill_signal: Arc<AtomicBool>,
+    active: Arc<AtomicBool>,
 }
 
 impl ThreadController {
-    fn new() -> Self {
+    fn new(val: bool) -> Self {
         ThreadController {
-            kill_signal: Arc::new(AtomicBool::new(false)),
+            active: Arc::new(AtomicBool::new(val)),
         }
     }
-    pub fn terminate(&self) {
-        self.kill_signal.store(true, Ordering::Relaxed);
+    pub fn set(&self, val: bool) {
+        self.active.store(val, Ordering::Relaxed);
     }
 
-    pub fn is_terminated(&self) -> bool {
-        self.kill_signal.load(Ordering::Relaxed)
-    }
-}
-
-impl Drop for ThreadController {
-    fn drop(&mut self) {
-        // Set the kill signal to true when the ThreadController is dropped
-        self.kill_signal.store(true, Ordering::Relaxed);
+    pub fn val(&self) -> bool {
+        self.active.load(Ordering::Relaxed)
     }
 }
 
 impl Options {
-    pub fn new() -> Self {
+    pub fn new(logger: Logger) -> Self {
         let starting_port = vec![9089];
         Self {
             bitcoinds: vec::Vec::new(),
@@ -57,8 +60,21 @@ impl Options {
             ports: starting_port,
             compose_path: None,
             services: indexmap::IndexMap::new(),
-            kill_signal: ThreadController::new(),
+            main_thread_active: ThreadController::new(true),
+            main_thread_paused: ThreadController::new(false),
+            loop_stack: indexmap::IndexMap::new(),
+            global_logger: logger,
+            thread_handlers: Arc::new(Mutex::new(Vec::new())),
         }
+    }
+    pub fn global_logger(&self) -> Logger {
+        self.global_logger.clone()
+    }
+    pub fn add_thread(&self, thread_handler: Thread) {
+        self.thread_handlers.lock().unwrap().push(thread_handler);
+    }
+    pub fn get_thread_handlers(&self) -> Arc<Mutex<Vec<Thread>>> {
+        self.thread_handlers.clone()
     }
     pub fn new_port(&mut self) -> i64 {
         let last_port = self.ports.last().unwrap();
@@ -83,9 +99,34 @@ impl Options {
         std::fs::write(target_file, serialized).unwrap();
         Ok(())
     }
+
+    pub fn load_compose(&mut self) -> Result<(), io::Error> {
+        let compose_path = self.compose_path.clone().unwrap();
+        let target_file = std::path::Path::new(compose_path.as_str());
+        let mut file = File::open(target_file).map_err(|e| {
+            error!(self.global_logger(), "Failed to open compose file.: {}", e);
+            io::Error::new(ErrorKind::NotFound, e)
+        })?;
+        let mut file_content = String::new();
+        let doppler_content = file
+            .read_to_string(&mut file_content)
+            .map_err(|e| {
+                error!(self.global_logger(), "Failed to read file.: {}", e);
+                io::Error::new(ErrorKind::NotFound, e)
+            })
+            .map(|_| file_content)?;
+        let doppler_compose: Compose =
+            serde_yaml::from_str::<Compose>(&doppler_content).map_err(|e| {
+                error!(self.global_logger(), "Failed to parse compose file.: {}", e);
+                io::Error::new(ErrorKind::InvalidData, e)
+            })?;
+        let Services(inner_index_map) = doppler_compose.services;
+        self.services = inner_index_map;
+        Ok(())
+    }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Bitcoind {
     pub conf: FileConf,
     pub data_dir: String,
@@ -101,7 +142,7 @@ pub struct Bitcoind {
     pub miner_time: Option<MinerTime>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Lnd {
     pub container_name: Option<String>,
     pub name: Option<String>,
@@ -109,6 +150,7 @@ pub struct Lnd {
     pub alias: String,
     pub rest_port: String,
     pub grpc_port: String,
+    pub p2p_port: String,
     pub server_url: Option<String>,
     pub macaroon_path: Option<String>,
     pub certificate_path: Option<String>,
