@@ -1,6 +1,6 @@
 use crate::{
     fund_node, get_absolute_path, get_bitcoinds, get_lnds, get_node_info, mine_bitcoin,
-    pair_bitcoinds, start_mining, Lnd, Options,
+    pair_bitcoinds, start_mining, Lnd, Options, connect, NodeCommand,
 };
 use anyhow::{anyhow, Error};
 use ipnetwork::IpNetwork;
@@ -139,6 +139,9 @@ fn setup_lnd_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
             Err(e) => error!(logger, "failed to start/fund node: {}", e),
         }
     });
+
+    connect_lnd_nodes(options)?;
+
     Ok(())
 }
 
@@ -199,4 +202,18 @@ pub fn generate_ipv4_sequence_in_subnet(
         error!(logger, "went over the last ip in ranges!")
     }
     next_ip
+}
+
+
+fn connect_lnd_nodes(options: &mut Options) -> Result<(), Error> {
+    let mut get_a_node = options.lnds.iter();
+    options.lnds.iter().for_each(|from_lnd| {
+        let mut to_lnd = get_a_node.next_back().unwrap();
+        if to_lnd.name == from_lnd.name {
+            to_lnd = get_a_node.next().unwrap();
+        }
+        let node_command = &NodeCommand { name: "connect".to_owned(), from: from_lnd.name.clone(), to: to_lnd.name.clone(), amt: None, subcommand: None };
+        connect(options, node_command).unwrap_or_default();
+    });
+    Ok(())
 }
