@@ -32,8 +32,6 @@ pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> R
 pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Error> {
     options.compose_path = Some(compose_path.to_owned());
 
-    pair_bitcoinds(options)?;
-
     options.save_compose(compose_path).map_err(|err| {
         anyhow!(
             "Failed to save docker-compose file @ {}: {}",
@@ -45,10 +43,10 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
 
     //simple wait for docker-compose to spin up
     thread::sleep(Duration::from_secs(6));
-
+    pair_bitcoinds(options)?;
     //TODO: make optional to be mining in the background
     start_miners(options)?;
-    setup_nodes(options, options.global_logger())?;
+    setup_lnd_nodes(options, options.global_logger())?;
     mine_initial_blocks(options)?;
     update_visualizer_conf(options)?;
     Ok(())
@@ -107,7 +105,7 @@ fn mine_initial_blocks(options: &mut Options) -> Result<(), Error> {
     Ok(())
 }
 
-fn setup_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
+fn setup_lnd_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
     let compose_path = options.compose_path.as_ref().unwrap();
     let miner = options
         .bitcoinds
@@ -137,11 +135,7 @@ fn setup_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
         });
 
         match result {
-            Ok(_) => info!(
-                logger,
-                "container: {} funded",
-                node.container_name.clone()
-            ),
+            Ok(_) => info!(logger, "container: {} funded", node.container_name.clone()),
             Err(e) => error!(logger, "failed to start/fund node: {}", e),
         }
     });
@@ -168,7 +162,7 @@ fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
         let visualizer_node = VisualizerNode {
             name,
             host: node.server_url.clone(),
-            macaroon: admin_macaroon
+            macaroon: admin_macaroon,
         };
         config.nodes.push(visualizer_node);
     });
@@ -188,13 +182,17 @@ fn get_admin_macaroon(node: &mut Lnd) -> Result<String, Error> {
     Ok(mac_as_hex)
 }
 
-pub fn generate_ipv4_sequence_in_subnet(logger: Logger, subnet: &str, current_ip: &Ipv4Addr) -> Ipv4Addr {
+pub fn generate_ipv4_sequence_in_subnet(
+    logger: Logger,
+    subnet: &str,
+    current_ip: &Ipv4Addr,
+) -> Ipv4Addr {
     let cidr = IpNetwork::from_str(subnet).unwrap();
     let end_ip = match cidr {
         IpNetwork::V4(cidr_v4) => cidr_v4.broadcast(),
         _ => panic!("Only IPv4 is supported"),
     };
-    let mut next_ip = current_ip.clone();
+    let mut next_ip = *current_ip;
 
     next_ip = Ipv4Addr::from(u32::from(next_ip) + 1);
     if next_ip > end_ip {

@@ -56,7 +56,7 @@ pub fn run_workflow_until_stop(
     // if we have no child threads, this must be a script we just want to run through
     if all_threads.lock().unwrap().is_empty() {
         main_thread_active.set(false);
-        return Ok(())
+        return Ok(());
     }
     let terminate = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&terminate))?;

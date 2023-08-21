@@ -41,9 +41,7 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
     let lnd = Service {
         image: Some(LND_IMAGE.to_string()),
         container_name: Some(lnd_conf.container_name.clone()),
-        ports: Ports::Short(vec![
-            lnd_conf.p2p_port.clone(),
-        ]),
+        ports: Ports::Short(vec![lnd_conf.p2p_port.clone()]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         volumes: Volumes::Simple(vec![format!("{}:/home/lnd/.lnd:rw", lnd_conf.path_vol)]),
         networks: Networks::Advanced(AdvancedNetworks(cur_network)),
@@ -88,11 +86,10 @@ pub fn get_lnd_config(
         .bitcoinds
         .first()
         .expect("a layer 1 needs to be confirgured before using a layer 2 node");
-    let found_node = options.bitcoinds.iter().find(|&bitcoind| {
-        bitcoind
-            .name
-            .eq_ignore_ascii_case(pair_name)
-    });
+    let found_node = options
+        .bitcoinds
+        .iter()
+        .find(|&bitcoind| bitcoind.name.eq_ignore_ascii_case(pair_name));
     if let Some(node) = found_node {
         bitcoind_node = node;
     }
@@ -201,30 +198,19 @@ fn set_bitcoind_values(conf: &mut FileConf, bitcoind_node: &Bitcoind) -> Result<
         "bitcoind.zmqpubrawblock",
         format!(
             "tcp://{}:{}",
-            bitcoind_node.container_name,
-            &bitcoind_node.zmqpubrawblock
+            bitcoind_node.ip, &bitcoind_node.zmqpubrawblock
         )
         .as_str(),
     );
     bitcoind.set_property(
         "bitcoind.zmqpubrawtx",
-        format!(
-            "tcp://{}:{}",
-            bitcoind_node.container_name,
-            &bitcoind_node.zmqpubrawtx
-        )
-        .as_str(),
+        format!("tcp://{}:{}", bitcoind_node.ip, &bitcoind_node.zmqpubrawtx).as_str(),
     );
     bitcoind.set_property("bitcoind.rpcpass", &bitcoind_node.password);
     bitcoind.set_property("bitcoind.rpcuser", &bitcoind_node.user);
     bitcoind.set_property(
         "bitcoind.rpchost",
-        format!(
-            "{}:{}",
-            bitcoind_node.container_name,
-            &bitcoind_node.rpchost
-        )
-        .as_str(),
+        format!("{}:{}", bitcoind_node.ip, &bitcoind_node.rpcport).as_str(),
     );
 
     Ok(())
@@ -282,13 +268,7 @@ pub fn get_node_info(logger: &Logger, lnd: &mut Lnd, compose_path: String) -> Re
     }
     let output = output_found.unwrap();
     if output.status.success() {
-        let response: Value = from_slice(&output.stdout).expect("failed to parse JSON");
-        if let Some(pubkey) = response
-            .as_mapping()
-            .and_then(|obj| obj.get("identity_pubkey"))
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-        {
+        if let Some(pubkey) = get_property("identity_pubkey", output.clone()) {
             lnd.pubkey = Some(pubkey);
         } else {
             error!(logger, "no pubkey found");
@@ -449,16 +429,12 @@ pub fn open_channel(options: &Options, node_command: &NodeCommand) -> Result<(),
     if output.status.success() {
         info!(
             options.global_logger(),
-            "successfully opened channel from {} to {}",
-            from_lnd.name,
-            to_lnd.name
+            "successfully opened channel from {} to {}", from_lnd.name, to_lnd.name
         );
     } else {
         error!(
             options.global_logger(),
-            "failed to open channel from {} to {}",
-            from_lnd.name,
-            to_lnd.name
+            "failed to open channel from {} to {}", from_lnd.name, to_lnd.name
         );
     }
     debug!(
@@ -502,16 +478,12 @@ pub fn connect(options: &Options, node_command: &NodeCommand) -> Result<(), Erro
     if output.status.success() || from_utf8(&output.stderr)?.contains("already connected to peer") {
         info!(
             options.global_logger(),
-            "successfully connected from {} to {}",
-            from_lnd.name,
-            to_lnd.name
+            "successfully connected from {} to {}", from_lnd.name, to_lnd.name
         );
     } else {
         error!(
             options.global_logger(),
-            "failed to connect from {} to {}",
-            from_lnd.name,
-            to_lnd.name
+            "failed to connect from {} to {}", from_lnd.name, to_lnd.name
         );
     }
     debug!(
@@ -556,16 +528,12 @@ pub fn close_channel(options: &Options, node_command: &NodeCommand) -> Result<()
     if output.status.success() {
         info!(
             options.global_logger(),
-            "successfully closed channel from {} to {}",
-            from_lnd.name,
-            to_lnd.name
+            "successfully closed channel from {} to {}", from_lnd.name, to_lnd.name
         );
     } else {
         error!(
             options.global_logger(),
-            "failed to close channel from {} to {}",
-            from_lnd.name,
-            to_lnd.name
+            "failed to close channel from {} to {}", from_lnd.name, to_lnd.name
         );
     }
     debug!(
@@ -907,7 +875,7 @@ pub fn get_lnd_by_name<'a>(options: &'a Options, name: &str) -> Result<&'a Lnd, 
     let lnd = options
         .lnds
         .iter()
-        .find(|lnd| lnd.name == name.to_owned())
+        .find(|lnd| lnd.name == *name)
         .unwrap_or_else(|| panic!("invalid lnd node name to: {:?}", name));
     Ok(lnd)
 }
