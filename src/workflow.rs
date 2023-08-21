@@ -441,7 +441,7 @@ fn process_lnd_action(line: Pair<Rule>) -> NodeCommand {
         let to_node = next().as_str();
         let amount_raw = next().as_str();
         let mut amount = None;
-        if amount.is_some() {
+        if !amount_raw.is_empty() {
             amount = Some(amount_raw.parse::<i64>().expect("invalid num"))
         }
         (from_node, command_name, to_node, amount)
