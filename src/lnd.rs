@@ -1,7 +1,11 @@
 use crate::{copy_file, get_absolute_path, mine_to_address, Bitcoind, Lnd, Options, NETWORK};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
-use docker_compose_types::{EnvFile, Networks, Ports, Service, Volumes};
+use docker_compose_types::{
+    AdvancedNetworkSettings, AdvancedNetworks, EnvFile, MapOrEmpty, Networks, Ports, Service,
+    Volumes,
+};
+use indexmap::IndexMap;
 use rand::Rng;
 use serde_yaml::{from_slice, Value};
 use slog::{debug, error, info, Logger};
@@ -17,7 +21,8 @@ use std::{
 const LND_IMAGE: &str = "polarlightning/lnd:0.16.2-beta";
 
 pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<()> {
-    let mut lnd_conf = get_lnd_config(options, name, pair_name).unwrap();
+    let ip = options.new_ipv4().to_string();
+    let mut lnd_conf = get_lnd_config(options, name, pair_name, ip.as_str()).unwrap();
     debug!(
         options.global_logger(),
         "{} volume: {}", name, lnd_conf.path_vol
@@ -25,30 +30,35 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
 
     let rest_port = options.new_port();
     let grpc_port = options.new_port();
-    let container_name = format!("doppler-lnd-{}", name);
-    lnd_conf.container_name = Some(container_name.clone());
-    lnd_conf.server_url = Some(format!("http://localhost:{}", rest_port));
+    let mut cur_network = IndexMap::new();
+    cur_network.insert(
+        NETWORK.to_string(),
+        MapOrEmpty::Map(AdvancedNetworkSettings {
+            ipv4_address: Some(ip),
+            ..Default::default()
+        }),
+    );
     let lnd = Service {
         image: Some(LND_IMAGE.to_string()),
-        container_name: Some(container_name.clone()),
+        container_name: Some(lnd_conf.container_name.clone()),
         ports: Ports::Short(vec![
-            format!("{}:{}", rest_port, lnd_conf.rest_port),
-            format!("{}:{}", grpc_port, lnd_conf.grpc_port),
             lnd_conf.p2p_port.clone(),
         ]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         volumes: Volumes::Simple(vec![format!("{}:/home/lnd/.lnd:rw", lnd_conf.path_vol)]),
-        networks: Networks::Simple(vec![NETWORK.to_string()]),
+        networks: Networks::Advanced(AdvancedNetworks(cur_network)),
         ..Default::default()
     };
-    options.services.insert(container_name.clone(), Some(lnd));
+    options
+        .services
+        .insert(lnd_conf.container_name.clone(), Some(lnd));
     info!(
         options.global_logger(),
-        "connect to {} via rest using port {} and via grpc using port {} with admin.macaroon found at {}",
-        container_name,
-        rest_port,
-        grpc_port,
-        lnd_conf.macaroon_path.clone().unwrap(),
+        "connect to {} via rest using {} and via grpc using {} with admin.macaroon found at {}",
+        lnd_conf.container_name,
+        lnd_conf.server_url,
+        lnd_conf.rpc_server,
+        lnd_conf.macaroon_path.clone(),
     );
     lnd_conf.grpc_port = grpc_port.to_string();
     lnd_conf.rest_port = rest_port.to_string();
@@ -57,7 +67,12 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
     Ok(())
 }
 
-pub fn get_lnd_config(options: &mut Options, name: &str, pair_name: &str) -> Result<Lnd, Error> {
+pub fn get_lnd_config(
+    options: &mut Options,
+    name: &str,
+    pair_name: &str,
+    ip: &str,
+) -> Result<Lnd, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
             "bitcoind nodes need to be defined before lnd nodes can be setup"
@@ -76,8 +91,6 @@ pub fn get_lnd_config(options: &mut Options, name: &str, pair_name: &str) -> Res
     let found_node = options.bitcoinds.iter().find(|&bitcoind| {
         bitcoind
             .name
-            .as_ref()
-            .unwrap()
             .eq_ignore_ascii_case(pair_name)
     });
     if let Some(node) = found_node {
@@ -85,7 +98,7 @@ pub fn get_lnd_config(options: &mut Options, name: &str, pair_name: &str) -> Res
     }
 
     set_bitcoind_values(&mut conf, bitcoind_node)?;
-    set_application_options_values(&mut conf, name)?;
+    set_application_options_values(&mut conf, name, ip)?;
 
     let _ = copy_file(&conf, &destination_dir.clone(), "lnd.conf")?;
     let full_path = get_absolute_path(destination_dir)?
@@ -94,18 +107,20 @@ pub fn get_lnd_config(options: &mut Options, name: &str, pair_name: &str) -> Res
         .to_string();
 
     Ok(Lnd {
-        name: Some(name.to_owned()),
+        name: name.to_owned(),
         alias: name.to_owned(),
-        container_name: None,
+        container_name: format!("doppler-lnd-{}", name),
         pubkey: None,
-        server_url: None,
-        certificate_path: Some(format!("{}/tls.crt", full_path)),
-        macaroon_path: Some(format!(
+        ip: ip.to_owned(),
+        rpc_server: format!("{}:10000", ip),
+        server_url: format!("http://{}:10000", ip),
+        certificate_path: format!("{}/tls.crt", full_path),
+        macaroon_path: format!(
             "{}/data/chain/bitcoin/{}/admin.macaroon",
             full_path, "regtest"
-        )),
+        ),
         path_vol: full_path,
-        grpc_port: "10009".to_owned(),
+        grpc_port: "10000".to_owned(),
         rest_port: "8080".to_owned(),
         p2p_port: "9735".to_owned(),
     })
@@ -120,11 +135,13 @@ pub fn get_lnds(options: &mut Options) -> Result<()> {
         .map(|service| {
             let container_name = service.0;
             let lnd_name = container_name.split('-').last().unwrap();
-            let mut found_ports = None;
-            if let Ports::Short(ports) = service.1.unwrap().ports {
-                found_ports = Some(ports);
+            let mut found_ip: Option<_> = None;
+            if let Networks::Advanced(AdvancedNetworks(networks)) = service.1.unwrap().networks {
+                if let MapOrEmpty::Map(advance_setting) = networks.first().unwrap().1 {
+                    found_ip = advance_setting.ipv4_address.clone();
+                }
             }
-            get_existing_lnd_config(lnd_name, container_name.clone(), found_ports.unwrap())
+            get_existing_lnd_config(lnd_name, container_name.clone(), found_ip.unwrap())
         })
         .filter_map(|res| res.ok())
         .collect();
@@ -135,11 +152,7 @@ pub fn get_lnds(options: &mut Options) -> Result<()> {
         let result = get_node_info(&logger, node, compose_path_clone.clone());
 
         match result {
-            Ok(_) => info!(
-                logger,
-                "container: {} found",
-                node.container_name.clone().unwrap_or_default()
-            ),
+            Ok(_) => info!(logger, "container: {} found", node.container_name.clone()),
             Err(e) => error!(logger, "failed to find node: {}", e),
         }
     });
@@ -149,31 +162,23 @@ pub fn get_lnds(options: &mut Options) -> Result<()> {
     Ok(())
 }
 
-fn get_existing_lnd_config(
-    name: &str,
-    container_name: String,
-    ports: Vec<String>,
-) -> Result<Lnd, Error> {
-    let rest_port = ports
-        .iter()
-        .find(|port| port.contains("8080"))
-        .map(|port| port.split(':').next().unwrap())
-        .unwrap();
-
+fn get_existing_lnd_config(name: &str, container_name: String, ip: String) -> Result<Lnd, Error> {
     let full_path = &format!("data/{}/.lnd", name);
     Ok(Lnd {
-        name: Some(name.to_owned()),
+        name: name.to_owned(),
         alias: name.to_owned(),
-        container_name: Some(container_name.to_owned()),
+        container_name: container_name.to_owned(),
         pubkey: None,
-        server_url: Some(format!("http://localhost:{}", rest_port)),
-        certificate_path: Some(format!("{}/tls.crt", full_path)),
-        macaroon_path: Some(format!(
+        ip: ip.clone(),
+        rpc_server: format!("{}:10000", ip),
+        server_url: format!("https://{}:8080", ip),
+        certificate_path: format!("{}/tls.crt", full_path),
+        macaroon_path: format!(
             "{}/data/chain/bitcoin/{}/admin.macaroon",
             full_path, "regtest"
-        )),
+        ),
         path_vol: full_path.to_owned(),
-        grpc_port: "10009".to_owned(),
+        grpc_port: "10000".to_owned(),
         rest_port: "8080".to_owned(),
         p2p_port: "9735".to_owned(),
     })
@@ -196,7 +201,7 @@ fn set_bitcoind_values(conf: &mut FileConf, bitcoind_node: &Bitcoind) -> Result<
         "bitcoind.zmqpubrawblock",
         format!(
             "tcp://{}:{}",
-            bitcoind_node.container_name.as_ref().unwrap(),
+            bitcoind_node.container_name,
             &bitcoind_node.zmqpubrawblock
         )
         .as_str(),
@@ -205,7 +210,7 @@ fn set_bitcoind_values(conf: &mut FileConf, bitcoind_node: &Bitcoind) -> Result<
         "bitcoind.zmqpubrawtx",
         format!(
             "tcp://{}:{}",
-            bitcoind_node.container_name.as_ref().unwrap(),
+            bitcoind_node.container_name,
             &bitcoind_node.zmqpubrawtx
         )
         .as_str(),
@@ -216,7 +221,7 @@ fn set_bitcoind_values(conf: &mut FileConf, bitcoind_node: &Bitcoind) -> Result<
         "bitcoind.rpchost",
         format!(
             "{}:{}",
-            bitcoind_node.container_name.as_ref().unwrap(),
+            bitcoind_node.container_name,
             &bitcoind_node.rpchost
         )
         .as_str(),
@@ -225,19 +230,25 @@ fn set_bitcoind_values(conf: &mut FileConf, bitcoind_node: &Bitcoind) -> Result<
     Ok(())
 }
 
-fn set_application_options_values(conf: &mut FileConf, name: &str) -> Result<(), Error> {
+fn set_application_options_values(conf: &mut FileConf, name: &str, ip: &str) -> Result<(), Error> {
     if conf.sections.get("Application Options").is_none() {
         conf.sections
             .insert("Application Options".to_owned(), Section::new());
     }
     let application_options = conf.sections.get_mut("Application Options").unwrap();
     application_options.set_property("alias", name);
+    application_options.set_property("tlsextradomain", name);
+    application_options.set_property("tlsextraip", ip);
+    application_options.set_property("restlisten", &format!("{}:8080", ip));
+    application_options.set_property("rpclisten", &format!("{}:10000", ip));
     Ok(())
 }
 
 pub fn get_node_info(logger: &Logger, lnd: &mut Lnd, compose_path: String) -> Result<(), Error> {
     let mut output_found = None;
     let mut retries = 3;
+    let rpc_command = lnd.get_rpc_server_command();
+    let macaroon_path = lnd.get_macaroon_command();
     while retries > 0 {
         let command = vec![
             "-f",
@@ -245,16 +256,18 @@ pub fn get_node_info(logger: &Logger, lnd: &mut Lnd, compose_path: String) -> Re
             "exec",
             "--user",
             "1000:1000",
-            lnd.container_name.as_ref().unwrap().as_ref(),
+            lnd.container_name.as_ref(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
             "--network=regtest",
+            &macaroon_path,
+            &rpc_command,
             "getinfo",
         ];
         info!(
             logger,
             "container: {} command (pubkey): `docker-compose {}`",
-            lnd.container_name.clone().unwrap(),
+            lnd.container_name.clone(),
             command.join(" ")
         );
         let output = Command::new("docker-compose").args(command).output()?;
@@ -301,7 +314,7 @@ pub fn fund_node(
     mine_to_address(
         logger,
         compose_path,
-        miner.container_name.as_ref().unwrap().to_owned(),
+        miner.container_name.clone(),
         miner.data_dir.clone(),
         2,
         address,
@@ -314,22 +327,26 @@ pub fn create_lnd_wallet(
     lnd: &mut Lnd,
     compose_path: String,
 ) -> Result<(), Error> {
+    let rpc_command = lnd.get_rpc_server_command();
+    let macaroon_path = lnd.get_macaroon_command();
     let command = vec![
         "-f",
         compose_path.as_ref(),
         "exec",
         "--user",
         "1000:1000",
-        lnd.container_name.as_ref().unwrap().as_ref(),
+        lnd.container_name.as_ref(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
+        &macaroon_path,
+        &rpc_command,
         "createwallet",
     ];
     info!(
         logger,
         "container: {} command (createwallet): `docker-compose {}`",
-        lnd.container_name.clone().unwrap(),
+        lnd.container_name.clone(),
         command.join(" ")
     );
     let output = Command::new("docker-compose").args(command).output()?;
@@ -351,23 +368,27 @@ pub fn create_lnd_address(
     lnd: &mut Lnd,
     compose_path: String,
 ) -> Result<String, Error> {
+    let rpc_command = lnd.get_rpc_server_command();
+    let macaroon_path = lnd.get_macaroon_command();
     let command = vec![
         "-f",
         compose_path.as_ref(),
         "exec",
         "--user",
         "1000:1000",
-        lnd.container_name.as_ref().unwrap().as_ref(),
+        lnd.container_name.as_ref(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
+        &macaroon_path,
+        &rpc_command,
         "newaddress",
         "p2tr", // TODO: set as a taproot address by default, make this configurable
     ];
     info!(
         logger,
         "container: {} command (newaddress): `docker-compose {}`",
-        lnd.container_name.clone().unwrap(),
+        lnd.container_name.clone(),
         command.join(" ")
     );
     let output = Command::new("docker-compose").args(command).output()?;
@@ -399,17 +420,20 @@ pub fn open_channel(options: &Options, node_command: &NodeCommand) -> Result<(),
     let to_lnd = get_lnd_by_name(options, node_command.to.as_str())?;
     let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
     let amt = node_command.amt.unwrap_or(100000).to_string();
+    let rpc_command = from_lnd.get_rpc_server_command();
+    let macaroon_path = from_lnd.get_macaroon_command();
     let command = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
         "--user",
         "1000:1000",
-        from_lnd.container_name.as_ref().unwrap().as_ref(),
+        from_lnd.container_name.as_ref(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
-        "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon",
+        &macaroon_path,
+        &rpc_command,
         "openchannel",
         to_lnd.pubkey.as_ref().unwrap().as_ref(),
         amt.as_ref(),
@@ -417,7 +441,7 @@ pub fn open_channel(options: &Options, node_command: &NodeCommand) -> Result<(),
     info!(
         options.global_logger(),
         "container: {} command (open_channel): `docker-compose {}`",
-        from_lnd.container_name.clone().unwrap(),
+        from_lnd.container_name.clone(),
         command.join(" ")
     );
     let output = Command::new("docker-compose").args(command).output()?;
@@ -426,15 +450,15 @@ pub fn open_channel(options: &Options, node_command: &NodeCommand) -> Result<(),
         info!(
             options.global_logger(),
             "successfully opened channel from {} to {}",
-            from_lnd.name.as_ref().unwrap(),
-            to_lnd.name.as_ref().unwrap()
+            from_lnd.name,
+            to_lnd.name
         );
     } else {
         error!(
             options.global_logger(),
             "failed to open channel from {} to {}",
-            from_lnd.name.as_ref().unwrap(),
-            to_lnd.name.as_ref().unwrap()
+            from_lnd.name,
+            to_lnd.name
         );
     }
     debug!(
@@ -449,30 +473,28 @@ pub fn open_channel(options: &Options, node_command: &NodeCommand) -> Result<(),
 pub fn connect(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     let to_lnd: &Lnd = get_lnd_by_name(options, node_command.to.as_str())?;
     let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
-    let connection_url = format!(
-        "{}@{}:{}",
-        to_lnd.pubkey.as_ref().unwrap(),
-        to_lnd.container_name.as_ref().unwrap(),
-        to_lnd.p2p_port.clone()
-    );
+    let connection_url = to_lnd.get_connection_url();
+    let rpc_command = from_lnd.get_rpc_server_command();
+    let macaroon_path = from_lnd.get_macaroon_command();
     let command = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
         "--user",
         "1000:1000",
-        from_lnd.container_name.as_ref().unwrap().as_ref(),
+        from_lnd.container_name.as_ref(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
-        "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon",
+        &macaroon_path,
+        &rpc_command,
         "connect",
         connection_url.as_ref(),
     ];
     info!(
         options.global_logger(),
         "container: {} command (connect): `docker-compose {}`",
-        from_lnd.container_name.clone().unwrap(),
+        from_lnd.container_name.clone(),
         command.join(" ")
     );
     let output = Command::new("docker-compose").args(command).output()?;
@@ -481,15 +503,15 @@ pub fn connect(options: &Options, node_command: &NodeCommand) -> Result<(), Erro
         info!(
             options.global_logger(),
             "successfully connected from {} to {}",
-            from_lnd.name.as_ref().unwrap(),
-            to_lnd.name.as_ref().unwrap()
+            from_lnd.name,
+            to_lnd.name
         );
     } else {
         error!(
             options.global_logger(),
             "failed to connect from {} to {}",
-            from_lnd.name.as_ref().unwrap(),
-            to_lnd.name.as_ref().unwrap()
+            from_lnd.name,
+            to_lnd.name
         );
     }
     debug!(
@@ -505,18 +527,20 @@ pub fn close_channel(options: &Options, node_command: &NodeCommand) -> Result<()
     let peer_channel_point = get_peers_channels(options, node_command)?;
     let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
     let to_lnd: &Lnd = get_lnd_by_name(options, node_command.to.as_str())?;
-
+    let rpc_command = from_lnd.get_rpc_server_command();
+    let macaroon_path = from_lnd.get_macaroon_command();
     let command = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
         "--user",
         "1000:1000",
-        from_lnd.container_name.as_ref().unwrap().as_ref(),
+        from_lnd.container_name.as_ref(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
-        "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon",
+        &macaroon_path,
+        &rpc_command,
         "closechannel",
         "--chan_point",
         peer_channel_point.as_ref(),
@@ -524,7 +548,7 @@ pub fn close_channel(options: &Options, node_command: &NodeCommand) -> Result<()
     info!(
         options.global_logger(),
         "container: {} command (close_channel): `docker-compose {}`",
-        from_lnd.container_name.clone().unwrap(),
+        from_lnd.container_name.clone(),
         command.join(" ")
     );
     let output = Command::new("docker-compose").args(command).output()?;
@@ -533,15 +557,15 @@ pub fn close_channel(options: &Options, node_command: &NodeCommand) -> Result<()
         info!(
             options.global_logger(),
             "successfully closed channel from {} to {}",
-            from_lnd.name.as_ref().unwrap(),
-            to_lnd.name.as_ref().unwrap()
+            from_lnd.name,
+            to_lnd.name
         );
     } else {
         error!(
             options.global_logger(),
             "failed to close channel from {} to {}",
-            from_lnd.name.as_ref().unwrap(),
-            to_lnd.name.as_ref().unwrap()
+            from_lnd.name,
+            to_lnd.name
         );
     }
     debug!(
@@ -556,17 +580,20 @@ pub fn close_channel(options: &Options, node_command: &NodeCommand) -> Result<()
 pub fn get_peers_channels(options: &Options, node_command: &NodeCommand) -> Result<String, Error> {
     let to_lnd = get_lnd_by_name(options, node_command.to.as_str())?;
     let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
+    let rpc_command = from_lnd.get_rpc_server_command();
+    let macaroon_path = from_lnd.get_macaroon_command();
     let command = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
         "--user",
         "1000:1000",
-        from_lnd.container_name.as_ref().unwrap().as_ref(),
+        from_lnd.container_name.as_ref(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
-        "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon",
+        &macaroon_path,
+        &rpc_command,
         "listchannels",
         "--peer",
         to_lnd.pubkey.as_ref().unwrap().as_ref(),
@@ -574,7 +601,7 @@ pub fn get_peers_channels(options: &Options, node_command: &NodeCommand) -> Resu
     info!(
         options.global_logger(),
         "container: {} command (list_channels): `docker-compose {}`",
-        from_lnd.container_name.clone().unwrap(),
+        from_lnd.container_name.clone(),
         command.join(" ")
     );
     let output = Command::new("docker-compose").args(command).output()?;
@@ -749,16 +776,20 @@ pub fn create_invoice(options: &mut Options, node_command: &NodeCommand) -> Resu
     let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
     let amt = node_command.amt.unwrap_or(1000).to_string();
     let memo = generate_memo();
+    let rpc_command = to_lnd.get_rpc_server_command();
+    let macaroon_path = to_lnd.get_macaroon_command();
     let command = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
         "--user",
         "1000:1000",
-        to_lnd.container_name.as_ref().unwrap().as_ref(),
+        to_lnd.container_name.as_ref(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
+        &macaroon_path,
+        &rpc_command,
         "addinvoice",
         "--memo",
         memo.as_ref(),
@@ -768,7 +799,7 @@ pub fn create_invoice(options: &mut Options, node_command: &NodeCommand) -> Resu
     info!(
         options.global_logger(),
         "container: {} command (addinvoice): `docker-compose {}`",
-        from_lnd.container_name.clone().unwrap(),
+        from_lnd.container_name.clone(),
         command.join(" ")
     );
     let output = Command::new("docker-compose").args(command).output()?;
@@ -791,16 +822,20 @@ pub fn pay_invoice(
     payment_request: String,
 ) -> Result<(), Error> {
     let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
+    let rpc_command = from_lnd.get_rpc_server_command();
+    let macaroon_path = from_lnd.get_macaroon_command();
     let command = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
         "--user",
         "1000:1000",
-        from_lnd.container_name.as_ref().unwrap().as_ref(),
+        from_lnd.container_name.as_ref(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
+        &macaroon_path,
+        &rpc_command,
         "payinvoice",
         "-f",
         payment_request.as_ref(),
@@ -808,7 +843,7 @@ pub fn pay_invoice(
     info!(
         options.global_logger(),
         "container: {} command (payinvoice): `docker-compose {}`",
-        from_lnd.container_name.clone().unwrap(),
+        from_lnd.container_name.clone(),
         command.join(" ")
     );
     let output = Command::new("docker-compose").args(command).output()?;
@@ -872,7 +907,7 @@ pub fn get_lnd_by_name<'a>(options: &'a Options, name: &str) -> Result<&'a Lnd, 
     let lnd = options
         .lnds
         .iter()
-        .find(|lnd| lnd.name == Some(name.to_owned()))
+        .find(|lnd| lnd.name == name.to_owned())
         .unwrap_or_else(|| panic!("invalid lnd node name to: {:?}", name));
     Ok(lnd)
 }
@@ -882,23 +917,27 @@ pub fn create_on_chain_address(
     node_command: &NodeCommand,
 ) -> Result<String, Error> {
     let to_lnd: &Lnd = get_lnd_by_name(options, node_command.to.as_str())?;
+    let rpc_command = to_lnd.get_rpc_server_command();
+    let macaroon_path = to_lnd.get_macaroon_command();
     let command = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
         "--user",
         "1000:1000",
-        to_lnd.container_name.as_ref().unwrap().as_ref(),
+        to_lnd.container_name.as_ref(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
+        &macaroon_path,
+        &rpc_command,
         "newaddress",
         "p2tr", //TODO: allow for other types beside taproot addresses
     ];
     info!(
         options.global_logger(),
         "container: {} command (newaddress): `docker-compose {}`",
-        to_lnd.container_name.clone().unwrap(),
+        to_lnd.container_name.clone(),
         command.join(" ")
     );
     let output = Command::new("docker-compose").args(command).output()?;
@@ -924,16 +963,20 @@ pub fn pay_address(
     let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
     let amt = node_command.amt.unwrap_or(1000).to_string();
     let subcommand = node_command.subcommand.to_owned().unwrap_or("".to_owned());
+    let rpc_command = to_lnd.get_rpc_server_command();
+    let macaroon_path = to_lnd.get_macaroon_command();
     let command = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
         "--user",
         "1000:1000",
-        to_lnd.container_name.as_ref().unwrap().as_ref(),
+        to_lnd.container_name.as_ref(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
+        &macaroon_path,
+        &rpc_command,
         "sendcoins",
         subcommand.as_ref(),
         "--addr",
@@ -944,7 +987,7 @@ pub fn pay_address(
     info!(
         options.global_logger(),
         "container: {} command (sendcoins): `docker-compose {}`",
-        from_lnd.container_name.clone().unwrap(),
+        from_lnd.container_name.clone(),
         command.join(" ")
     );
     let output = Command::new("docker-compose").args(command).output()?;

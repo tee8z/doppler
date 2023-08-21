@@ -3,17 +3,20 @@ use crate::{
     pair_bitcoinds, start_mining, Lnd, Options,
 };
 use anyhow::{anyhow, Error};
+use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
 use serde_json::to_string;
 use slog::{debug, error, info, Logger};
 use std::fs::File;
 use std::io::Read;
+use std::net::Ipv4Addr;
 use std::process::Command;
-use std::str::from_utf8;
+use std::str::{from_utf8, FromStr};
 use std::thread;
 use std::time::Duration;
 
 pub const NETWORK: &str = "doppler";
+pub const SUBNET: &str = "10.5.0.0/16";
 
 pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> Result<(), Error> {
     options.compose_path = Some(compose_path.clone().to_owned());
@@ -85,7 +88,7 @@ fn mine_initial_blocks(options: &mut Options) -> Result<(), Error> {
     let miner = options
         .bitcoinds
         .iter()
-        .find(|bitcoinds| bitcoinds.container_name.as_ref().unwrap().contains("miner"));
+        .find(|bitcoinds| bitcoinds.container_name.contains("miner"));
     if miner.is_none() {
         return Err(anyhow!(
             "at least one miner is required to be setup for this cluster to run"
@@ -97,7 +100,7 @@ fn mine_initial_blocks(options: &mut Options) -> Result<(), Error> {
     mine_bitcoin(
         logger,
         compose_path.to_owned(),
-        miner_container.unwrap(),
+        miner_container,
         miner_data_dir,
         100,
     )?;
@@ -109,7 +112,7 @@ fn setup_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
     let miner = options
         .bitcoinds
         .iter()
-        .find(|bitcoinds| bitcoinds.container_name.as_ref().unwrap().contains("miner"));
+        .find(|bitcoinds| bitcoinds.container_name.contains("miner"));
     if miner.is_none() {
         return Err(anyhow!(
             "at least one miner is required to be setup for this cluster to run"
@@ -122,7 +125,7 @@ fn setup_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
             info!(
                 logger,
                 "container: {} pubkey: {}",
-                node.container_name.clone().unwrap(),
+                node.container_name.clone(),
                 node.pubkey.clone().unwrap()
             );
             fund_node(
@@ -137,7 +140,7 @@ fn setup_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
             Ok(_) => info!(
                 logger,
                 "container: {} funded",
-                node.container_name.clone().unwrap_or_default()
+                node.container_name.clone()
             ),
             Err(e) => error!(logger, "failed to start/fund node: {}", e),
         }
@@ -160,13 +163,12 @@ pub struct VisualizerNode {
 fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
     let mut config = VisualizerConfig { nodes: vec![] };
     options.lnds.iter_mut().for_each(|node| {
-        let macaroon = get_admin_macaroon(node).expect("failed to get admin macaroon");
-        let host = format!("localhost:{}", node.rest_port);
-        let name = node.name.clone().unwrap();
+        let name = node.name.clone();
+        let admin_macaroon = get_admin_macaroon(node).unwrap();
         let visualizer_node = VisualizerNode {
             name,
-            host,
-            macaroon,
+            host: node.server_url.clone(),
+            macaroon: admin_macaroon
         };
         config.nodes.push(visualizer_node);
     });
@@ -178,10 +180,25 @@ fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
 }
 
 fn get_admin_macaroon(node: &mut Lnd) -> Result<String, Error> {
-    let macaroon_path = node.macaroon_path.clone().unwrap();
+    let macaroon_path = node.macaroon_path.clone();
     let mut file = File::open(macaroon_path)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
     let mac_as_hex = hex::encode(buffer);
     Ok(mac_as_hex)
+}
+
+pub fn generate_ipv4_sequence_in_subnet(logger: Logger, subnet: &str, current_ip: &Ipv4Addr) -> Ipv4Addr {
+    let cidr = IpNetwork::from_str(subnet).unwrap();
+    let end_ip = match cidr {
+        IpNetwork::V4(cidr_v4) => cidr_v4.broadcast(),
+        _ => panic!("Only IPv4 is supported"),
+    };
+    let mut next_ip = current_ip.clone();
+
+    next_ip = Ipv4Addr::from(u32::from(next_ip) + 1);
+    if next_ip > end_ip {
+        error!(logger, "went over the last ip in ranges!")
+    }
+    next_ip
 }

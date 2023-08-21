@@ -8,7 +8,7 @@ def signal_handler(sig, frame):
     httpd.server_close()
     sys.exit(0)
 
-PORT = 8003
+PORT = 8006
 
 # Set up the request handler
 Handler = http.server.SimpleHTTPRequestHandler
@@ -21,3 +21,4 @@ signal.signal(signal.SIGINT, signal_handler)
 
 print(f"Serving at http://localhost:{PORT}")
 httpd.serve_forever()
+

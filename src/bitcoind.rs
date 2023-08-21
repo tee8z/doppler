@@ -1,8 +1,9 @@
 use crate::{copy_file, get_absolute_path, Bitcoind, Options, ThreadController, NETWORK};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
-use docker_compose_types::{Command, EnvFile, Networks, Ports, Service, Volumes};
-use slog::{debug, error, info, Logger};
+use docker_compose_types::{Command, EnvFile, Networks, Ports, Service, Volumes, AdvancedNetworks, MapOrEmpty, AdvancedNetworkSettings};
+use indexmap::IndexMap;
+use slog::{error, info, Logger};
 use std::{fs::File, process, str::from_utf8, thread, thread::spawn, time::Duration};
 
 const BITCOIND_IMAGE: &str = "polarlightning/bitcoind:25.0";
@@ -27,37 +28,28 @@ pub fn build_bitcoind(
     name: &str,
     miner_time: Option<MinerTime>,
 ) -> Result<()> {
-    let mut bitcoind_conf = get_bitcoind_config(options, name).unwrap();
-    bitcoind_conf.miner_time = miner_time.clone();
-    debug!(
-        options.global_logger(),
-        "{} bitcoind vol: {}", name, bitcoind_conf.path_vol
-    );
-
+    let bitcoind_conf = get_bitcoind_config(options, name,miner_time).unwrap();
     let rpc_port = options.new_port();
-    let container_name = match miner_time.is_some() {
-        true => format!("doppler-bitcoind-miner-{}", name),
-        false => format!("doppler-bitcoind-{}", name),
-    };
+    let mut cur_network = IndexMap::new();
+    cur_network.insert(NETWORK.to_string(), MapOrEmpty::Map(AdvancedNetworkSettings{
+        ipv4_address: Some(options.new_ipv4().to_string()),
+        ..Default::default()
+    }));
 
     let bitcoind = Service {
         image: Some(BITCOIND_IMAGE.to_string()),
-        container_name: Some(container_name.clone()),
+        container_name: Some(bitcoind_conf.container_name.clone()),
         ports: Ports::Short(vec![format!("{}:{}", rpc_port, bitcoind_conf.rpcport)]),
         volumes: Volumes::Simple(vec![format!(
             "{}:/home/bitcoin/.bitcoin:rw",
             bitcoind_conf.path_vol
         )]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
-        networks: Networks::Simple(vec![NETWORK.to_string()]),
+        networks: Networks::Advanced(AdvancedNetworks(cur_network)),
         ..Default::default()
     };
-    options
-        .services
-        .insert(container_name.clone(), Some(bitcoind));
-    bitcoind_conf.container_name = Some(container_name);
+    options.services.insert(bitcoind_conf.container_name.clone(), Some(bitcoind));
     options.bitcoinds.push(bitcoind_conf);
-
     Ok(())
 }
 
@@ -104,10 +96,10 @@ fn get_existing_bitcoind_config(
 
     Ok(Bitcoind {
         conf: conf.to_owned(),
-        name: Some(name.to_owned()),
+        name: name.to_owned(),
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
         miner_time: None,
-        container_name: Some(container_name),
+        container_name: container_name,
         path_vol: full_path,
         user: regtest_section.get_property("rpcuser"),
         password: regtest_section.get_property("rpcpassword"),
@@ -128,7 +120,7 @@ fn get_existing_bitcoind_config(
     })
 }
 
-pub fn get_bitcoind_config(options: &mut Options, name: &str) -> Result<Bitcoind, Error> {
+pub fn get_bitcoind_config(options: &mut Options, name: &str,  miner_time: Option<MinerTime>) -> Result<Bitcoind, Error> {
     let original = get_absolute_path("config/bitcoin.conf")?;
     let source: File = File::open(original)?;
 
@@ -141,13 +133,16 @@ pub fn get_bitcoind_config(options: &mut Options, name: &str) -> Result<Bitcoind
         .to_str()
         .unwrap()
         .to_string();
-
+    let container_name = match miner_time.is_some() {
+        true => format!("doppler-bitcoind-miner-{}", name),
+        false => format!("doppler-bitcoind-{}", name),
+    };
     Ok(Bitcoind {
         conf: conf.to_owned(),
-        name: Some(name.to_owned()),
+        name: name.to_owned(),
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
-        miner_time: None,
-        container_name: None,
+        miner_time: miner_time,
+        container_name: container_name,
         path_vol: full_path,
         user: regtest_section.get_property("rpcuser"),
         password: regtest_section.get_property("rpcpassword"),
@@ -214,14 +209,12 @@ pub fn pair_bitcoinds(options: &mut Options) -> Result<(), Error> {
                 .filter(|bitcoind| {
                     !bitcoind
                         .container_name
-                        .as_ref()
-                        .unwrap()
                         .eq_ignore_ascii_case(name)
                 })
                 .for_each(|announce| {
                     let add_node = format!(
                         "-addnode={}:{}",
-                        announce.container_name.as_ref().unwrap(),
+                        announce.container_name,
                         announce.rpcport
                     );
                     listen_to.push(add_node)
@@ -235,7 +228,7 @@ pub fn pair_bitcoinds(options: &mut Options) -> Result<(), Error> {
 
 pub fn start_mining(options: Options, bitcoind: &Bitcoind) -> Result<()> {
     let datadir: String = bitcoind.data_dir.clone();
-    let container = bitcoind.container_name.clone().unwrap();
+    let container = bitcoind.container_name.clone();
     let miner_time = bitcoind.miner_time.clone().unwrap().to_owned();
     let compose_path = options.compose_path.clone().unwrap().to_string();
     let logger = options.global_logger();
@@ -341,7 +334,7 @@ pub fn node_mine_bitcoin(options: &mut Options, to_mine: String, num: i64) -> Re
     mine_bitcoin(
         logger,
         compose_path.unwrap(),
-        bitcoind_miner.container_name.clone().unwrap(),
+        bitcoind_miner.container_name.clone(),
         bitcoind_miner.data_dir.clone(),
         num,
     )?;
@@ -352,7 +345,7 @@ pub fn get_btcd_by_name<'a>(options: &'a Options, name: &str) -> Result<&'a Bitc
     let bitcoind = options
         .bitcoinds
         .iter()
-        .find(|btcd| btcd.name == Some(name.to_owned()))
+        .find(|btcd| btcd.name == name.to_owned())
         .unwrap_or_else(|| panic!("invalid bitcoind node name to: {:?}", name));
     Ok(bitcoind)
 }

@@ -7,12 +7,6 @@ LND lnd2 PAIR bd1
 LND lnd3 PAIR bd1
 UP
 
-lnd1 OPEN_CHANNEL lnd2 AMT 500000
-lnd2 OPEN_CHANNEL lnd3 AMT 8000000
-lnd3 OPEN_CHANNEL lnd1 AMT 900000
-lnd1 OPEN_CHANNEL lnd2 AMT 299999
-bd1 MINE_BLOCKS 10
-
 // burst open 4 channels 2 times with 20s wait between runs
 LOOP 2 EVERY 20s
   lnd1 OPEN_CHANNEL lnd2 AMT 500000
