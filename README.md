@@ -26,7 +26,7 @@ The DSL should empower developers to compose a concise script that configures an
 - [ ] add a UI to each nodes to view in the browser (thunderhub, ride-the-lightning, etc.)
 - [ ] make mining in the background optional after funding the lightning nodes
 - [ ] allow to set how many funds individual lightning nodes get at start up (make optional)
-- [ ] BUMP_FEE - needs to be done via REST as cli doesn't have an option for this yet
+- [ ] BUMP_FEE - need some way to identify the transaction created earlier in the script to bump
 - [ ] CLOSE_CHANNEL - come up with grammar allowing scripts to close a specific channel
 - [ ] BATCH_OPEN - build grammar for creating batch opening of channels
 - [ ] add documentation and more examples showing how the grammar works/how to use doppler
