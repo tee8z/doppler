@@ -1,9 +1,6 @@
 use anyhow::Error;
 use conf_parser::processer::FileConf;
-use docker_compose_types::{
-    Compose, ComposeNetworks, Ipam, MapOrEmpty,
-    Service, Services,
-};
+use docker_compose_types::{Compose, ComposeNetworks, Ipam, MapOrEmpty, Service, Services};
 use indexmap::map::IndexMap;
 use ipnetwork::IpNetwork;
 use slog::{error, Logger};
@@ -18,7 +15,7 @@ use std::{
         Arc, Mutex,
     },
     thread::Thread,
-    vec
+    vec,
 };
 
 use crate::{generate_ipv4_sequence_in_subnet, MinerTime, NETWORK, SUBNET};
@@ -90,6 +87,13 @@ impl Options {
     }
     pub fn get_thread_handlers(&self) -> Arc<Mutex<Vec<Thread>>> {
         self.thread_handlers.clone()
+    }
+    pub fn get_bitcoind(&self, name: String) -> Bitcoind {
+        self.bitcoinds
+            .iter()
+            .find(|bitcoind| bitcoind.name == name.to_owned())
+            .unwrap()
+            .clone()
     }
     pub fn new_port(&mut self) -> i64 {
         let last_port = self.ports.last().unwrap();
@@ -164,13 +168,14 @@ pub struct Bitcoind {
     pub data_dir: String,
     pub container_name: String,
     pub name: String,
-    pub rpchost: String,
+    pub p2pport: String,
     pub rpcport: String,
     pub user: String,
     pub password: String,
     pub zmqpubrawblock: String,
     pub zmqpubrawtx: String,
     pub path_vol: String,
+    pub ip: String,
     pub miner_time: Option<MinerTime>,
 }
 
@@ -192,8 +197,8 @@ pub struct Lnd {
 }
 
 impl Lnd {
-    pub fn get_rpc_server_command(&self)-> String{
-       format!("--rpcserver={}:10000", self.ip)
+    pub fn get_rpc_server_command(&self) -> String {
+        format!("--rpcserver={}:10000", self.ip)
     }
     pub fn get_macaroon_command(&self) -> String {
         "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon".to_owned()

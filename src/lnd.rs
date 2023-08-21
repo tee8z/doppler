@@ -201,7 +201,7 @@ fn set_bitcoind_values(conf: &mut FileConf, bitcoind_node: &Bitcoind) -> Result<
         "bitcoind.zmqpubrawblock",
         format!(
             "tcp://{}:{}",
-            bitcoind_node.container_name,
+            bitcoind_node.ip,
             &bitcoind_node.zmqpubrawblock
         )
         .as_str(),
@@ -210,7 +210,7 @@ fn set_bitcoind_values(conf: &mut FileConf, bitcoind_node: &Bitcoind) -> Result<
         "bitcoind.zmqpubrawtx",
         format!(
             "tcp://{}:{}",
-            bitcoind_node.container_name,
+            bitcoind_node.ip,
             &bitcoind_node.zmqpubrawtx
         )
         .as_str(),
@@ -221,8 +221,8 @@ fn set_bitcoind_values(conf: &mut FileConf, bitcoind_node: &Bitcoind) -> Result<
         "bitcoind.rpchost",
         format!(
             "{}:{}",
-            bitcoind_node.container_name,
-            &bitcoind_node.rpchost
+            bitcoind_node.ip,
+            &bitcoind_node.rpcport
         )
         .as_str(),
     );
@@ -282,12 +282,7 @@ pub fn get_node_info(logger: &Logger, lnd: &mut Lnd, compose_path: String) -> Re
     }
     let output = output_found.unwrap();
     if output.status.success() {
-        let response: Value = from_slice(&output.stdout).expect("failed to parse JSON");
-        if let Some(pubkey) = response
-            .as_mapping()
-            .and_then(|obj| obj.get("identity_pubkey"))
-            .and_then(Value::as_str)
-            .map(str::to_owned)
+        if let Some(pubkey) = get_property("identity_pubkey", output.clone())
         {
             lnd.pubkey = Some(pubkey);
         } else {

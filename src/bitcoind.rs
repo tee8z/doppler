@@ -1,10 +1,15 @@
-use crate::{copy_file, get_absolute_path, Bitcoind, Options, ThreadController, NETWORK};
+use crate::{
+    copy_file, get_absolute_path, get_property, Bitcoind, Options, ThreadController, NETWORK,
+};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
-use docker_compose_types::{Command, EnvFile, Networks, Ports, Service, Volumes, AdvancedNetworks, MapOrEmpty, AdvancedNetworkSettings};
+use docker_compose_types::{
+    AdvancedNetworkSettings, AdvancedNetworks, Command, EnvFile, MapOrEmpty, Networks, Ports,
+    Service, Volumes,
+};
 use indexmap::IndexMap;
-use slog::{error, info, Logger};
-use std::{fs::File, process, str::from_utf8, thread, thread::spawn, time::Duration};
+use slog::{debug, error, info, Logger};
+use std::{fs::File, option, process, str::from_utf8, thread, thread::spawn, time::Duration};
 
 const BITCOIND_IMAGE: &str = "polarlightning/bitcoind:25.0";
 
@@ -28,18 +33,24 @@ pub fn build_bitcoind(
     name: &str,
     miner_time: Option<MinerTime>,
 ) -> Result<()> {
-    let bitcoind_conf = get_bitcoind_config(options, name,miner_time).unwrap();
-    let rpc_port = options.new_port();
+    let ip = options.new_ipv4().to_string();
+    let bitcoind_conf = get_bitcoind_config(options, name, miner_time, ip.clone()).unwrap();
     let mut cur_network = IndexMap::new();
-    cur_network.insert(NETWORK.to_string(), MapOrEmpty::Map(AdvancedNetworkSettings{
-        ipv4_address: Some(options.new_ipv4().to_string()),
-        ..Default::default()
-    }));
+    cur_network.insert(
+        NETWORK.to_string(),
+        MapOrEmpty::Map(AdvancedNetworkSettings {
+            ipv4_address: Some(ip),
+            ..Default::default()
+        }),
+    );
 
     let bitcoind = Service {
         image: Some(BITCOIND_IMAGE.to_string()),
         container_name: Some(bitcoind_conf.container_name.clone()),
-        ports: Ports::Short(vec![format!("{}:{}", rpc_port, bitcoind_conf.rpcport)]),
+        ports: Ports::Short(vec![
+            format!("{}", bitcoind_conf.p2pport),
+            format!("{}", bitcoind_conf.rpcport),
+        ]),
         volumes: Volumes::Simple(vec![format!(
             "{}:/home/bitcoin/.bitcoin:rw",
             bitcoind_conf.path_vol
@@ -48,7 +59,9 @@ pub fn build_bitcoind(
         networks: Networks::Advanced(AdvancedNetworks(cur_network)),
         ..Default::default()
     };
-    options.services.insert(bitcoind_conf.container_name.clone(), Some(bitcoind));
+    options
+        .services
+        .insert(bitcoind_conf.container_name.clone(), Some(bitcoind));
     options.bitcoinds.push(bitcoind_conf);
     Ok(())
 }
@@ -63,7 +76,18 @@ pub fn get_bitcoinds(options: &mut Options) -> Result<()> {
         .map(|service| {
             let container_name = service.0;
             let bitcoind_name = container_name.split('-').last().unwrap();
-            get_existing_bitcoind_config(bitcoind_name, container_name.clone(), logger.clone())
+            let mut found_ip: Option<_> = None;
+            if let Networks::Advanced(AdvancedNetworks(networks)) = service.1.unwrap().networks {
+                if let MapOrEmpty::Map(advance_setting) = networks.first().unwrap().1 {
+                    found_ip = advance_setting.ipv4_address.clone();
+                }
+            }
+            get_existing_bitcoind_config(
+                bitcoind_name,
+                container_name.clone(),
+                logger.clone(),
+                found_ip.unwrap(),
+            )
         })
         .filter_map(|res| res.ok())
         .collect();
@@ -75,6 +99,7 @@ fn get_existing_bitcoind_config(
     name: &str,
     container_name: String,
     logger: Logger,
+    ip: String,
 ) -> Result<Bitcoind, Error> {
     let bitcoind_config: &String = &format!("data/{}/.bitcoin/bitcoin.conf", name);
     let full_path = get_absolute_path(bitcoind_config)?
@@ -96,6 +121,7 @@ fn get_existing_bitcoind_config(
 
     Ok(Bitcoind {
         conf: conf.to_owned(),
+        ip: ip,
         name: name.to_owned(),
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
         miner_time: None,
@@ -103,7 +129,7 @@ fn get_existing_bitcoind_config(
         path_vol: full_path,
         user: regtest_section.get_property("rpcuser"),
         password: regtest_section.get_property("rpcpassword"),
-        rpchost: regtest_section.get_property("rpcport"),
+        p2pport: regtest_section.get_property("port"),
         rpcport: regtest_section.get_property("rpcport"),
         zmqpubrawblock: regtest_section
             .get_property("zmqpubrawblock")
@@ -120,13 +146,18 @@ fn get_existing_bitcoind_config(
     })
 }
 
-pub fn get_bitcoind_config(options: &mut Options, name: &str,  miner_time: Option<MinerTime>) -> Result<Bitcoind, Error> {
+pub fn get_bitcoind_config(
+    options: &mut Options,
+    name: &str,
+    miner_time: Option<MinerTime>,
+    ip: String,
+) -> Result<Bitcoind, Error> {
     let original = get_absolute_path("config/bitcoin.conf")?;
     let source: File = File::open(original)?;
 
     let destination_dir: &String = &format!("data/{}/.bitcoin", name);
     let conf = conf_parser::processer::read_to_file_conf_mut(&source)?;
-    let regtest_section = set_regtest_section(conf, options)?;
+    let regtest_section = set_regtest_section(conf, options, ip.clone())?;
     let _ = copy_file(conf, &destination_dir.clone(), "bitcoin.conf")?;
 
     let full_path = get_absolute_path(destination_dir)?
@@ -139,6 +170,7 @@ pub fn get_bitcoind_config(options: &mut Options, name: &str,  miner_time: Optio
     };
     Ok(Bitcoind {
         conf: conf.to_owned(),
+        ip: ip,
         name: name.to_owned(),
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
         miner_time: miner_time,
@@ -146,7 +178,7 @@ pub fn get_bitcoind_config(options: &mut Options, name: &str,  miner_time: Optio
         path_vol: full_path,
         user: regtest_section.get_property("rpcuser"),
         password: regtest_section.get_property("rpcpassword"),
-        rpchost: regtest_section.get_property("rpcport"),
+        p2pport: regtest_section.get_property("port"),
         rpcport: regtest_section.get_property("rpcport"),
         zmqpubrawblock: regtest_section
             .get_property("zmqpubrawblock")
@@ -163,25 +195,29 @@ pub fn get_bitcoind_config(options: &mut Options, name: &str,  miner_time: Optio
     })
 }
 
-fn set_regtest_section(conf: &mut FileConf, options: &mut Options) -> Result<Section, Error> {
+fn set_regtest_section(
+    conf: &mut FileConf,
+    options: &mut Options,
+    ip: String,
+) -> Result<Section, Error> {
     if conf.sections.get("regtest").is_none() {
         conf.sections.insert("regtest".to_owned(), Section::new());
     }
     let bitcoin = conf.sections.get_mut("regtest").unwrap();
     let port = options.new_port();
     let rpc_port = options.new_port();
-
+    bitcoin.set_property("bind", ip.as_str());
     bitcoin.set_property("port", &port.to_string());
     bitcoin.set_property("rpcport", &rpc_port.to_string());
     bitcoin.set_property("rpcuser", "admin");
     bitcoin.set_property("rpcpassword", "1234");
     bitcoin.set_property(
         "zmqpubrawblock",
-        &format!("tcp://0.0.0.0:{}", options.new_port()),
+        &format!("tcp://{}:{}", ip.as_str(), options.new_port()),
     );
     bitcoin.set_property(
         "zmqpubrawtx",
-        &format!("tcp://0.0.0.0:{}", options.new_port()),
+        &format!("tcp://{}:{}", ip.as_str(), options.new_port()),
     );
     let regtest_section = get_regtest_section(conf)?;
     Ok(regtest_section.to_owned())
@@ -196,31 +232,25 @@ fn get_regtest_section(conf: &mut FileConf) -> Result<Section, Error> {
 }
 
 pub fn pair_bitcoinds(options: &mut Options) -> Result<(), Error> {
+    let options_clone = &options.clone();
     options
         .services
         .iter_mut()
         .filter(|combo| combo.0.contains("bitcoind"))
-        .for_each(|(name, bitcoind_service)| {
+        .for_each(|(name, _bitcoind_service)| {
             let mut listen_to = vec![];
+            let current_bitcoind =
+                options_clone.get_bitcoind(name.split("-").last().unwrap().to_owned());
 
             options
                 .bitcoinds
                 .iter()
-                .filter(|bitcoind| {
-                    !bitcoind
-                        .container_name
-                        .eq_ignore_ascii_case(name)
-                })
+                .filter(|bitcoind| !bitcoind.container_name.eq_ignore_ascii_case(name))
                 .for_each(|announce| {
-                    let add_node = format!(
-                        "-addnode={}:{}",
-                        announce.container_name,
-                        announce.rpcport
-                    );
+                    let add_node = format!(r#"{}:{}"#, announce.ip, announce.p2pport);
                     listen_to.push(add_node)
                 });
-
-            bitcoind_service.as_mut().unwrap().command = Some(Command::Args(listen_to));
+            add_nodes(options_clone, current_bitcoind, listen_to).expect("failed to add nodes");
         });
 
     Ok(())
@@ -468,4 +498,47 @@ pub fn mine_to_address(
             from_utf8(&output.stderr).unwrap().to_owned()
         );
     }
+}
+
+pub fn add_nodes(
+    options: &Options,
+    current_node: Bitcoind,
+    nodes: Vec<String>,
+) -> Result<(), Error> {
+    let compose_path = options.compose_path.clone().unwrap();
+    let datadir_flag = &format!("--datadir={}", current_node.clone().data_dir);
+    for node in nodes.iter() {
+        let current_node_clone = current_node.clone();
+        let command = vec![
+            "-f",
+            compose_path.as_ref(),
+            "exec",
+            "--user",
+            "1000:1000",
+            current_node_clone.container_name.as_ref(),
+            "bitcoin-cli",
+            datadir_flag,
+            "addnode",
+            node,
+            r#"add"#,
+        ];
+        info!(
+            options.global_logger(),
+            "container: {} command (addnode): `docker-compose {}`",
+            compose_path,
+            command.join(" ")
+        );
+
+        let output = process::Command::new("docker-compose")
+            .args(command)
+            .output()?;
+        debug!(
+            options.global_logger(),
+            "output.stdout: {}, output.stderr: {}",
+            from_utf8(&output.stdout)?,
+            from_utf8(&output.stderr)?
+        );
+    }
+
+    Ok(())
 }
