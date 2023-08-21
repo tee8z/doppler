@@ -1,15 +1,13 @@
-use crate::{
-    copy_file, get_absolute_path, get_property, Bitcoind, Options, ThreadController, NETWORK,
-};
+use crate::{copy_file, get_absolute_path, Bitcoind, Options, ThreadController, NETWORK};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
 use docker_compose_types::{
-    AdvancedNetworkSettings, AdvancedNetworks, Command, EnvFile, MapOrEmpty, Networks, Ports,
-    Service, Volumes,
+    AdvancedNetworkSettings, AdvancedNetworks, EnvFile, MapOrEmpty, Networks, Ports, Service,
+    Volumes,
 };
 use indexmap::IndexMap;
 use slog::{debug, error, info, Logger};
-use std::{fs::File, option, process, str::from_utf8, thread, thread::spawn, time::Duration};
+use std::{fs::File, process, str::from_utf8, thread, thread::spawn, time::Duration};
 
 const BITCOIND_IMAGE: &str = "polarlightning/bitcoind:25.0";
 
@@ -121,11 +119,11 @@ fn get_existing_bitcoind_config(
 
     Ok(Bitcoind {
         conf: conf.to_owned(),
-        ip: ip,
+        ip,
         name: name.to_owned(),
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
         miner_time: None,
-        container_name: container_name,
+        container_name,
         path_vol: full_path,
         user: regtest_section.get_property("rpcuser"),
         password: regtest_section.get_property("rpcpassword"),
@@ -170,11 +168,11 @@ pub fn get_bitcoind_config(
     };
     Ok(Bitcoind {
         conf: conf.to_owned(),
-        ip: ip,
+        ip,
         name: name.to_owned(),
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
-        miner_time: miner_time,
-        container_name: container_name,
+        miner_time,
+        container_name,
         path_vol: full_path,
         user: regtest_section.get_property("rpcuser"),
         password: regtest_section.get_property("rpcpassword"),
@@ -240,7 +238,7 @@ pub fn pair_bitcoinds(options: &mut Options) -> Result<(), Error> {
         .for_each(|(name, _bitcoind_service)| {
             let mut listen_to = vec![];
             let current_bitcoind =
-                options_clone.get_bitcoind(name.split("-").last().unwrap().to_owned());
+                options_clone.get_bitcoind(name.split('-').last().unwrap().to_owned());
 
             options
                 .bitcoinds
@@ -375,7 +373,7 @@ pub fn get_btcd_by_name<'a>(options: &'a Options, name: &str) -> Result<&'a Bitc
     let bitcoind = options
         .bitcoinds
         .iter()
-        .find(|btcd| btcd.name == name.to_owned())
+        .find(|btcd| btcd.name == name)
         .unwrap_or_else(|| panic!("invalid bitcoind node name to: {:?}", name));
     Ok(bitcoind)
 }

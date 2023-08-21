@@ -135,11 +135,7 @@ fn setup_lnd_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
         });
 
         match result {
-            Ok(_) => info!(
-                logger,
-                "container: {} funded",
-                node.container_name.clone()
-            ),
+            Ok(_) => info!(logger, "container: {} funded", node.container_name.clone()),
             Err(e) => error!(logger, "failed to start/fund node: {}", e),
         }
     });
@@ -166,7 +162,7 @@ fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
         let visualizer_node = VisualizerNode {
             name,
             host: node.server_url.clone(),
-            macaroon: admin_macaroon
+            macaroon: admin_macaroon,
         };
         config.nodes.push(visualizer_node);
     });
@@ -186,13 +182,17 @@ fn get_admin_macaroon(node: &mut Lnd) -> Result<String, Error> {
     Ok(mac_as_hex)
 }
 
-pub fn generate_ipv4_sequence_in_subnet(logger: Logger, subnet: &str, current_ip: &Ipv4Addr) -> Ipv4Addr {
+pub fn generate_ipv4_sequence_in_subnet(
+    logger: Logger,
+    subnet: &str,
+    current_ip: &Ipv4Addr,
+) -> Ipv4Addr {
     let cidr = IpNetwork::from_str(subnet).unwrap();
     let end_ip = match cidr {
         IpNetwork::V4(cidr_v4) => cidr_v4.broadcast(),
         _ => panic!("Only IPv4 is supported"),
     };
-    let mut next_ip = current_ip.clone();
+    let mut next_ip = *current_ip;
 
     next_ip = Ipv4Addr::from(u32::from(next_ip) + 1);
     if next_ip > end_ip {

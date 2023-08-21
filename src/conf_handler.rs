@@ -91,7 +91,7 @@ impl Options {
     pub fn get_bitcoind(&self, name: String) -> Bitcoind {
         self.bitcoinds
             .iter()
-            .find(|bitcoind| bitcoind.name == name.to_owned())
+            .find(|bitcoind| bitcoind.name == name)
             .unwrap()
             .clone()
     }
