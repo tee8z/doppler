@@ -1,6 +1,6 @@
 use crate::{
-    fund_node, get_absolute_path, get_bitcoinds, get_lnds, get_node_info, mine_bitcoin,
-    pair_bitcoinds, start_mining, Lnd, Options, connect, NodeCommand,
+    connect, fund_node, get_absolute_path, get_bitcoinds, get_lnds, get_node_info, mine_bitcoin,
+    pair_bitcoinds, start_mining, Lnd, NodeCommand, Options,
 };
 use anyhow::{anyhow, Error};
 use ipnetwork::IpNetwork;
@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::to_string;
 use slog::{debug, error, info, Logger};
 use std::fs::File;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::net::Ipv4Addr;
+use std::os::unix::prelude::PermissionsExt;
 use std::process::Command;
 use std::str::{from_utf8, FromStr};
 use std::thread;
@@ -49,6 +50,7 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     setup_lnd_nodes(options, options.global_logger())?;
     mine_initial_blocks(options)?;
     update_visualizer_conf(options)?;
+    update_bash_alias(options)?;
     Ok(())
 }
 
@@ -151,6 +153,7 @@ pub struct VisualizerConfig {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+
 pub struct VisualizerNode {
     name: String,
     host: String,
@@ -173,6 +176,47 @@ fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
     let config_json = get_absolute_path("./visualizer/config.json")?;
     std::fs::write(config_json, json_string)?;
 
+    Ok(())
+}
+
+
+fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
+    let mut script_content = String::new();
+    script_content.push_str("#!/bin/bash\n\n");
+    options.lnds.iter().for_each(|lnd| {
+        let name = lnd.container_name.split('-').last().unwrap();
+        script_content.push_str(&format!(
+            r#"
+{name}() {{
+    docker-compose -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} lncli --lnddir=/home/lnd/.lnd --network=regtest --macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon --rpcserver={ip}:10000 "$@"
+}}            
+"#,
+        container_name= lnd.container_name, 
+        name=name, 
+        ip =lnd.ip));
+        script_content.push_str("\n");
+    });
+    options.bitcoinds.iter().for_each(|bitcoind| {
+        let name = bitcoind.container_name.split('-').last().unwrap();
+        script_content.push_str(&format!(
+            r#"
+{name}() {{
+    docker-compose -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} bitcoin-cli "$@"
+}}            
+"#,
+    
+            name=name,
+        container_name= bitcoind.container_name, 
+        ));
+        script_content.push_str("\n");
+    });
+    let script_path = "./scripts/container_aliases.sh";
+    let mut file = File::create(script_path)?;
+
+    file.write_all(script_content.as_bytes())?;
+    let mut permissions = file.metadata()?.permissions();
+    permissions.set_mode(0o755);
+    file.set_permissions(permissions)?;
     Ok(())
 }
 
@@ -204,7 +248,6 @@ pub fn generate_ipv4_sequence_in_subnet(
     next_ip
 }
 
-
 fn connect_lnd_nodes(options: &mut Options) -> Result<(), Error> {
     let mut get_a_node = options.lnds.iter();
     options.lnds.iter().for_each(|from_lnd| {
@@ -212,7 +255,13 @@ fn connect_lnd_nodes(options: &mut Options) -> Result<(), Error> {
         if to_lnd.name == from_lnd.name {
             to_lnd = get_a_node.next().unwrap();
         }
-        let node_command = &NodeCommand { name: "connect".to_owned(), from: from_lnd.name.clone(), to: to_lnd.name.clone(), amt: None, subcommand: None };
+        let node_command = &NodeCommand {
+            name: "connect".to_owned(),
+            from: from_lnd.name.clone(),
+            to: to_lnd.name.clone(),
+            amt: None,
+            subcommand: None,
+        };
         connect(options, node_command).unwrap_or_default();
     });
     Ok(())

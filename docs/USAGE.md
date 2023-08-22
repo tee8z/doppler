@@ -46,3 +46,13 @@ ta/chain/bitcoin/regtest/admin.macaroon getinfo`
 MACAROON_HEADER="Grpc-Metadata-macaroon: $(xxd -ps -u -c 1000 /path/to/repo/doppler/data/lnd1/.lnd/data/chain/bitcoin/regtest/admin.macaroon)"
 curl --cacert /path/to/repo/doppler/data/lnd1/.lnd/tls.cert  --header "$MACAROON_HEADER"  https://10.5.0.6:8080/v1/graph
 ```
+
+### To use alias for the containers
+once the cluster as gotten past the `up` command, you'll see this file which contains the aliases and can be run like below
+```
+source ./scripts/container_aliases.sh
+```
+this allows you to call the containers like this:
+```
+lnd1 --help
+```
