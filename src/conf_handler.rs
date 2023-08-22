@@ -33,6 +33,7 @@ pub struct Options {
     pub loop_stack: IndexMap<String, String>,
     global_logger: Logger,
     thread_handlers: Arc<Mutex<Vec<Thread>>>,
+    pub aliases: bool,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -56,7 +57,7 @@ impl ThreadController {
 }
 
 impl Options {
-    pub fn new(logger: Logger) -> Self {
+    pub fn new(logger: Logger, aliases: bool) -> Self {
         let starting_port = vec![9089];
         let starting_ip = "10.5.0.2";
         let cidr = IpNetwork::from_str(starting_ip).unwrap();
@@ -64,7 +65,6 @@ impl Options {
             IpNetwork::V4(cidr_v4) => cidr_v4.network(),
             _ => panic!("Only IPv4 is supported"),
         };
-
         Self {
             bitcoinds: vec::Vec::new(),
             lnds: vec::Vec::new(),
@@ -77,6 +77,7 @@ impl Options {
             loop_stack: indexmap::IndexMap::new(),
             global_logger: logger,
             thread_handlers: Arc::new(Mutex::new(Vec::new())),
+            aliases,
         }
     }
     pub fn global_logger(&self) -> Logger {

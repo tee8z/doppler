@@ -1,11 +1,14 @@
 use crate::{
     build_bitcoind, build_lnd, close_channel, load_options_from_compose, node_mine_bitcoin,
-    open_channel, run_cluster, send_ln, send_on_chain, MinerTime, NodeCommand, NodeKind, Options,
-    Rule,
+    open_channel, run_cluster, send_ln, send_on_chain, DopplerParser, MinerTime, NodeCommand,
+    NodeKind, Options, Rule,
 };
 use anyhow::{Error, Result};
 use indexmap::IndexMap;
-use pest::iterators::{Pair, Pairs};
+use pest::{
+    iterators::{Pair, Pairs},
+    Parser,
+};
 use slog::{debug, error, info};
 use std::{
     io,
@@ -48,8 +51,13 @@ pub fn run_workflow(mut options: Options, parsed: Pair<'_, Rule>) -> Result<(), 
 
 pub fn run_workflow_until_stop(
     options: Options,
-    parsed: Pair<'_, Rule>,
+    contents: std::string::String,
 ) -> Result<(), std::io::Error> {
+    let parsed = DopplerParser::parse(Rule::page, &contents)
+        .expect("parse error")
+        .next()
+        .unwrap();
+
     let main_thread_active = options.clone().main_thread_active.clone();
     let all_threads = options.get_thread_handlers();
     run_workflow(options.clone(), parsed).unwrap();

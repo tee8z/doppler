@@ -24,6 +24,7 @@ The DSL should empower developers to compose a concise script that configures an
 ##### TODO:
 - [ ] support more than LND (should support coreln, eclair, and at least one LDK implementation)
 - [ ] add a UI to each nodes to view in the browser (thunderhub, ride-the-lightning, etc.)
+- [ ] add ability to have mutliple types of images/version and even allow user to use their own custom that aline with these instructions: [out-of-band](https://github.com/jamaljsr/polar/tree/master/docker#out-of-band-image-updates)
 - [ ] make mining in the background optional after funding the lightning nodes
 - [ ] allow to set how many funds individual lightning nodes get at start up (make optional)
 - [ ] BUMP_FEE - need some way to identify the transaction created earlier in the script to bump

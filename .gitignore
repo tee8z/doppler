@@ -3,3 +3,4 @@
 /.vscode
 doppler-cluster.yaml
 /visualizer/config.json
+/scripts/container_aliases.sh
