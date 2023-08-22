@@ -50,7 +50,9 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     setup_lnd_nodes(options, options.global_logger())?;
     mine_initial_blocks(options)?;
     update_visualizer_conf(options)?;
-    update_bash_alias(options)?;
+    if options.aliases {
+        update_bash_alias(options)?;
+    }
     Ok(())
 }
 
@@ -179,7 +181,6 @@ fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
     Ok(())
 }
 
-
 fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
     let mut script_content = String::new();
     script_content.push_str("#!/bin/bash\n\n");
@@ -191,10 +192,10 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
     docker-compose -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} lncli --lnddir=/home/lnd/.lnd --network=regtest --macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon --rpcserver={ip}:10000 "$@"
 }}            
 "#,
-        container_name= lnd.container_name, 
-        name=name, 
+        container_name= lnd.container_name,
+        name=name,
         ip =lnd.ip));
-        script_content.push_str("\n");
+        script_content.push('\n');
     });
     options.bitcoinds.iter().for_each(|bitcoind| {
         let name = bitcoind.container_name.split('-').last().unwrap();
@@ -204,11 +205,10 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
     docker-compose -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} bitcoin-cli "$@"
 }}            
 "#,
-    
-            name=name,
-        container_name= bitcoind.container_name, 
+            name = name,
+            container_name = bitcoind.container_name,
         ));
-        script_content.push_str("\n");
+        script_content.push('\n');
     });
     let script_path = "./scripts/container_aliases.sh";
     let mut file = File::create(script_path)?;
