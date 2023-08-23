@@ -90,6 +90,7 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     //simple wait for docker-compose to spin up
     thread::sleep(Duration::from_secs(6));
     pair_bitcoinds(options)?;
+
     //TODO: make optional to be mining in the background
     start_miners(options)?;
     setup_lnd_nodes(options, options.global_logger())?;
@@ -264,13 +265,20 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
         ));
         script_content.push('\n');
     });
-    let script_path = "./scripts/container_aliases.sh";
-    let mut file = File::create(script_path)?;
-
+    let script_path = "scripts/container_aliases.sh";
+    let full_path = get_absolute_path(script_path)?;
+    let mut file: File = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .truncate(true)
+        .open(full_path.clone())?;
     file.write_all(script_content.as_bytes())?;
+    debug!(options.global_logger(), "wrote aliases script @ {}", full_path.display());
     let mut permissions = file.metadata()?.permissions();
     permissions.set_mode(0o755);
     file.set_permissions(permissions)?;
+    debug!(options.global_logger(), "wrote aliases script");
+
     Ok(())
 }
 

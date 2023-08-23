@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source ../scripts/container_aliases.sh
+source ./scripts/container_aliases.sh
 
 #pubkey open channel to
 customer getinfo | jq -r 'identity_pubkey')
