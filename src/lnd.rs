@@ -1,4 +1,6 @@
-use crate::{copy_file, get_absolute_path, mine_to_address, Bitcoind, Lnd, Options, NETWORK};
+use crate::{
+    copy_file, get_absolute_path, mine_to_address, run_command, Bitcoind, Lnd, Options, NETWORK,
+};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{
@@ -12,7 +14,7 @@ use slog::{debug, error, info, Logger};
 use std::{
     fmt::Debug,
     fs::{File, OpenOptions},
-    process::{Command, Output},
+    process::Output,
     str::from_utf8,
     thread,
     time::Duration,
@@ -79,10 +81,7 @@ pub fn get_lnd_config(
 
     let original = get_absolute_path("config/lnd.conf")?;
     let destination_dir = &format!("data/{}/.lnd", name);
-    let source: File = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(original)?;
+    let source: File = OpenOptions::new().read(true).write(true).open(original)?;
 
     let mut conf = read_to_file_conf(&source)?;
     let mut bitcoind_node = options
@@ -149,7 +148,12 @@ pub fn get_lnds(options: &mut Options) -> Result<()> {
     let compose_path = options.compose_path.clone().unwrap();
     lnds.iter_mut().for_each(|node| {
         let compose_path_clone = compose_path.clone();
-        let result = get_node_info(options.docker_command.clone(), &logger, node, compose_path_clone.clone());
+        let result = get_node_info(
+            options.docker_command.clone(),
+            &logger,
+            node,
+            compose_path_clone.clone(),
+        );
 
         match result {
             Ok(_) => info!(logger, "container: {} found", node.container_name.clone()),
@@ -233,34 +237,37 @@ fn set_application_options_values(conf: &mut FileConf, name: &str, ip: &str) -> 
     Ok(())
 }
 
-pub fn get_node_info(docker_command: String, logger: &Logger, lnd: &mut Lnd, compose_path: String) -> Result<(), Error> {
+pub fn get_node_info(
+    docker_command: String,
+    logger: &Logger,
+    lnd: &mut Lnd,
+    compose_path: String,
+) -> Result<(), Error> {
     let mut output_found = None;
     let mut retries = 3;
     let rpc_command = lnd.get_rpc_server_command();
     let macaroon_path = lnd.get_macaroon_command();
+    let commands = vec![
+        "-f",
+        compose_path.as_ref(),
+        "exec",
+        "--user",
+        "1000:1000",
+        lnd.container_name.as_ref(),
+        "lncli",
+        "--lnddir=/home/lnd/.lnd",
+        "--network=regtest",
+        &macaroon_path,
+        &rpc_command,
+        "getinfo",
+    ];
     while retries > 0 {
-        let command = vec![
-            "-f",
-            compose_path.as_ref(),
-            "exec",
-            "--user",
-            "1000:1000",
-            lnd.container_name.as_ref(),
-            "lncli",
-            "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            &macaroon_path,
-            &rpc_command,
-            "getinfo",
-        ];
-        info!(
+        let output = run_command(
             logger,
-            "container: {} command (pubkey): `{} {}`",
-            lnd.container_name.clone(),
             docker_command.clone(),
-            command.join(" ")
-        );
-        let output = Command::new(docker_command.clone()).args(command).output()?;
+            "pubkey".to_owned(),
+            commands.clone(),
+        )?;
         if from_utf8(&output.stderr)?.contains("not running") {
             debug!(logger, "trying to get pubkey again");
             thread::sleep(Duration::from_secs(1));
@@ -278,12 +285,6 @@ pub fn get_node_info(docker_command: String, logger: &Logger, lnd: &mut Lnd, com
             error!(logger, "no pubkey found");
         }
     }
-    debug!(
-        logger,
-        "output.stdout: {}, output.stderr: {}",
-        from_utf8(&output.stdout)?,
-        from_utf8(&output.stderr)?
-    );
     Ok(())
 }
 
@@ -294,8 +295,8 @@ pub fn fund_node(
     miner: &Bitcoind,
     compose_path: String,
 ) -> Result<(), Error> {
-    create_lnd_wallet(logger,docker_command.clone(), lnd, compose_path.clone())?;
-    let address = create_lnd_address(logger, docker_command.clone(),lnd, compose_path.clone())?;
+    create_lnd_wallet(logger, docker_command.clone(), lnd, compose_path.clone())?;
+    let address = create_lnd_address(logger, docker_command.clone(), lnd, compose_path.clone())?;
     mine_to_address(
         logger,
         docker_command,
@@ -304,7 +305,7 @@ pub fn fund_node(
         miner.data_dir.clone(),
         2,
         address,
-    );
+    )?;
     Ok(())
 }
 
@@ -316,7 +317,7 @@ pub fn create_lnd_wallet(
 ) -> Result<(), Error> {
     let rpc_command = lnd.get_rpc_server_command();
     let macaroon_path = lnd.get_macaroon_command();
-    let command = vec![
+    let commands = vec![
         "-f",
         compose_path.as_ref(),
         "exec",
@@ -330,24 +331,10 @@ pub fn create_lnd_wallet(
         &rpc_command,
         "createwallet",
     ];
-    info!(
-        logger,
-        "container: {} command (createwallet): `{} {}`",
-        lnd.container_name.clone(),
-        docker_command,
-        command.join(" ")
-    );
-    let output = Command::new( docker_command).args(command).output()?;
-
+    let output = run_command(logger, docker_command, "createwallet".to_owned(), commands)?;
     if output.status.success() {
         let _response: Value = from_slice(&output.stdout).expect("failed to parse JSON");
     }
-    debug!(
-        logger,
-        "output.stdout: {}, output.stderr: {}",
-        from_utf8(&output.stdout)?,
-        from_utf8(&output.stderr)?
-    );
     Ok(())
 }
 
@@ -359,7 +346,7 @@ pub fn create_lnd_address(
 ) -> Result<String, Error> {
     let rpc_command = lnd.get_rpc_server_command();
     let macaroon_path = lnd.get_macaroon_command();
-    let command = vec![
+    let commands = vec![
         "-f",
         compose_path.as_ref(),
         "exec",
@@ -374,25 +361,11 @@ pub fn create_lnd_address(
         "newaddress",
         "p2tr", // TODO: set as a taproot address by default, make this configurable
     ];
-    info!(
-        logger,
-        "container: {} command (newaddress): `{} {}`",
-        lnd.container_name.clone(),
-        docker_command,
-        command.join(" ")
-    );
-    let output = Command::new(docker_command).args(command).output()?;
+    let output = run_command(logger, docker_command, "newaddress".to_owned(), commands)?;
     let found_address: Option<String> = get_property("address", output.clone());
     if found_address.is_none() {
         error!(logger, "no addess found");
     }
-    debug!(
-        logger,
-        "output.stdout: {}, output.stderr: {}",
-        from_utf8(&output.stdout)?,
-        from_utf8(&output.stderr)?
-    );
-
     Ok(found_address.unwrap())
 }
 
@@ -412,7 +385,7 @@ pub fn open_channel(options: &Options, node_command: &NodeCommand) -> Result<(),
     let amt = node_command.amt.unwrap_or(100000).to_string();
     let rpc_command = from_lnd.get_rpc_server_command();
     let macaroon_path = from_lnd.get_macaroon_command();
-    let command = vec![
+    let commands = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
@@ -428,15 +401,12 @@ pub fn open_channel(options: &Options, node_command: &NodeCommand) -> Result<(),
         to_lnd.pubkey.as_ref().unwrap().as_ref(),
         amt.as_ref(),
     ];
-    info!(
-        options.global_logger(),
-        "container: {} command (open_channel): `{} {}`",
-        from_lnd.container_name.clone(),
-        options.docker_command,
-        command.join(" ")
-    );
-    let output = Command::new(options.docker_command.clone()).args(command).output()?;
-
+    let output = run_command(
+        &options.global_logger(),
+        options.docker_command.clone(),
+        "openchannel".to_owned(),
+        commands,
+    )?;
     if output.status.success() {
         info!(
             options.global_logger(),
@@ -448,12 +418,6 @@ pub fn open_channel(options: &Options, node_command: &NodeCommand) -> Result<(),
             "failed to open channel from {} to {}", from_lnd.name, to_lnd.name
         );
     }
-    debug!(
-        options.global_logger(),
-        "output.stdout: {}, output.stderr: {}",
-        from_utf8(&output.stdout)?,
-        from_utf8(&output.stderr)?
-    );
     Ok(())
 }
 
@@ -463,7 +427,7 @@ pub fn connect(options: &Options, node_command: &NodeCommand) -> Result<(), Erro
     let connection_url = to_lnd.get_connection_url();
     let rpc_command = from_lnd.get_rpc_server_command();
     let macaroon_path = from_lnd.get_macaroon_command();
-    let command = vec![
+    let commands = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
@@ -478,14 +442,12 @@ pub fn connect(options: &Options, node_command: &NodeCommand) -> Result<(), Erro
         "connect",
         connection_url.as_ref(),
     ];
-    info!(
-        options.global_logger(),
-        "container: {} command (connect): `{} {}`",
-        from_lnd.container_name.clone(),
-        options.docker_command,
-        command.join(" ")
-    );
-    let output = Command::new(options.docker_command.clone()).args(command).output()?;
+    let output = run_command(
+        &options.global_logger(),
+        options.docker_command.clone(),
+        "connect".to_owned(),
+        commands,
+    )?;
 
     if output.status.success() || from_utf8(&output.stderr)?.contains("already connected to peer") {
         info!(
@@ -498,12 +460,6 @@ pub fn connect(options: &Options, node_command: &NodeCommand) -> Result<(), Erro
             "failed to connect from {} to {}", from_lnd.name, to_lnd.name
         );
     }
-    debug!(
-        options.global_logger(),
-        "output.stdout: {}, output.stderr: {}",
-        from_utf8(&output.stdout)?,
-        from_utf8(&output.stderr)?
-    );
     Ok(())
 }
 
@@ -513,7 +469,7 @@ pub fn close_channel(options: &Options, node_command: &NodeCommand) -> Result<()
     let to_lnd: &Lnd = get_lnd_by_name(options, node_command.to.as_str())?;
     let rpc_command = from_lnd.get_rpc_server_command();
     let macaroon_path = from_lnd.get_macaroon_command();
-    let command = vec![
+    let commands = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
@@ -529,14 +485,12 @@ pub fn close_channel(options: &Options, node_command: &NodeCommand) -> Result<()
         "--chan_point",
         peer_channel_point.as_ref(),
     ];
-    info!(
-        options.global_logger(),
-        "container: {} command (close_channel): `{} {}`",
-        from_lnd.container_name.clone(),
-        options.docker_command,
-        command.join(" ")
-    );
-    let output = Command::new(options.docker_command.clone()).args(command).output()?;
+    let output = run_command(
+        &options.global_logger(),
+        options.docker_command.clone(),
+        "closechannel".to_owned(),
+        commands,
+    )?;
 
     if output.status.success() {
         info!(
@@ -549,12 +503,6 @@ pub fn close_channel(options: &Options, node_command: &NodeCommand) -> Result<()
             "failed to close channel from {} to {}", from_lnd.name, to_lnd.name
         );
     }
-    debug!(
-        options.global_logger(),
-        "output.stdout: {}, output.stderr: {}",
-        from_utf8(&output.stdout)?,
-        from_utf8(&output.stderr)?
-    );
     Ok(())
 }
 
@@ -563,7 +511,7 @@ pub fn get_peers_channels(options: &Options, node_command: &NodeCommand) -> Resu
     let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
     let rpc_command = from_lnd.get_rpc_server_command();
     let macaroon_path = from_lnd.get_macaroon_command();
-    let command = vec![
+    let commands = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
@@ -579,21 +527,12 @@ pub fn get_peers_channels(options: &Options, node_command: &NodeCommand) -> Resu
         "--peer",
         to_lnd.pubkey.as_ref().unwrap().as_ref(),
     ];
-    info!(
-        options.global_logger(),
-        "container: {} command (list_channels): `{} {}`",
-        from_lnd.container_name.clone(),
-        options.docker_command,
-        command.join(" ")
-    );
-    let output = Command::new(options.docker_command.clone()).args(command).output()?;
-
-    debug!(
-        options.global_logger(),
-        "output.stdout: {}, output.stderr: {}",
-        from_utf8(&output.stdout)?,
-        from_utf8(&output.stderr)?
-    );
+    let output = run_command(
+        &options.global_logger(),
+        options.docker_command.clone(),
+        "listchannels".to_owned(),
+        commands,
+    )?;
     let channel_point = get_array_property("channels", "channel_point", output);
     if channel_point.is_none() {
         return Err(anyhow!("no channel point found!"));
@@ -755,12 +694,11 @@ fn generate_memo() -> String {
 
 pub fn create_invoice(options: &mut Options, node_command: &NodeCommand) -> Result<String, Error> {
     let to_lnd = get_lnd_by_name(options, node_command.to.as_str())?;
-    let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
     let amt = node_command.amt.unwrap_or(1000).to_string();
     let memo = generate_memo();
     let rpc_command = to_lnd.get_rpc_server_command();
     let macaroon_path = to_lnd.get_macaroon_command();
-    let command = vec![
+    let commands = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
@@ -778,24 +716,16 @@ pub fn create_invoice(options: &mut Options, node_command: &NodeCommand) -> Resu
         "--amt",
         amt.as_ref(),
     ];
-    info!(
-        options.global_logger(),
-        "container: {} command (addinvoice): `{} {}`",
-        from_lnd.container_name.clone(),
-        options.docker_command,
-        command.join(" ")
-    );
-    let output = Command::new(options.docker_command.clone()).args(command).output()?;
+    let output = run_command(
+        &options.global_logger(),
+        options.docker_command.clone(),
+        "addinvoice".to_owned(),
+        commands,
+    )?;
     let found_payment_request: Option<String> = get_property("payment_request", output.clone());
     if found_payment_request.is_none() {
         error!(options.global_logger(), "no payment hash found");
     }
-    debug!(
-        options.global_logger(),
-        "output.stdout: {}, output.stderr: {}",
-        from_utf8(&output.stdout)?,
-        from_utf8(&output.stderr)?
-    );
     Ok(found_payment_request.unwrap())
 }
 
@@ -807,7 +737,7 @@ pub fn pay_invoice(
     let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
     let rpc_command = from_lnd.get_rpc_server_command();
     let macaroon_path = from_lnd.get_macaroon_command();
-    let command = vec![
+    let commands = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
@@ -823,14 +753,12 @@ pub fn pay_invoice(
         "-f",
         payment_request.as_ref(),
     ];
-    info!(
-        options.global_logger(),
-        "container: {} command (payinvoice): `{} {}`",
-        options.docker_command,
-        from_lnd.container_name.clone(),
-        command.join(" ")
-    );
-    let output = Command::new(options.docker_command.clone()).args(command).output()?;
+    let output = run_command(
+        &options.global_logger(),
+        options.docker_command.clone(),
+        "payinvoice".to_owned(),
+        commands,
+    )?;
     if !output.status.success() {
         error!(
             options.global_logger(),
@@ -903,7 +831,7 @@ pub fn create_on_chain_address(
     let to_lnd: &Lnd = get_lnd_by_name(options, node_command.to.as_str())?;
     let rpc_command = to_lnd.get_rpc_server_command();
     let macaroon_path = to_lnd.get_macaroon_command();
-    let command = vec![
+    let commands = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
@@ -918,14 +846,12 @@ pub fn create_on_chain_address(
         "newaddress",
         "p2tr", //TODO: allow for other types beside taproot addresses
     ];
-    info!(
-        options.global_logger(),
-        "container: {} command (newaddress): `{} {}`",
-        to_lnd.container_name.clone(),
-        options.docker_command,
-        command.join(" ")
-    );
-    let output = Command::new(options.docker_command.clone()).args(command).output()?;
+    let output = run_command(
+        &options.global_logger(),
+        options.docker_command.clone(),
+        "newaddress".to_owned(),
+        commands,
+    )?;
     let found_address: Option<String> = get_property("address", output.clone());
     if found_address.is_none() {
         error!(options.global_logger(), "no on chain address found");
@@ -945,12 +871,11 @@ pub fn pay_address(
     address: &str,
 ) -> Result<String, Error> {
     let to_lnd = get_lnd_by_name(options, node_command.to.as_str())?;
-    let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
     let amt = node_command.amt.unwrap_or(1000).to_string();
     let subcommand = node_command.subcommand.to_owned().unwrap_or("".to_owned());
     let rpc_command = to_lnd.get_rpc_server_command();
     let macaroon_path = to_lnd.get_macaroon_command();
-    let command = vec![
+    let commands = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "exec",
@@ -969,20 +894,12 @@ pub fn pay_address(
         "--amt",
         amt.as_ref(),
     ];
-    info!(
-        options.global_logger(),
-        "container: {} command (sendcoins): `{} {}`",
-        from_lnd.container_name.clone(),
-        options.docker_command,
-        command.join(" ")
-    );
-    let output = Command::new(options.docker_command.clone()).args(command).output()?;
-    debug!(
-        options.global_logger(),
-        "output.stdout: {}, output.stderr: {}",
-        from_utf8(&output.stdout)?,
-        from_utf8(&output.stderr)?
-    );
+    let output = run_command(
+        &options.global_logger(),
+        options.docker_command.clone(),
+        "sendcoins".to_owned(),
+        commands,
+    )?;
     let found_tx_id: Option<String> = get_property("txid", output.clone());
     if found_tx_id.is_none() {
         error!(options.global_logger(), "no tx id found");

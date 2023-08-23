@@ -4,7 +4,7 @@ use conf_parser::processer::FileConf;
 use docker_compose_types::{Compose, ComposeNetworks, Ipam, MapOrEmpty, Service, Services};
 use indexmap::map::IndexMap;
 use ipnetwork::IpNetwork;
-use slog::{error, Logger, debug};
+use slog::{debug, error, Logger};
 use std::{
     fs::{create_dir_all, OpenOptions},
     io::{self, ErrorKind, Read, Write},
@@ -38,12 +38,13 @@ pub struct Script {
     pub shell_type: Option<ShellType>,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+#[derive(Default, Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum ShellType {
     ZSH,
     KSH,
     CSH,
     SH,
+    #[default]
     BASH,
 }
 
@@ -56,12 +57,6 @@ impl std::fmt::Display for ShellType {
             ShellType::SH => write!(f, "#!/bin/sh"),
             ShellType::BASH => write!(f, "#!/bin/bash"),
         }
-    }
-}
-
-impl Default for ShellType {
-    fn default() -> Self {
-        ShellType::BASH
     }
 }
 
@@ -117,15 +112,19 @@ impl Options {
             _ => panic!("Only IPv4 is supported"),
         };
         let (aliases, shell_type) = if app_sub_commands.is_some() {
-            let AppSubCommands::DetailedCommand(sub_commands) = app_sub_commands.unwrap();
-            (sub_commands.aliases, sub_commands.shell_type)
+            {}
+            if let Some(AppSubCommands::DetailedCommand(sub_commands)) = app_sub_commands {
+                (sub_commands.aliases, sub_commands.shell_type)
+            } else {
+                (true, Some(ShellType::default()))
+            }
         } else {
             (true, Some(ShellType::default()))
         };
         let docker_command = if docker_dash {
             "docker-compose"
         } else {
-            "docker compose"
+            "docker"
         };
         Self {
             bitcoinds: vec::Vec::new(),
@@ -179,7 +178,11 @@ impl Options {
     ) -> Result<(), io::Error> {
         let full_path =
             get_absolute_path(file_path).map_err(|e| io::Error::new(ErrorKind::NotFound, e))?;
-        debug!(self.global_logger(),"path to new compose: {}", full_path.display());
+        debug!(
+            self.global_logger(),
+            "path to new compose: {}",
+            full_path.display()
+        );
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -216,7 +219,12 @@ impl Options {
             Ok(s) => s,
             Err(e) => panic!("Failed to serialize {} file: {}", docker_command, e),
         };
-        file.write_all(serialized.as_bytes()).map_err(|e| io::Error::new(ErrorKind::NotFound, format!("failed to write new docker compose file: {}", e)))?;
+        file.write_all(serialized.as_bytes()).map_err(|e| {
+            io::Error::new(
+                ErrorKind::NotFound,
+                format!("failed to write new docker compose file: {}", e),
+            )
+        })?;
         Ok(())
     }
 

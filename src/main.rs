@@ -1,6 +1,6 @@
-use clap::{arg, command, Parser };
-use doppler::{run_workflow_until_stop, Options, AppSubCommands, get_absolute_path};
-use slog::{info, o, Drain, Level, Logger, debug};
+use clap::{arg, command, Parser};
+use doppler::{get_absolute_path, run_workflow_until_stop, AppSubCommands, Options};
+use slog::{debug, info, o, Drain, Level, Logger};
 use std::{env, fs, io::Error, path::PathBuf};
 
 #[derive(Parser)]
@@ -16,7 +16,7 @@ pub struct Cli {
     /// Set docker compose command with/without '-'
     #[arg(short, long)]
     docker_dash: bool,
-    
+
     #[command(subcommand)]
     app_sub_commands: Option<AppSubCommands>,
 }
