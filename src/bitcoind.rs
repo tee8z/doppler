@@ -1,4 +1,6 @@
-use crate::{copy_file, get_absolute_path, Bitcoind, Options, ThreadController, NETWORK};
+use crate::{
+    copy_file, get_absolute_path, run_command, Bitcoind, Options, ThreadController, NETWORK,
+};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
 use docker_compose_types::{
@@ -6,8 +8,14 @@ use docker_compose_types::{
     Volumes,
 };
 use indexmap::IndexMap;
-use slog::{debug, error, info, Logger};
-use std::{fs::{File, OpenOptions}, process, str::from_utf8, thread, thread::spawn, time::Duration};
+use slog::{error, Logger};
+use std::{
+    fs::{File, OpenOptions},
+    str::from_utf8,
+    thread,
+    thread::spawn,
+    time::Duration,
+};
 
 const BITCOIND_IMAGE: &str = "polarlightning/bitcoind:25.0";
 
@@ -360,7 +368,7 @@ pub fn mine_bitcoin(
         datadir,
         num_blocks,
         address.to_owned(),
-    );
+    )?;
 
     Ok(address)
 }
@@ -399,7 +407,7 @@ pub fn create_wallet(
 ) -> Result<(), Error> {
     let datadir_flag = &format!("--datadir={}", datadir);
 
-    let command = vec![
+    let commands = vec![
         "-f",
         compose_path.as_ref(),
         "exec",
@@ -411,19 +419,10 @@ pub fn create_wallet(
         "createwallet",
         container_name.as_ref(),
     ];
-    info!(
-        logger,
-        "container: {} command (create wallet): `{} {}`",
-        container_name,
-        docker_command,
-        command.join(" ")
-    );
 
-    let output = process::Command::new(docker_command)
-        .args(command)
-        .output()?;
+    let output = run_command(logger, docker_command, "create wallet".to_owned(), commands)?;
     if !output.status.success() {
-        return Err(anyhow!("failed to create new address"));
+        error!(logger, "failed to create new address");
     }
     Ok(())
 }
@@ -438,7 +437,7 @@ pub fn create_address(
     let rpcwallet_flag = &format!("-rpcwallet={}", container_name);
     let datadir_flag = &format!("--datadir={}", datadir);
 
-    let command = vec![
+    let commands = vec![
         "-f",
         compose_path.as_ref(),
         "exec",
@@ -450,17 +449,7 @@ pub fn create_address(
         datadir_flag,
         "getnewaddress",
     ];
-    info!(
-        logger,
-        "container: {} command (create address): `{} {}`",
-        container_name,
-        docker_command,
-        command.join(" ")
-    );
-
-    let mut output = process::Command::new(docker_command)
-        .args(command)
-        .output()?;
+    let mut output = run_command(logger, docker_command, "getnewaddress".to_owned(), commands)?;
     if !output.status.success() {
         return Err(anyhow!("failed to create new address"));
     }
@@ -478,10 +467,10 @@ pub fn mine_to_address(
     datadir: String,
     num_blocks: i64,
     address: String,
-) {
+) -> Result<(), Error> {
     let datadir_flag = &format!("--datadir={}", datadir);
     let block_arg = &num_blocks.to_string();
-    let command = vec![
+    let commands = vec![
         "-f",
         compose_path.as_ref(),
         "exec",
@@ -494,18 +483,7 @@ pub fn mine_to_address(
         block_arg,
         &address,
     ];
-    info!(
-        logger,
-        "container: {} command (mine to address): `{} {}`",
-        container_name,
-        docker_command,
-        command.join(" ")
-    );
-
-    let output = process::Command::new(docker_command)
-        .args(command)
-        .output()
-        .unwrap();
+    let output = run_command(logger, docker_command, "getnewaddress".to_owned(), commands)?;
     if !output.status.success() {
         error!(
             logger,
@@ -514,6 +492,7 @@ pub fn mine_to_address(
             from_utf8(&output.stderr).unwrap().to_owned()
         );
     }
+    Ok(())
 }
 
 pub fn add_nodes(
@@ -525,7 +504,7 @@ pub fn add_nodes(
     let datadir_flag = &format!("--datadir={}", current_node.clone().data_dir);
     for node in nodes.iter() {
         let current_node_clone = current_node.clone();
-        let command = vec![
+        let commands = vec![
             "-f",
             compose_path.as_ref(),
             "exec",
@@ -538,23 +517,12 @@ pub fn add_nodes(
             node,
             r#"add"#,
         ];
-        info!(
-            options.global_logger(),
-            "container: {} command (addnode): `{} {}`",
-            compose_path,
-            options.docker_command,
-            command.join(" ")
-        );
-
-        let output = process::Command::new(options.docker_command.clone())
-            .args(command)
-            .output()?;
-        debug!(
-            options.global_logger(),
-            "output.stdout: {}, output.stderr: {}",
-            from_utf8(&output.stdout)?,
-            from_utf8(&output.stderr)?
-        );
+        run_command(
+            &options.global_logger(),
+            options.docker_command.clone(),
+            "addnode".to_owned(),
+            commands,
+        )?;
     }
 
     Ok(())

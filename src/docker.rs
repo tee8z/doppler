@@ -11,7 +11,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::Ipv4Addr;
 use std::os::unix::prelude::PermissionsExt;
-use std::process::Command;
+use std::process::{Command, Output};
 use std::str::{from_utf8, FromStr};
 use std::thread;
 use std::time::Duration;
@@ -22,7 +22,10 @@ pub const SUBNET: &str = "10.5.0.0/16";
 pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> Result<(), Error> {
     options.compose_path = Some(compose_path.clone().to_owned());
     options.load_compose()?;
-    debug!(options.global_logger(), "loaded {} file", options.docker_command);
+    debug!(
+        options.global_logger(),
+        "loaded {} file", options.docker_command
+    );
     get_bitcoinds(options)?;
     debug!(options.global_logger(), "loaded bitcoinds");
     get_lnds(options)?;
@@ -30,17 +33,57 @@ pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> R
     Ok(())
 }
 
+pub fn add_commands(docker_command: String, additional_commands: Vec<&str>) -> Vec<&str> {
+    let mut commands = vec![];
+    if !docker_command.contains('-') {
+        commands.push("compose");
+    }
+
+    commands.extend(additional_commands);
+    commands
+}
+
+pub fn run_command(
+    logger: &Logger,
+    docker_command: String,
+    command_name: String,
+    commands: Vec<&str>,
+) -> Result<Output, Error> {
+    let commands = add_commands(docker_command.clone(), commands);
+
+    info!(
+        logger,
+        "({}): {} {}",
+        command_name,
+        docker_command,
+        commands.clone().join(" "),
+    );
+    let output = Command::new(docker_command.clone())
+        .args(commands)
+        .output()?;
+
+    debug!(
+        logger,
+        "output.stdout: {}, output.stderr: {}",
+        from_utf8(&output.stdout)?,
+        from_utf8(&output.stderr)?
+    );
+    Ok(output)
+}
+
 pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Error> {
     options.compose_path = Some(compose_path.to_owned());
 
-    options.save_compose(options.docker_command.clone(), compose_path).map_err(|err| {
-        anyhow!(
-            "Failed to save {} file @ {}: {}",
-            options.docker_command,
-            compose_path,
-            err
-        )
-    })?;
+    options
+        .save_compose(options.docker_command.clone(), compose_path)
+        .map_err(|err| {
+            anyhow!(
+                "Failed to save {} file @ {}: {}",
+                options.docker_command,
+                compose_path,
+                err
+            )
+        })?;
     debug!(options.global_logger(), "saved cluster config");
     start_docker_compose(options)?;
     debug!(options.global_logger(), "started cluster");
@@ -59,21 +102,18 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
 }
 
 fn start_docker_compose(options: &mut Options) -> Result<(), Error> {
-    let output = Command::new(options.docker_command.clone())
-        .args([
-            "-f",
-            options.compose_path.as_ref().unwrap().as_ref(),
-            "up",
-            "-d",
-        ])
-        .output()?;
-    debug!(options.global_logger(), "here");
-    debug!(
-        options.global_logger(),
-        "output.stdout: {}, output.stderr: {}",
-        from_utf8(&output.stdout)?,
-        from_utf8(&output.stderr)?
-    );
+    let commands: Vec<&str> = vec![
+        "-f",
+        options.compose_path.as_ref().unwrap().as_ref(),
+        "up",
+        "-d",
+    ];
+    run_command(
+        &options.global_logger(),
+        options.docker_command.clone(),
+        "start up".to_owned(),
+        commands,
+    )?;
     Ok(())
 }
 fn start_miners(options: &mut Options) -> Result<(), Error> {
@@ -128,7 +168,13 @@ fn setup_lnd_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
 
     options.lnds.iter_mut().for_each(|node| {
         let compose_path_clone = compose_path.clone();
-        let result = get_node_info(docker_command.clone(), &logger, node, compose_path_clone.clone()).and_then(|_| {
+        let result = get_node_info(
+            docker_command.clone(),
+            &logger,
+            node,
+            compose_path_clone.clone(),
+        )
+        .and_then(|_| {
             info!(
                 logger,
                 "container: {} pubkey: {}",
