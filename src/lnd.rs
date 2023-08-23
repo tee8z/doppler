@@ -11,7 +11,7 @@ use serde_yaml::{from_slice, Value};
 use slog::{debug, error, info, Logger};
 use std::{
     fmt::Debug,
-    fs::File,
+    fs::{File, OpenOptions},
     process::{Command, Output},
     str::from_utf8,
     thread,
@@ -79,7 +79,10 @@ pub fn get_lnd_config(
 
     let original = get_absolute_path("config/lnd.conf")?;
     let destination_dir = &format!("data/{}/.lnd", name);
-    let source: File = File::open(original)?;
+    let source: File = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(original)?;
 
     let mut conf = read_to_file_conf(&source)?;
     let mut bitcoind_node = options
@@ -146,7 +149,7 @@ pub fn get_lnds(options: &mut Options) -> Result<()> {
     let compose_path = options.compose_path.clone().unwrap();
     lnds.iter_mut().for_each(|node| {
         let compose_path_clone = compose_path.clone();
-        let result = get_node_info(&logger, node, compose_path_clone.clone());
+        let result = get_node_info(options.docker_command.clone(), &logger, node, compose_path_clone.clone());
 
         match result {
             Ok(_) => info!(logger, "container: {} found", node.container_name.clone()),
@@ -230,7 +233,7 @@ fn set_application_options_values(conf: &mut FileConf, name: &str, ip: &str) -> 
     Ok(())
 }
 
-pub fn get_node_info(logger: &Logger, lnd: &mut Lnd, compose_path: String) -> Result<(), Error> {
+pub fn get_node_info(docker_command: String, logger: &Logger, lnd: &mut Lnd, compose_path: String) -> Result<(), Error> {
     let mut output_found = None;
     let mut retries = 3;
     let rpc_command = lnd.get_rpc_server_command();
@@ -252,11 +255,12 @@ pub fn get_node_info(logger: &Logger, lnd: &mut Lnd, compose_path: String) -> Re
         ];
         info!(
             logger,
-            "container: {} command (pubkey): `docker-compose {}`",
+            "container: {} command (pubkey): `{} {}`",
             lnd.container_name.clone(),
+            docker_command.clone(),
             command.join(" ")
         );
-        let output = Command::new("docker-compose").args(command).output()?;
+        let output = Command::new(docker_command.clone()).args(command).output()?;
         if from_utf8(&output.stderr)?.contains("not running") {
             debug!(logger, "trying to get pubkey again");
             thread::sleep(Duration::from_secs(1));
@@ -284,15 +288,17 @@ pub fn get_node_info(logger: &Logger, lnd: &mut Lnd, compose_path: String) -> Re
 }
 
 pub fn fund_node(
+    docker_command: String,
     logger: &Logger,
     lnd: &mut Lnd,
     miner: &Bitcoind,
     compose_path: String,
 ) -> Result<(), Error> {
-    create_lnd_wallet(logger, lnd, compose_path.clone())?;
-    let address = create_lnd_address(logger, lnd, compose_path.clone())?;
+    create_lnd_wallet(logger,docker_command.clone(), lnd, compose_path.clone())?;
+    let address = create_lnd_address(logger, docker_command.clone(),lnd, compose_path.clone())?;
     mine_to_address(
         logger,
+        docker_command,
         compose_path,
         miner.container_name.clone(),
         miner.data_dir.clone(),
@@ -304,6 +310,7 @@ pub fn fund_node(
 
 pub fn create_lnd_wallet(
     logger: &Logger,
+    docker_command: String,
     lnd: &mut Lnd,
     compose_path: String,
 ) -> Result<(), Error> {
@@ -325,11 +332,12 @@ pub fn create_lnd_wallet(
     ];
     info!(
         logger,
-        "container: {} command (createwallet): `docker-compose {}`",
+        "container: {} command (createwallet): `{} {}`",
         lnd.container_name.clone(),
+        docker_command,
         command.join(" ")
     );
-    let output = Command::new("docker-compose").args(command).output()?;
+    let output = Command::new( docker_command).args(command).output()?;
 
     if output.status.success() {
         let _response: Value = from_slice(&output.stdout).expect("failed to parse JSON");
@@ -345,6 +353,7 @@ pub fn create_lnd_wallet(
 
 pub fn create_lnd_address(
     logger: &Logger,
+    docker_command: String,
     lnd: &mut Lnd,
     compose_path: String,
 ) -> Result<String, Error> {
@@ -367,11 +376,12 @@ pub fn create_lnd_address(
     ];
     info!(
         logger,
-        "container: {} command (newaddress): `docker-compose {}`",
+        "container: {} command (newaddress): `{} {}`",
         lnd.container_name.clone(),
+        docker_command,
         command.join(" ")
     );
-    let output = Command::new("docker-compose").args(command).output()?;
+    let output = Command::new(docker_command).args(command).output()?;
     let found_address: Option<String> = get_property("address", output.clone());
     if found_address.is_none() {
         error!(logger, "no addess found");
@@ -420,11 +430,12 @@ pub fn open_channel(options: &Options, node_command: &NodeCommand) -> Result<(),
     ];
     info!(
         options.global_logger(),
-        "container: {} command (open_channel): `docker-compose {}`",
+        "container: {} command (open_channel): `{} {}`",
         from_lnd.container_name.clone(),
+        options.docker_command,
         command.join(" ")
     );
-    let output = Command::new("docker-compose").args(command).output()?;
+    let output = Command::new(options.docker_command.clone()).args(command).output()?;
 
     if output.status.success() {
         info!(
@@ -469,11 +480,12 @@ pub fn connect(options: &Options, node_command: &NodeCommand) -> Result<(), Erro
     ];
     info!(
         options.global_logger(),
-        "container: {} command (connect): `docker-compose {}`",
+        "container: {} command (connect): `{} {}`",
         from_lnd.container_name.clone(),
+        options.docker_command,
         command.join(" ")
     );
-    let output = Command::new("docker-compose").args(command).output()?;
+    let output = Command::new(options.docker_command.clone()).args(command).output()?;
 
     if output.status.success() || from_utf8(&output.stderr)?.contains("already connected to peer") {
         info!(
@@ -519,11 +531,12 @@ pub fn close_channel(options: &Options, node_command: &NodeCommand) -> Result<()
     ];
     info!(
         options.global_logger(),
-        "container: {} command (close_channel): `docker-compose {}`",
+        "container: {} command (close_channel): `{} {}`",
         from_lnd.container_name.clone(),
+        options.docker_command,
         command.join(" ")
     );
-    let output = Command::new("docker-compose").args(command).output()?;
+    let output = Command::new(options.docker_command.clone()).args(command).output()?;
 
     if output.status.success() {
         info!(
@@ -568,11 +581,12 @@ pub fn get_peers_channels(options: &Options, node_command: &NodeCommand) -> Resu
     ];
     info!(
         options.global_logger(),
-        "container: {} command (list_channels): `docker-compose {}`",
+        "container: {} command (list_channels): `{} {}`",
         from_lnd.container_name.clone(),
+        options.docker_command,
         command.join(" ")
     );
-    let output = Command::new("docker-compose").args(command).output()?;
+    let output = Command::new(options.docker_command.clone()).args(command).output()?;
 
     debug!(
         options.global_logger(),
@@ -766,11 +780,12 @@ pub fn create_invoice(options: &mut Options, node_command: &NodeCommand) -> Resu
     ];
     info!(
         options.global_logger(),
-        "container: {} command (addinvoice): `docker-compose {}`",
+        "container: {} command (addinvoice): `{} {}`",
         from_lnd.container_name.clone(),
+        options.docker_command,
         command.join(" ")
     );
-    let output = Command::new("docker-compose").args(command).output()?;
+    let output = Command::new(options.docker_command.clone()).args(command).output()?;
     let found_payment_request: Option<String> = get_property("payment_request", output.clone());
     if found_payment_request.is_none() {
         error!(options.global_logger(), "no payment hash found");
@@ -810,11 +825,12 @@ pub fn pay_invoice(
     ];
     info!(
         options.global_logger(),
-        "container: {} command (payinvoice): `docker-compose {}`",
+        "container: {} command (payinvoice): `{} {}`",
+        options.docker_command,
         from_lnd.container_name.clone(),
         command.join(" ")
     );
-    let output = Command::new("docker-compose").args(command).output()?;
+    let output = Command::new(options.docker_command.clone()).args(command).output()?;
     if !output.status.success() {
         error!(
             options.global_logger(),
@@ -904,11 +920,12 @@ pub fn create_on_chain_address(
     ];
     info!(
         options.global_logger(),
-        "container: {} command (newaddress): `docker-compose {}`",
+        "container: {} command (newaddress): `{} {}`",
         to_lnd.container_name.clone(),
+        options.docker_command,
         command.join(" ")
     );
-    let output = Command::new("docker-compose").args(command).output()?;
+    let output = Command::new(options.docker_command.clone()).args(command).output()?;
     let found_address: Option<String> = get_property("address", output.clone());
     if found_address.is_none() {
         error!(options.global_logger(), "no on chain address found");
@@ -954,11 +971,12 @@ pub fn pay_address(
     ];
     info!(
         options.global_logger(),
-        "container: {} command (sendcoins): `docker-compose {}`",
+        "container: {} command (sendcoins): `{} {}`",
         from_lnd.container_name.clone(),
+        options.docker_command,
         command.join(" ")
     );
-    let output = Command::new("docker-compose").args(command).output()?;
+    let output = Command::new(options.docker_command.clone()).args(command).output()?;
     debug!(
         options.global_logger(),
         "output.stdout: {}, output.stderr: {}",

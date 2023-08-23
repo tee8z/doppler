@@ -1,6 +1,6 @@
 ### How to run
 ```
-cargo run --bin doppler -- -f "./doppler_files/only_setup_network.doppler"
+cargo run --bin doppler -- -f "doppler_files/only_setup_network.doppler" -d
 ```
 - add a new .doppler file to create the cluster how you want
 - examples of the possible valid grammar for the doppler files can be found in [doppler_files](../doppler_files/)
@@ -50,7 +50,7 @@ curl --cacert /path/to/repo/doppler/data/lnd1/.lnd/tls.cert  --header "$MACAROON
 ### To use alias for the containers
 run the doppler with the following flag `-a` in one of the files that sets up the network
 ```
-cargo run --bin doppler -- -f "./doppler_files/only_setup_network.doppler" -a -l "debug"
+cargo run --bin doppler -- -f "doppler_files/only_setup_network.doppler" -a -l "debug" -d
 ```
 once the cluster as gotten past the `up` command, you'll see a new file which contains the aliases and can be run like below
 ```

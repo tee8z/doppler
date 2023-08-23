@@ -7,7 +7,7 @@ use docker_compose_types::{
 };
 use indexmap::IndexMap;
 use slog::{debug, error, info, Logger};
-use std::{fs::File, process, str::from_utf8, thread, thread::spawn, time::Duration};
+use std::{fs::{File, OpenOptions}, process, str::from_utf8, thread, thread::spawn, time::Duration};
 
 const BITCOIND_IMAGE: &str = "polarlightning/bitcoind:25.0";
 
@@ -104,7 +104,10 @@ fn get_existing_bitcoind_config(
         .to_str()
         .unwrap()
         .to_string();
-    let source: File = File::open(full_path.clone())?;
+    let source: File = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(full_path.clone())?;
     let conf = conf_parser::processer::read_to_file_conf_mut(&source).map_err(|e| {
         error!(logger, "failed to read bitcoind conf file: {}", e);
         e
@@ -261,8 +264,10 @@ pub fn start_mining(options: Options, bitcoind: &Bitcoind) -> Result<()> {
     let compose_path = options.compose_path.clone().unwrap().to_string();
     let logger = options.global_logger();
     let options_clone = options.clone();
+    let docker_command = options.docker_command.clone();
     match create_wallet(
         &logger,
+        options.docker_command,
         compose_path.clone(),
         container.clone(),
         datadir.clone(),
@@ -278,6 +283,7 @@ pub fn start_mining(options: Options, bitcoind: &Bitcoind) -> Result<()> {
         let thread_logger = logger.clone();
         mine_bitcoin_continously(
             &thread_logger,
+            docker_command.clone(),
             options.main_thread_active.clone(),
             options.main_thread_paused.clone(),
             container,
@@ -293,6 +299,7 @@ pub fn start_mining(options: Options, bitcoind: &Bitcoind) -> Result<()> {
 
 fn mine_bitcoin_continously(
     logger: &Logger,
+    docker_command: String,
     main_thread_active: ThreadController,
     main_thread_paused: ThreadController,
     container_name: String,
@@ -312,6 +319,7 @@ fn mine_bitcoin_continously(
         if !main_thread_paused.val() {
             match mine_bitcoin(
                 &thread_logger,
+                docker_command.clone(),
                 compose_path.clone(),
                 container_name.clone(),
                 datadir.clone(),
@@ -330,6 +338,7 @@ fn mine_bitcoin_continously(
 }
 pub fn mine_bitcoin(
     logger: &Logger,
+    docker_command: String,
     compose_path: String,
     container_name: String,
     datadir: String,
@@ -337,6 +346,7 @@ pub fn mine_bitcoin(
 ) -> Result<String, Error> {
     let address = create_address(
         logger,
+        docker_command.clone(),
         compose_path.clone(),
         container_name.clone(),
         datadir.clone(),
@@ -344,6 +354,7 @@ pub fn mine_bitcoin(
 
     mine_to_address(
         logger,
+        docker_command.clone(),
         compose_path,
         container_name,
         datadir,
@@ -361,6 +372,7 @@ pub fn node_mine_bitcoin(options: &mut Options, to_mine: String, num: i64) -> Re
 
     mine_bitcoin(
         logger,
+        options.docker_command.clone(),
         compose_path.unwrap(),
         bitcoind_miner.container_name.clone(),
         bitcoind_miner.data_dir.clone(),
@@ -380,6 +392,7 @@ pub fn get_btcd_by_name<'a>(options: &'a Options, name: &str) -> Result<&'a Bitc
 
 pub fn create_wallet(
     logger: &Logger,
+    docker_command: String,
     compose_path: String,
     container_name: String,
     datadir: String,
@@ -400,12 +413,13 @@ pub fn create_wallet(
     ];
     info!(
         logger,
-        "container: {} command (create wallet): `docker-compose {}`",
+        "container: {} command (create wallet): `{} {}`",
         container_name,
+        docker_command,
         command.join(" ")
     );
 
-    let output = process::Command::new("docker-compose")
+    let output = process::Command::new(docker_command)
         .args(command)
         .output()?;
     if !output.status.success() {
@@ -416,6 +430,7 @@ pub fn create_wallet(
 
 pub fn create_address(
     logger: &Logger,
+    docker_command: String,
     compose_path: String,
     container_name: String,
     datadir: String,
@@ -437,12 +452,13 @@ pub fn create_address(
     ];
     info!(
         logger,
-        "container: {} command (create address): `docker-compose {}`",
+        "container: {} command (create address): `{} {}`",
         container_name,
+        docker_command,
         command.join(" ")
     );
 
-    let mut output = process::Command::new("docker-compose")
+    let mut output = process::Command::new(docker_command)
         .args(command)
         .output()?;
     if !output.status.success() {
@@ -456,6 +472,7 @@ pub fn create_address(
 
 pub fn mine_to_address(
     logger: &Logger,
+    docker_command: String,
     compose_path: String,
     container_name: String,
     datadir: String,
@@ -479,12 +496,13 @@ pub fn mine_to_address(
     ];
     info!(
         logger,
-        "container: {} command (mine to address): `docker-compose {}`",
+        "container: {} command (mine to address): `{} {}`",
         container_name,
+        docker_command,
         command.join(" ")
     );
 
-    let output = process::Command::new("docker-compose")
+    let output = process::Command::new(docker_command)
         .args(command)
         .output()
         .unwrap();
@@ -522,12 +540,13 @@ pub fn add_nodes(
         ];
         info!(
             options.global_logger(),
-            "container: {} command (addnode): `docker-compose {}`",
+            "container: {} command (addnode): `{} {}`",
             compose_path,
+            options.docker_command,
             command.join(" ")
         );
 
-        let output = process::Command::new("docker-compose")
+        let output = process::Command::new(options.docker_command.clone())
             .args(command)
             .output()?;
         debug!(

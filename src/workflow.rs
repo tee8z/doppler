@@ -21,7 +21,7 @@ use std::{
 };
 use uuid::Uuid;
 
-const COMPOSE_PATH: &str = "./doppler-cluster.yaml";
+const COMPOSE_PATH: &str = "doppler-cluster.yaml";
 
 pub fn run_workflow(mut options: Options, parsed: Pair<'_, Rule>) -> Result<(), Error> {
     let mut loops = IndexMap::new();
