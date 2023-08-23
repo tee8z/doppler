@@ -1,12 +1,13 @@
 use anyhow::Error;
+use clap::{Args, Subcommand, ValueEnum};
 use conf_parser::processer::FileConf;
 use docker_compose_types::{Compose, ComposeNetworks, Ipam, MapOrEmpty, Service, Services};
 use indexmap::map::IndexMap;
 use ipnetwork::IpNetwork;
-use slog::{error, Logger};
+use slog::{error, Logger, debug};
 use std::{
-    fs::{create_dir_all, File},
-    io::{self, ErrorKind, Read},
+    fs::{create_dir_all, OpenOptions},
+    io::{self, ErrorKind, Read, Write},
     net::Ipv4Addr,
     path::{Path, PathBuf},
     str::FromStr,
@@ -19,6 +20,50 @@ use std::{
 };
 
 use crate::{generate_ipv4_sequence_in_subnet, MinerTime, NETWORK, SUBNET};
+
+#[derive(Subcommand)]
+pub enum AppSubCommands {
+    #[command(about = "aliases settings", name = "aliases")]
+    DetailedCommand(Script),
+}
+
+#[derive(Args, Debug)]
+pub struct Script {
+    /// Create shell alias script for containers
+    #[arg(short, long)]
+    pub aliases: bool,
+
+    /// Set the shell language to use for the aliases file
+    #[arg(value_enum)]
+    pub shell_type: Option<ShellType>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum ShellType {
+    ZSH,
+    KSH,
+    CSH,
+    SH,
+    BASH,
+}
+
+impl std::fmt::Display for ShellType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ShellType::ZSH => write!(f, "#!/bin/zsh"),
+            ShellType::KSH => write!(f, "#!/bin/ksh"),
+            ShellType::CSH => write!(f, "#!/bin/csh"),
+            ShellType::SH => write!(f, "#!/bin/sh"),
+            ShellType::BASH => write!(f, "#!/bin/bash"),
+        }
+    }
+}
+
+impl Default for ShellType {
+    fn default() -> Self {
+        ShellType::BASH
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -34,6 +79,8 @@ pub struct Options {
     global_logger: Logger,
     thread_handlers: Arc<Mutex<Vec<Thread>>>,
     pub aliases: bool,
+    pub shell_type: Option<ShellType>,
+    pub docker_command: String,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -57,13 +104,28 @@ impl ThreadController {
 }
 
 impl Options {
-    pub fn new(logger: Logger, aliases: bool) -> Self {
+    pub fn new(
+        logger: Logger,
+        docker_dash: bool,
+        app_sub_commands: Option<AppSubCommands>,
+    ) -> Self {
         let starting_port = vec![9089];
         let starting_ip = "10.5.0.2";
         let cidr = IpNetwork::from_str(starting_ip).unwrap();
         let start_ip = match cidr {
             IpNetwork::V4(cidr_v4) => cidr_v4.network(),
             _ => panic!("Only IPv4 is supported"),
+        };
+        let (aliases, shell_type) = if app_sub_commands.is_some() {
+            let AppSubCommands::DetailedCommand(sub_commands) = app_sub_commands.unwrap();
+            (sub_commands.aliases, sub_commands.shell_type)
+        } else {
+            (true, Some(ShellType::default()))
+        };
+        let docker_command = if docker_dash {
+            "docker-compose"
+        } else {
+            "docker compose"
         };
         Self {
             bitcoinds: vec::Vec::new(),
@@ -78,6 +140,8 @@ impl Options {
             global_logger: logger,
             thread_handlers: Arc::new(Mutex::new(Vec::new())),
             aliases,
+            shell_type,
+            docker_command: docker_command.to_owned(),
         }
     }
     pub fn global_logger(&self) -> Logger {
@@ -108,8 +172,27 @@ impl Options {
         self.ip_addresses.push(next_ip);
         next_ip
     }
-    pub fn save_compose(&mut self, file_path: &str) -> Result<(), io::Error> {
-        let target_file = std::path::Path::new(file_path);
+    pub fn save_compose(
+        &mut self,
+        docker_command: String,
+        file_path: &str,
+    ) -> Result<(), io::Error> {
+        let full_path =
+            get_absolute_path(file_path).map_err(|e| io::Error::new(ErrorKind::NotFound, e))?;
+        debug!(self.global_logger(),"path to new compose: {}", full_path.display());
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(full_path)
+            .map_err(|e| {
+                error!(
+                    self.global_logger(),
+                    "Failed to open {} file.: {}", docker_command, e
+                );
+                io::Error::new(ErrorKind::NotFound, e)
+            })?;
         let mut networks = IndexMap::new();
         let network = docker_compose_types::NetworkSettings {
             driver: Some("bridge".to_owned()),
@@ -131,19 +214,23 @@ impl Options {
         };
         let serialized = match serde_yaml::to_string(&compose) {
             Ok(s) => s,
-            Err(e) => panic!("Failed to serialize docker-compose file: {}", e),
+            Err(e) => panic!("Failed to serialize {} file: {}", docker_command, e),
         };
-        std::fs::write(target_file, serialized).unwrap();
+        file.write_all(serialized.as_bytes()).map_err(|e| io::Error::new(ErrorKind::NotFound, format!("failed to write new docker compose file: {}", e)))?;
         Ok(())
     }
 
     pub fn load_compose(&mut self) -> Result<(), io::Error> {
         let compose_path = self.compose_path.clone().unwrap();
         let target_file = std::path::Path::new(compose_path.as_str());
-        let mut file = File::open(target_file).map_err(|e| {
-            error!(self.global_logger(), "Failed to open compose file.: {}", e);
-            io::Error::new(ErrorKind::NotFound, e)
-        })?;
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(target_file)
+            .map_err(|e| {
+                error!(self.global_logger(), "Failed to open compose file.: {}", e);
+                io::Error::new(ErrorKind::NotFound, e)
+            })?;
         let mut file_content = String::new();
         let doppler_content = file
             .read_to_string(&mut file_content)

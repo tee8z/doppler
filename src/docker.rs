@@ -7,7 +7,7 @@ use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
 use serde_json::to_string;
 use slog::{debug, error, info, Logger};
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::net::Ipv4Addr;
 use std::os::unix::prelude::PermissionsExt;
@@ -22,7 +22,7 @@ pub const SUBNET: &str = "10.5.0.0/16";
 pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> Result<(), Error> {
     options.compose_path = Some(compose_path.clone().to_owned());
     options.load_compose()?;
-    debug!(options.global_logger(), "loaded docker-compose file");
+    debug!(options.global_logger(), "loaded {} file", options.docker_command);
     get_bitcoinds(options)?;
     debug!(options.global_logger(), "loaded bitcoinds");
     get_lnds(options)?;
@@ -33,15 +33,17 @@ pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> R
 pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Error> {
     options.compose_path = Some(compose_path.to_owned());
 
-    options.save_compose(compose_path).map_err(|err| {
+    options.save_compose(options.docker_command.clone(), compose_path).map_err(|err| {
         anyhow!(
-            "Failed to save docker-compose file @ {}: {}",
+            "Failed to save {} file @ {}: {}",
+            options.docker_command,
             compose_path,
             err
         )
     })?;
+    debug!(options.global_logger(), "saved cluster config");
     start_docker_compose(options)?;
-
+    debug!(options.global_logger(), "started cluster");
     //simple wait for docker-compose to spin up
     thread::sleep(Duration::from_secs(6));
     pair_bitcoinds(options)?;
@@ -57,7 +59,7 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
 }
 
 fn start_docker_compose(options: &mut Options) -> Result<(), Error> {
-    let output = Command::new("docker-compose")
+    let output = Command::new(options.docker_command.clone())
         .args([
             "-f",
             options.compose_path.as_ref().unwrap().as_ref(),
@@ -65,6 +67,7 @@ fn start_docker_compose(options: &mut Options) -> Result<(), Error> {
             "-d",
         ])
         .output()?;
+    debug!(options.global_logger(), "here");
     debug!(
         options.global_logger(),
         "output.stdout: {}, output.stderr: {}",
@@ -101,6 +104,7 @@ fn mine_initial_blocks(options: &mut Options) -> Result<(), Error> {
     let logger = &options.global_logger();
     mine_bitcoin(
         logger,
+        options.docker_command.clone(),
         compose_path.to_owned(),
         miner_container,
         miner_data_dir,
@@ -111,6 +115,7 @@ fn mine_initial_blocks(options: &mut Options) -> Result<(), Error> {
 
 fn setup_lnd_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
     let compose_path = options.compose_path.as_ref().unwrap();
+    let docker_command = options.docker_command.clone();
     let miner = options
         .bitcoinds
         .iter()
@@ -123,7 +128,7 @@ fn setup_lnd_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
 
     options.lnds.iter_mut().for_each(|node| {
         let compose_path_clone = compose_path.clone();
-        let result = get_node_info(&logger, node, compose_path_clone.clone()).and_then(|_| {
+        let result = get_node_info(docker_command.clone(), &logger, node, compose_path_clone.clone()).and_then(|_| {
             info!(
                 logger,
                 "container: {} pubkey: {}",
@@ -131,6 +136,7 @@ fn setup_lnd_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
                 node.pubkey.clone().unwrap()
             );
             fund_node(
+                options.docker_command.clone(),
                 &logger,
                 node,
                 &miner.unwrap().clone(),
@@ -183,15 +189,16 @@ fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
 
 fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
     let mut script_content = String::new();
-    script_content.push_str("#!/bin/bash\n\n");
+    script_content.push_str(&format!("{}", options.shell_type.unwrap_or_default()));
     options.lnds.iter().for_each(|lnd| {
         let name = lnd.container_name.split('-').last().unwrap();
         script_content.push_str(&format!(
             r#"
 {name}() {{
-    docker-compose -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} lncli --lnddir=/home/lnd/.lnd --network=regtest --macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon --rpcserver={ip}:10000 "$@"
+    {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} lncli --lnddir=/home/lnd/.lnd --network=regtest --macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon --rpcserver={ip}:10000 "$@"
 }}            
-"#,
+"#, 
+        docker_command= options.docker_command,
         container_name= lnd.container_name,
         name=name,
         ip =lnd.ip));
@@ -202,9 +209,10 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
         script_content.push_str(&format!(
             r#"
 {name}() {{
-    docker-compose -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} bitcoin-cli "$@"
+    {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} bitcoin-cli "$@"
 }}            
 "#,
+            docker_command= options.docker_command,
             name = name,
             container_name = bitcoind.container_name,
         ));
@@ -222,7 +230,7 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
 
 fn get_admin_macaroon(node: &mut Lnd) -> Result<String, Error> {
     let macaroon_path = node.macaroon_path.clone();
-    let mut file = File::open(macaroon_path)?;
+    let mut file = OpenOptions::new().read(true).open(macaroon_path)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
     let mac_as_hex = hex::encode(buffer);

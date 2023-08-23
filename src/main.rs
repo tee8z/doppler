@@ -1,6 +1,6 @@
-use clap::{arg, command, Parser};
-use doppler::{run_workflow_until_stop, Options};
-use slog::{info, o, Drain, Level, Logger};
+use clap::{arg, command, Parser };
+use doppler::{run_workflow_until_stop, Options, AppSubCommands, get_absolute_path};
+use slog::{info, o, Drain, Level, Logger, debug};
 use std::{env, fs, io::Error, path::PathBuf};
 
 #[derive(Parser)]
@@ -13,18 +13,22 @@ pub struct Cli {
     /// Set the log level
     #[arg(short, long)]
     level: Option<String>,
-
-    /// Create bash alias script for containers
+    /// Set docker compose command with/without '-'
     #[arg(short, long)]
-    aliases: bool,
+    docker_dash: bool,
+    
+    #[command(subcommand)]
+    app_sub_commands: Option<AppSubCommands>,
 }
 
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
     let logger = setup_logger(&cli);
+
     let doppler_file_path = get_doppler_file_path(&cli)?;
-    let options = Options::new(logger.clone(), cli.aliases);
+    debug!(logger, "reading doppler file: {}", doppler_file_path);
     let contents = fs::read_to_string(doppler_file_path).expect("file read error");
+    let options = Options::new(logger.clone(), cli.docker_dash, cli.app_sub_commands);
     run_workflow_until_stop(options, contents)?;
     info!(logger, "successfully cleaned up processes, shutting down");
     Ok(())
@@ -63,6 +67,6 @@ fn setup_logger(cli: &Cli) -> Logger {
 
 fn get_doppler_file_path(cli: &Cli) -> Result<String, Error> {
     let file_path = cli.file.to_string_lossy();
-
-    Ok(file_path.to_string())
+    let full_path = get_absolute_path(&file_path).unwrap();
+    Ok(full_path.to_string_lossy().to_string())
 }
