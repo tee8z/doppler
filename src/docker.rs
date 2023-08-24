@@ -274,7 +274,7 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
     {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} bitcoin-cli "$@"
 }}            
 "#,
-            docker_command= options.docker_command,
+            docker_command= docker_command,
             name = name,
             container_name = bitcoind.container_name,
         ));

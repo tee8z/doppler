@@ -379,7 +379,9 @@ pub struct NodeCommand {
 }
 
 pub fn open_channel(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    connect(options, node_command)?;
+    let _ = connect(options, node_command).map_err(|e| {
+        debug!(options.global_logger(), "failed to connect: {}", e);
+    });
     let to_lnd = get_lnd_by_name(options, node_command.to.as_str())?;
     let from_lnd = get_lnd_by_name(options, node_command.from.as_str())?;
     let amt = node_command.amt.unwrap_or(100000).to_string();
