@@ -227,14 +227,29 @@ fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
         };
         config.nodes.push(visualizer_node);
     });
+    let config_json = get_absolute_path("visualizer/config.json")?;
+    debug!(options.global_logger(),"config_json: {}", config_json.display());
+    let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(config_json)?;
+    
     let json_string = to_string(&config)?;
-    let config_json = get_absolute_path("./visualizer/config.json")?;
-    std::fs::write(config_json, json_string)?;
+    debug!(options.global_logger(),"preping json config file");
+    file.write_all(json_string.as_bytes())?;
+    debug!(options.global_logger(),"saved json config file");
 
     Ok(())
 }
 
 fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
+    let docker_command = if options.docker_command.contains('-') {
+        options.docker_command.to_owned()
+    } else {
+        "docker compose".to_owned()
+    };
     let mut script_content = String::new();
     script_content.push_str(&format!("{}", options.shell_type.unwrap_or_default()));
     options.lnds.iter().for_each(|lnd| {
@@ -245,7 +260,7 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
     {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} lncli --lnddir=/home/lnd/.lnd --network=regtest --macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon --rpcserver={ip}:10000 "$@"
 }}            
 "#, 
-        docker_command= options.docker_command,
+        docker_command= docker_command,
         container_name= lnd.container_name,
         name=name,
         ip =lnd.ip));
@@ -271,6 +286,7 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
         .read(true)
         .write(true)
         .truncate(true)
+        .create(true)
         .open(full_path.clone())?;
     file.write_all(script_content.as_bytes())?;
     debug!(options.global_logger(), "wrote aliases script @ {}", full_path.display());
@@ -313,7 +329,11 @@ pub fn generate_ipv4_sequence_in_subnet(
 fn connect_lnd_nodes(options: &mut Options) -> Result<(), Error> {
     let mut get_a_node = options.lnds.iter();
     options.lnds.iter().for_each(|from_lnd| {
-        let mut to_lnd = get_a_node.next_back().unwrap();
+        let back_a_node = get_a_node.next_back();
+        if back_a_node.is_none() {
+            return;
+        }
+        let mut to_lnd = back_a_node.unwrap();
         if to_lnd.name == from_lnd.name {
             to_lnd = get_a_node.next().unwrap();
         }
