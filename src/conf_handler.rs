@@ -29,9 +29,6 @@ pub enum AppSubCommands {
 
 #[derive(Args, Debug)]
 pub struct Script {
-    /// Create shell alias script for containers
-    #[arg(short, long)]
-    pub aliases: bool,
 
     /// Set the shell language to use for the aliases file
     #[arg(value_enum)]
@@ -112,12 +109,8 @@ impl Options {
             _ => panic!("Only IPv4 is supported"),
         };
         let (aliases, shell_type) = if app_sub_commands.is_some() {
-            {}
-            if let Some(AppSubCommands::DetailedCommand(sub_commands)) = app_sub_commands {
-                (sub_commands.aliases, sub_commands.shell_type)
-            } else {
-                (true, Some(ShellType::default()))
-            }
+            let AppSubCommands::DetailedCommand(sub_commands) = app_sub_commands.unwrap();
+            (true, sub_commands.shell_type)
         } else {
             (true, Some(ShellType::default()))
         };
@@ -186,8 +179,8 @@ impl Options {
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
-            .create(true)
             .truncate(true)
+            .create(true)
             .open(full_path)
             .map_err(|e| {
                 error!(
