@@ -22,7 +22,8 @@ The DSL should empower developers to compose a concise script that configures an
 - [x] CLOSE_CHANNEL
 
 ##### TODO:
-- [ ] support more than LND (should support coreln, eclair, and at least one LDK implementation)
+- [ ] support more than LND (should support coreln, eclair, and LDK)
+- [ ] create new ldk image for [ldk-node](https://github.com/lightningdevkit/ldk-node)
 - [ ] add a UI to each nodes to view in the browser (thunderhub, ride-the-lightning, etc.)
 - [ ] add ability to have mutliple types of images/version and even allow user to use their own custom that aline with these instructions: [out-of-band](https://github.com/jamaljsr/polar/tree/master/docker#out-of-band-image-updates)
 - [ ] make mining in the background optional after funding the lightning nodes
