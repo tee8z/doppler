@@ -177,6 +177,9 @@ fn get_existing_cln_config(name: &str, container_name: String, ip: String) -> Re
 
 fn write_config_file(bitcoind_node: &Bitcoind, name: &str, destination_path: &str) -> Result<(), Error> {
     let path = Path::new(destination_path);
+    if !path.exists() {
+        std::fs::create_dir_all(path)?;
+    }
     let mut file = File::create(path.join("config"))?;
 
     // bitcoind config
@@ -207,8 +210,6 @@ pub fn get_cln_node_info(
         "-f",
         compose_path.as_ref(),
         "exec",
-        "--user",
-        "1000:1000",
         cln.container_name.as_ref(),
         "lightning-cli",
         "--network=regtest",
@@ -221,6 +222,7 @@ pub fn get_cln_node_info(
             "pubkey".to_owned(),
             commands.clone(),
         )?;
+        info!(logger, "output: {:?}", output);
         if from_utf8(&output.stderr)?.contains("not running") {
             debug!(logger, "trying to get pubkey again");
             thread::sleep(Duration::from_secs(1));
@@ -241,86 +243,68 @@ pub fn get_cln_node_info(
     Ok(())
 }
 
-// pub fn fund_node(
-//     docker_command: String,
-//     logger: &Logger,
-//     lnd: &mut Lnd,
-//     miner: &Bitcoind,
-//     compose_path: String,
-// ) -> Result<(), Error> {
-//     create_lnd_wallet(logger, docker_command.clone(), lnd, compose_path.clone())?;
-//     let address = create_lnd_address(logger, docker_command.clone(), lnd, compose_path.clone())?;
-//     mine_to_address(
-//         logger,
-//         docker_command,
-//         compose_path,
-//         miner.container_name.clone(),
-//         miner.data_dir.clone(),
-//         2,
-//         address,
-//     )?;
-//     Ok(())
-// }
+pub fn fund_cln_node(
+    docker_command: String,
+    logger: &Logger,
+    cln: &mut Cln,
+    miner: &Bitcoind,
+    compose_path: String,
+) -> Result<(), Error> {
 
-// pub fn create_lnd_wallet(
-//     logger: &Logger,
-//     docker_command: String,
-//     lnd: &mut Lnd,
-//     compose_path: String,
-// ) -> Result<(), Error> {
-//     let rpc_command = lnd.get_rpc_server_command();
-//     let macaroon_path = lnd.get_macaroon_command();
-//     let commands = vec![
-//         "-f",
-//         compose_path.as_ref(),
-//         "exec",
-//         "--user",
-//         "1000:1000",
-//         lnd.container_name.as_ref(),
-//         "lncli",
-//         "--lnddir=/home/lnd/.lnd",
-//         "--network=regtest",
-//         &macaroon_path,
-//         &rpc_command,
-//         "createwallet",
-//     ];
-//     let output = run_command(logger, docker_command, "createwallet".to_owned(), commands)?;
-//     if output.status.success() {
-//         let _response: Value = from_slice(&output.stdout).expect("failed to parse JSON");
-//     }
-//     Ok(())
-// }
+    let address = create_cln_address(logger, docker_command.clone(), cln, compose_path.clone())?;
+    mine_to_address(
+        logger,
+        docker_command,
+        compose_path,
+        miner.container_name.clone(),
+        miner.data_dir.clone(),
+        2,
+        address,
+    )?;
+    Ok(())
+}
 
-// pub fn create_lnd_address(
-//     logger: &Logger,
-//     docker_command: String,
-//     lnd: &mut Lnd,
-//     compose_path: String,
-// ) -> Result<String, Error> {
-//     let rpc_command = lnd.get_rpc_server_command();
-//     let macaroon_path = lnd.get_macaroon_command();
-//     let commands = vec![
-//         "-f",
-//         compose_path.as_ref(),
-//         "exec",
-//         "--user",
-//         "1000:1000",
-//         lnd.container_name.as_ref(),
-//         "lncli",
-//         "--lnddir=/home/lnd/.lnd",
-//         "--network=regtest",
-//         &macaroon_path,
-//         &rpc_command,
-//         "newaddress",
-//         "p2tr", // TODO: set as a taproot address by default, make this configurable
-//     ];
-//     let output = run_command(logger, docker_command, "newaddress".to_owned(), commands)?;
-//     let found_address: Option<String> = get_property("address", output.clone());
-//     if found_address.is_none() {
-//         error!(logger, "no addess found");
-//     }
-//     Ok(found_address.unwrap())
-// }
+pub fn create_cln_address(
+    logger: &Logger,
+    docker_command: String,
+    cln: &mut Cln,
+    compose_path: String,
+) -> Result<String, Error> {
+    let mut output_found = None;
+    let mut retries = 3;
+    let commands = vec![
+        "-f",
+        compose_path.as_ref(),
+        "exec",
+        cln.container_name.as_ref(),
+        "lightning-cli",
+        "--network=regtest",
+        "newaddr",
+        "bech32"
+    ];
+    let output = run_command(
+        logger,
+        docker_command.clone(),
+        "newaddr".to_owned(),
+        commands.clone(),
+    )?;
+
+    output_found = Some(output);
+
+    let output = output_found.unwrap();
+    if output.status.success() {
+        if let Some(addr) = get_property("bech32", output.clone()) {
+            return Ok(addr)
+        } else {
+            error!(logger, "no address found");
+            return Err(anyhow!("no address found"));
+        }
+    } else {
+        error!(logger, "failed to create address");
+        return Err(anyhow!("failed to create address"));
+    }
+}
+
 
 // #[derive(Default, Debug, Clone)]
 // pub struct NodeCommand {

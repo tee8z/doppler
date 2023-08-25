@@ -1,5 +1,5 @@
 use crate::{
-    connect, fund_node, get_absolute_path, get_bitcoinds, get_lnds, get_node_info, get_cln_node_info, mine_bitcoin,
+    connect, fund_node, get_absolute_path, get_bitcoinds, get_lnds, get_clns, get_node_info, get_cln_node_info, fund_cln_node, mine_bitcoin,
     pair_bitcoinds, start_mining, Lnd, NodeCommand, Options,
 };
 use anyhow::{anyhow, Error};
@@ -30,6 +30,8 @@ pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> R
     debug!(options.global_logger(), "loaded bitcoinds");
     get_lnds(options)?;
     debug!(options.global_logger(), "loaded lnds");
+    get_clns(options)?;
+    debug!(options.global_logger(), "loaded clns");
     Ok(())
 }
 
@@ -94,6 +96,7 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     //TODO: make optional to be mining in the background
     start_miners(options)?;
     setup_lnd_nodes(options, options.global_logger())?;
+    setup_cln_nodes(options, options.global_logger())?;
     mine_initial_blocks(options)?;
     update_visualizer_conf(options)?;
     if options.aliases {
@@ -201,6 +204,56 @@ fn setup_lnd_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
 
     Ok(())
 }
+
+fn setup_cln_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
+    let compose_path = options.compose_path.as_ref().unwrap();
+    let docker_command = options.docker_command.clone();
+    let miner = options
+        .bitcoinds
+        .iter()
+        .find(|bitcoinds| bitcoinds.container_name.contains("miner"));
+    if miner.is_none() {
+        return Err(anyhow!(
+            "at least one miner is required to be setup for this cluster to run"
+        ));
+    }
+
+    options.clns.iter_mut().for_each(|node| {
+        let compose_path_clone = compose_path.clone();
+        let result = get_cln_node_info(
+            docker_command.clone(),
+            &logger,
+            node,
+            compose_path_clone.clone(),
+        )
+        .and_then(|_| {
+            info!(
+                logger,
+                "container: {} pubkey: {}",
+                node.container_name.clone(),
+                node.pubkey.clone().unwrap()
+            );
+            fund_cln_node(
+                options.docker_command.clone(),
+                &logger,
+                node,
+                &miner.unwrap().clone(),
+                compose_path_clone.clone(),
+            )
+        });
+
+        match result {
+            Ok(_) => info!(logger, "container: {} funded", node.container_name.clone()),
+            Err(e) => error!(logger, "failed to start/fund node: {}", e),
+        }
+    });
+
+    connect_lnd_nodes(options)?;
+
+    Ok(())
+}
+
+
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct VisualizerConfig {
