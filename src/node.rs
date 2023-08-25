@@ -7,13 +7,14 @@ use std::{any::Any, process::Output};
 
 pub trait L2Node: Any {
     fn get_connection_url(&self) -> String;
+    fn get_p2p_port(&self) -> &str;
     fn get_server_url(&self) -> &str;
     fn get_name(&self) -> &str;
     fn get_container_name(&self) -> &str;
     fn get_ip(&self) -> &str;
-    fn get_pubkey(&self) -> String;
+    fn get_cached_pubkey(&self) -> String;
     fn set_pubkey(&mut self, pubkey: String);
-    fn get_node_info(&self, options: &Options) -> Result<String, Error>;
+    fn get_node_pubkey(&self, options: &Options) -> Result<String, Error>;
     fn open_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn connect(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
@@ -77,6 +78,7 @@ pub trait L1Node: Any {
     fn mine_bitcoin_continously(&self, options: &Options);
     fn mine_bitcoin(&self, options: &Options, num_blocks: i64) -> Result<String, Error>;
     fn create_wallet(&self, options: &Options) -> Result<(), Error>;
+    fn load_wallet(&self, options: &Options) -> Result<(), Error>;
     fn get_name(&self) -> String;
     fn get_container_name(&self) -> String;
     fn get_data_dir(&self) -> String;

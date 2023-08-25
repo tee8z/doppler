@@ -71,6 +71,9 @@ impl L2Node for Lnd {
             "".to_owned()
         }
     }
+    fn get_p2p_port(&self) -> &str {
+        self.p2p_port.as_str()
+    }
     fn get_server_url(&self) -> &str {
         self.server_url.as_str()
     }
@@ -83,7 +86,7 @@ impl L2Node for Lnd {
     fn get_ip(&self) -> &str {
         self.ip.as_str()
     }
-    fn get_pubkey(&self) -> String {
+    fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
     }
     fn set_pubkey(&mut self, pubkey: String) {
@@ -93,8 +96,8 @@ impl L2Node for Lnd {
             None
         }
     }
-    fn get_node_info(&self, options: &Options) -> Result<String, Error> {
-        get_node_info(self, options)
+    fn get_node_pubkey(&self, options: &Options) -> Result<String, Error> {
+        get_node_pubkey(self, options)
     }
     fn open_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         open_channel(self, options, node_command)
@@ -135,7 +138,7 @@ impl L2Node for Lnd {
 
 pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<()> {
     let ip = options.new_ipv4().to_string();
-    let mut lnd_conf = build_config(options, name, pair_name, ip.as_str()).unwrap();
+    let mut lnd_conf = build_and_save_config(options, name, pair_name, ip.as_str()).unwrap();
     debug!(
         options.global_logger(),
         "{} volume: {}", name, lnd_conf.path_vol
@@ -179,7 +182,7 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
     Ok(())
 }
 
-fn build_config(options: &Options, name: &str, pair_name: &str, ip: &str) -> Result<Lnd, Error> {
+fn build_and_save_config(options: &Options, name: &str, pair_name: &str, ip: &str) -> Result<Lnd, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
             "bitcoind nodes need to be defined before lnd nodes can be setup"
@@ -269,7 +272,7 @@ pub fn add_lnd_nodes(options: &mut Options) -> Result<(), Error> {
     let nodes: Vec<_> = node_l2
         .iter_mut()
         .map(|node| {
-            let result = node.get_node_info(options);
+            let result = node.get_node_pubkey(options);
             match result {
                 Ok(pubkey) => {
                     node.set_pubkey(pubkey);
@@ -377,7 +380,7 @@ fn set_application_options_values(conf: &mut FileConf, name: &str, ip: &str) -> 
     Ok(())
 }
 
-fn get_node_info(lnd: &Lnd, options: &Options) -> Result<String, Error> {
+fn get_node_pubkey(lnd: &Lnd, options: &Options) -> Result<String, Error> {
     let rpc_command = lnd.get_rpc_server_command();
     let macaroon_path = lnd.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
@@ -456,12 +459,12 @@ fn open_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Re
     let _ = node.connect(options, node_command).map_err(|e| {
         debug!(options.global_logger(), "failed to connect: {}", e);
     });
-    let to_lnd = options.get_l2_by_name(node_command.to.as_str())?;
+    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
     let amt = node_command.amt.unwrap_or(100000).to_string();
     let rpc_command = node.get_rpc_server_command();
     let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
-    let to_pubkey = to_lnd.get_pubkey();
+    let to_pubkey = to_node.get_cached_pubkey();
     let commands = vec![
         "-f",
         compose_path,
@@ -484,22 +487,22 @@ fn open_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Re
             options.global_logger(),
             "successfully opened channel from {} to {}",
             node.get_name(),
-            to_lnd.get_name()
+            to_node.get_name()
         );
     } else {
         error!(
             options.global_logger(),
             "failed to open channel from {} to {}",
             node.get_name(),
-            to_lnd.get_name()
+            to_node.get_name()
         );
     }
     Ok(())
 }
 
 fn connect(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let to_lnd = options.get_l2_by_name(node_command.to.as_str())?;
-    let connection_url = to_lnd.get_connection_url();
+    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+    let connection_url = to_node.get_connection_url();
     let rpc_command = node.get_rpc_server_command();
     let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
@@ -526,14 +529,14 @@ fn connect(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<
             options.global_logger(),
             "successfully connected from {} to {}",
             node.get_name(),
-            to_lnd.get_name()
+            to_node.get_name()
         );
     } else {
         error!(
             options.global_logger(),
             "failed to connect from {} to {}",
             node.get_name(),
-            to_lnd.get_name()
+            to_node.get_name()
         );
     }
     Ok(())
@@ -542,7 +545,7 @@ fn connect(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<
 fn close_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     //TODO: find a way to specify which channel to close, right now we just grab a random one for this peer
     let peer_channel_point = node.get_peers_channel_point(options, node_command)?;
-    let to_lnd = options.get_l2_by_name(node_command.to.as_str())?;
+    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
     let rpc_command = node.get_rpc_server_command();
     let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
@@ -569,14 +572,14 @@ fn close_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> R
             options.global_logger(),
             "successfully closed channel from {} to {}",
             node.get_name(),
-            to_lnd.get_name()
+            to_node.get_name()
         );
     } else {
         error!(
             options.global_logger(),
             "failed to close channel from {} to {}",
             node.get_name(),
-            to_lnd.get_name()
+            to_node.get_name()
         );
     }
     Ok(())
@@ -587,11 +590,11 @@ fn get_peers_channel_point(
     options: &Options,
     node_command: &NodeCommand,
 ) -> Result<String, Error> {
-    let to_lnd = options.get_l2_by_name(node_command.to.as_str())?;
+    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
     let rpc_command = node.get_rpc_server_command();
     let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
-    let to_pubkey = to_lnd.get_pubkey();
+    let to_pubkey = to_node.get_cached_pubkey();
     let commands = vec![
         "-f",
         compose_path,

@@ -22,8 +22,8 @@ use std::{
 };
 
 use crate::{
-    add_bitcoinds, add_eclair_nodes, add_lnd_nodes, generate_ipv4_sequence_in_subnet, Bitcoind,
-    Eclair, L1Node, L2Node, Lnd, NETWORK, SUBNET,
+    add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_lnd_nodes,
+    generate_ipv4_sequence_in_subnet, Bitcoind, Cln, Eclair, L1Node, L2Node, Lnd, NETWORK, SUBNET,
 };
 
 #[derive(Subcommand)]
@@ -67,6 +67,7 @@ pub struct Options {
     pub bitcoinds: Vec<Bitcoind>,
     pub lnd_nodes: Vec<Lnd>,
     pub eclair_nodes: Vec<Eclair>,
+    pub cln_nodes: Vec<Cln>,
     ports: Vec<i64>,
     ip_addresses: Vec<Ipv4Addr>,
     pub compose_path: Option<String>,
@@ -132,6 +133,7 @@ impl Options {
             bitcoinds: vec::Vec::new(),
             lnd_nodes: vec::Vec::new(),
             eclair_nodes: vec::Vec::new(),
+            cln_nodes: vec::Vec::new(),
             ports: starting_port,
             ip_addresses: vec![start_ip],
             compose_path: None,
@@ -260,7 +262,11 @@ impl Options {
                 .iter()
                 .find(|node| node.get_name() == name);
             if eclair_node.is_none() {
-                return Err(anyhow!("node not found"));
+                let core_node = self.cln_nodes.iter().find(|node| node.get_name() == name);
+                if core_node.is_none() {
+                    return Err(anyhow!("node not found"));
+                }
+                return Ok(Box::new(core_node.unwrap().to_owned()));
             }
             return Ok(Box::new(eclair_node.unwrap().to_owned()));
         }
@@ -277,6 +283,10 @@ impl Options {
             l2_nodes.push(Box::new(eclair.clone()));
         }
 
+        for coreln in self.cln_nodes.iter() {
+            l2_nodes.push(Box::new(coreln.clone()));
+        }
+
         l2_nodes
     }
     pub fn get_l2_nodes_mut(&self) -> Vec<Rc<RefCell<dyn L2Node>>> {
@@ -288,6 +298,10 @@ impl Options {
 
         for eclair in self.eclair_nodes.iter() {
             l2_nodes.push(Rc::new(RefCell::new(eclair.clone())));
+        }
+
+        for coreln in self.cln_nodes.iter() {
+            l2_nodes.push(Rc::new(RefCell::new(coreln.clone())));
         }
 
         l2_nodes
@@ -309,6 +323,9 @@ impl Options {
     }
     pub fn load_eclairs(&mut self) -> Result<(), Error> {
         add_eclair_nodes(self)
+    }
+    pub fn load_coreln(&mut self) -> Result<(), Error> {
+        add_coreln_nodes(self)
     }
 }
 
@@ -333,4 +350,12 @@ pub fn copy_file(
     conf_parser::processer::write_to_file(source_conf, &destination_file)?;
 
     get_absolute_path(&destination_file)
+}
+
+pub fn create_folder(destination_directory: &str) -> Result<(), anyhow::Error> {
+    if Path::new(destination_directory).exists() {
+        return Ok(());
+    }
+    create_dir_all(destination_directory)?;
+    Ok(())
 }
