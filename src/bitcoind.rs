@@ -421,6 +421,7 @@ pub fn create_wallet(
     ];
 
     let output = run_command(logger, docker_command, "create wallet".to_owned(), commands)?;
+    // JTODO: if this fails, we should try to load the wallet
     if !output.status.success() {
         error!(logger, "failed to create new address");
     }

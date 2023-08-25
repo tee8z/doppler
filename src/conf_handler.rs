@@ -61,6 +61,7 @@ impl std::fmt::Display for ShellType {
 pub struct Options {
     pub bitcoinds: Vec<Bitcoind>,
     pub lnds: Vec<Lnd>,
+    pub clns: Vec<Cln>,
     ports: Vec<i64>,
     ip_addresses: Vec<Ipv4Addr>,
     pub compose_path: Option<String>,
@@ -122,6 +123,7 @@ impl Options {
         Self {
             bitcoinds: vec::Vec::new(),
             lnds: vec::Vec::new(),
+            clns: vec::Vec::new(),
             ports: starting_port,
             ip_addresses: vec![start_ip],
             compose_path: None,
@@ -292,6 +294,30 @@ impl Lnd {
     pub fn get_macaroon_command(&self) -> String {
         "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon".to_owned()
     }
+    pub fn get_connection_url(&self) -> String {
+        format!(
+            "{}@{}:{}",
+            self.pubkey.as_ref().unwrap(),
+            self.container_name,
+            self.p2p_port.clone()
+        )
+    }
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct Cln {
+    pub container_name: String,
+    pub name: String,
+    pub pubkey: Option<String>,
+    pub alias: String,
+    pub grpc_port: String,
+    pub p2p_port: String,
+    pub server_url: String,
+    pub path_vol: String,
+    pub ip: String,
+}
+
+impl Cln {
     pub fn get_connection_url(&self) -> String {
         format!(
             "{}@{}:{}",

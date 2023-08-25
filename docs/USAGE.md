@@ -12,12 +12,12 @@ docker logs doppler-<node name>
 
 ### Clear docker cluster
 ```
-./scripts/clear_docker.sh
+./scripts/docker_clear.sh
 ```
 
 ### Clear docker data
 ```
-./scripts/clear_volumes.sh
+./scripts/volumes_clear.sh
 ```
 
 ### Reset cluster with current script

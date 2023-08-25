@@ -1,5 +1,5 @@
 use crate::{
-    connect, fund_node, get_absolute_path, get_bitcoinds, get_lnds, get_node_info, mine_bitcoin,
+    connect, fund_node, get_absolute_path, get_bitcoinds, get_lnds, get_node_info, get_cln_node_info, mine_bitcoin,
     pair_bitcoinds, start_mining, Lnd, NodeCommand, Options,
 };
 use anyhow::{anyhow, Error};
@@ -235,7 +235,7 @@ fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
             .truncate(true)
             .create(true)
             .open(config_json)?;
-    
+
     let json_string = to_string(&config)?;
     debug!(options.global_logger(),"preping json config file");
     file.write_all(json_string.as_bytes())?;
@@ -258,8 +258,8 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
             r#"
 {name}() {{
     {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} lncli --lnddir=/home/lnd/.lnd --network=regtest --macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon --rpcserver={ip}:10000 "$@"
-}}            
-"#, 
+}}
+"#,
         docker_command= docker_command,
         container_name= lnd.container_name,
         name=name,
@@ -272,7 +272,7 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
             r#"
 {name}() {{
     {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} bitcoin-cli "$@"
-}}            
+}}
 "#,
             docker_command= docker_command,
             name = name,

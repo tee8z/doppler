@@ -34,11 +34,12 @@ The DSL should empower developers to compose a concise script that configures an
 - [ ] add a cluster level UI to see how all the nodes  connect (started, but need to finish in ./visualizer)
 - [ ] add instructions on how to view the visualizer
 - [ ] add "get_info" and some additional data to be shown in the visualizer
+- [ ] improve ip address allocation
 
 ### Acknowledgments
 * Thank you [polar](https://github.com/jamaljsr/polar) for having such easy docker images to work with
 * Thank you litch for creating [lightning-conformance](https://github.com/litch/lightning-conformance) which helped inspire this project
 * Thank you w3irdrobot for getting this project started and helping pick the tool to build the grammar in rust
 
-### Disclaimer 
+### Disclaimer
 * This is very much a work in progress, but feel free to use what works today and PR's are welcome!

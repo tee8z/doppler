@@ -1,7 +1,7 @@
 use crate::{
     build_bitcoind, build_lnd, close_channel, load_options_from_compose, node_mine_bitcoin,
     open_channel, run_cluster, send_ln, send_on_chain, DopplerParser, MinerTime, NodeCommand,
-    NodeKind, Options, Rule,
+    NodeKind, Options, Rule, build_cln,
 };
 use anyhow::{Error, Result};
 use indexmap::IndexMap;
@@ -392,10 +392,12 @@ fn handle_build_command(
     kind: NodeKind,
     details: Option<BuildDetails>,
 ) -> Result<()> {
+
     match kind {
         NodeKind::Bitcoind => build_bitcoind(options, name, None),
         NodeKind::BitcoindMiner => build_bitcoind(options, name, details.unwrap().miner_time),
         NodeKind::Lnd => build_lnd(options, name, details.unwrap().pair_name.unwrap().as_str()),
+        NodeKind::Cln => build_cln(options, name, details.unwrap().pair_name.unwrap().as_str()),
         _ => unimplemented!("deploying kind {:?} not implemented yet", kind),
     }
 }
