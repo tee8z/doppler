@@ -280,6 +280,17 @@ fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
         };
         config.nodes.push(visualizer_node);
     });
+    options.clns.iter_mut().for_each(|node| {
+        let name = node.name.clone();
+
+        let visualizer_node = VisualizerNode {
+            name,
+            host: node.server_url.clone(),
+
+        };
+        config.nodes.push(visualizer_node);
+    });
+
     let config_json = get_absolute_path("visualizer/config.json")?;
     debug!(options.global_logger(),"config_json: {}", config_json.display());
     let mut file = OpenOptions::new()
