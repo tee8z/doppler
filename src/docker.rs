@@ -286,7 +286,7 @@ fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
         let visualizer_node = VisualizerNode {
             name,
             host: node.server_url.clone(),
-
+            macaroon: "".to_string(),
         };
         config.nodes.push(visualizer_node);
     });
