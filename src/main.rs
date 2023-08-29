@@ -28,8 +28,8 @@ fn main() -> Result<(), Error> {
     let doppler_file_path = get_doppler_file_path(&cli)?;
     debug!(logger, "reading doppler file: {}", doppler_file_path);
     let contents = fs::read_to_string(doppler_file_path).expect("file read error");
-    let options = Options::new(logger.clone(), cli.docker_dash, cli.app_sub_commands);
-    run_workflow_until_stop(options, contents)?;
+    let mut options = Options::new(logger.clone(), cli.docker_dash, cli.app_sub_commands);
+    run_workflow_until_stop(&mut options, contents)?;
     info!(logger, "successfully cleaned up processes, shutting down");
     Ok(())
 }

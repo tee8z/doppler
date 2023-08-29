@@ -1,14 +1,11 @@
-use crate::{
-    connect, fund_node, get_absolute_path, get_bitcoinds, get_lnds, get_node_info, mine_bitcoin,
-    pair_bitcoinds, start_mining, Lnd, NodeCommand, Options,
-};
+use crate::{get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options};
 use anyhow::{anyhow, Error};
 use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
 use serde_json::to_string;
 use slog::{debug, error, info, Logger};
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::Ipv4Addr;
 use std::os::unix::prelude::PermissionsExt;
 use std::process::{Command, Output};
@@ -20,15 +17,15 @@ pub const NETWORK: &str = "doppler";
 pub const SUBNET: &str = "10.5.0.0/16";
 
 pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> Result<(), Error> {
-    options.compose_path = Some(compose_path.clone().to_owned());
+    options.compose_path = Some(compose_path.to_owned());
     options.load_compose()?;
     debug!(
         options.global_logger(),
         "loaded {} file", options.docker_command
     );
-    get_bitcoinds(options)?;
+    options.load_bitcoinds()?;
     debug!(options.global_logger(), "loaded bitcoinds");
-    get_lnds(options)?;
+    options.load_lnds()?;
     debug!(options.global_logger(), "loaded lnds");
     Ok(())
 }
@@ -44,26 +41,25 @@ pub fn add_commands(docker_command: String, additional_commands: Vec<&str>) -> V
 }
 
 pub fn run_command(
-    logger: &Logger,
-    docker_command: String,
+    options: &Options,
     command_name: String,
     commands: Vec<&str>,
 ) -> Result<Output, Error> {
-    let commands = add_commands(docker_command.clone(), commands);
+    let commands = add_commands(options.docker_command.clone(), commands);
 
     info!(
-        logger,
+        options.global_logger(),
         "({}): {} {}",
         command_name,
-        docker_command,
+        options.docker_command,
         commands.clone().join(" "),
     );
-    let output = Command::new(docker_command.clone())
+    let output = Command::new(options.docker_command.clone())
         .args(commands)
         .output()?;
 
     debug!(
-        logger,
+        options.global_logger(),
         "output.stdout: {}, output.stderr: {}",
         from_utf8(&output.stdout)?,
         from_utf8(&output.stderr)?
@@ -85,6 +81,7 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
             )
         })?;
     debug!(options.global_logger(), "saved cluster config");
+
     start_docker_compose(options)?;
     debug!(options.global_logger(), "started cluster");
     //simple wait for docker-compose to spin up
@@ -93,7 +90,7 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
 
     //TODO: make optional to be mining in the background
     start_miners(options)?;
-    setup_lnd_nodes(options, options.global_logger())?;
+    setup_lnd_nodes(options)?;
     mine_initial_blocks(options)?;
     update_visualizer_conf(options)?;
     if options.aliases {
@@ -102,97 +99,76 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     Ok(())
 }
 
-fn start_docker_compose(options: &mut Options) -> Result<(), Error> {
+fn start_docker_compose(options: &Options) -> Result<(), Error> {
     let commands: Vec<&str> = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
         "up",
         "-d",
     ];
-    run_command(
-        &options.global_logger(),
-        options.docker_command.clone(),
-        "start up".to_owned(),
-        commands,
-    )?;
+    run_command(options, "start up".to_owned(), commands)?;
     Ok(())
 }
-fn start_miners(options: &mut Options) -> Result<(), Error> {
+fn start_miners(options: &Options) -> Result<(), Error> {
     // kick of miners in background, mine every x interval
     options
         .bitcoinds
         .iter()
-        .filter(|bitcoind| bitcoind.miner_time.is_some())
-        .for_each(|bitcoind| start_mining(options.clone(), bitcoind).unwrap());
+        .filter(|bitcoind| bitcoind.get_miner_time().is_some())
+        .for_each(|bitcoind| bitcoind.clone().start_mining(options).unwrap());
 
     Ok(())
 }
 
-fn mine_initial_blocks(options: &mut Options) -> Result<(), Error> {
-    let compose_path = options.compose_path.as_ref().unwrap();
+fn mine_initial_blocks(options: &Options) -> Result<(), Error> {
     // mine 100+ blocks
     let miner = options
         .bitcoinds
         .iter()
-        .find(|bitcoinds| bitcoinds.container_name.contains("miner"));
+        .find(|bitcoinds| bitcoinds.get_container_name().contains("miner"));
     if miner.is_none() {
         return Err(anyhow!(
             "at least one miner is required to be setup for this cluster to run"
         ));
     }
-    let miner_container = miner.unwrap().container_name.clone();
-    let miner_data_dir = miner.unwrap().data_dir.clone();
-    let logger = &options.global_logger();
-    mine_bitcoin(
-        logger,
-        options.docker_command.clone(),
-        compose_path.to_owned(),
-        miner_container,
-        miner_data_dir,
-        100,
-    )?;
+    miner.unwrap().mine_bitcoin(options, 100)?;
     Ok(())
 }
 
-fn setup_lnd_nodes(options: &mut Options, logger: Logger) -> Result<(), Error> {
-    let compose_path = options.compose_path.as_ref().unwrap();
-    let docker_command = options.docker_command.clone();
+fn setup_lnd_nodes(options: &mut Options) -> Result<(), Error> {
     let miner = options
         .bitcoinds
         .iter()
-        .find(|bitcoinds| bitcoinds.container_name.contains("miner"));
+        .find(|bitcoinds| bitcoinds.get_container_name().contains("miner"));
     if miner.is_none() {
         return Err(anyhow!(
             "at least one miner is required to be setup for this cluster to run"
         ));
     }
 
-    options.lnds.iter_mut().for_each(|node| {
-        let compose_path_clone = compose_path.clone();
-        let result = get_node_info(
-            docker_command.clone(),
-            &logger,
-            node,
-            compose_path_clone.clone(),
-        )
-        .and_then(|_| {
-            info!(
-                logger,
-                "container: {} pubkey: {}",
-                node.container_name.clone(),
-                node.pubkey.clone().unwrap()
-            );
-            fund_node(
-                options.docker_command.clone(),
-                &logger,
-                node,
-                &miner.unwrap().clone(),
-                compose_path_clone.clone(),
-            )
-        });
+    let logger = options.global_logger();
+    let inner_option = options.clone();
+    options.lnd_nodes.iter_mut().for_each(|node| {
+        let result = node
+            .get_node_info(&inner_option.clone())
+            .and_then(|pubkey| {
+                node.set_pubkey(pubkey);
+                info!(
+                    logger,
+                    "container: {} pubkey: {}",
+                    node.get_container_name(),
+                    node.get_pubkey()
+                );
+                let found_miner = miner.unwrap();
+                node.fund_node(&inner_option.clone(), found_miner)
+            });
 
         match result {
-            Ok(_) => info!(logger, "container: {} funded", node.container_name.clone()),
+            Ok(_) => info!(
+                logger,
+                "container: {} funded",
+                node.get_container_name().clone()
+            ),
             Err(e) => error!(logger, "failed to start/fund node: {}", e),
         }
     });
@@ -215,36 +191,40 @@ pub struct VisualizerNode {
     macaroon: String,
 }
 
-fn update_visualizer_conf(options: &mut Options) -> Result<(), Error> {
+fn update_visualizer_conf(options: &Options) -> Result<(), Error> {
     let mut config = VisualizerConfig { nodes: vec![] };
-    options.lnds.iter_mut().for_each(|node| {
-        let name = node.name.clone();
-        let admin_macaroon = get_admin_macaroon(node).unwrap();
+    options.lnd_nodes.iter().for_each(|node| {
+        let name = node.get_name();
+        let admin_macaroon = node.get_admin_macaroon().unwrap();
         let visualizer_node = VisualizerNode {
-            name,
-            host: node.server_url.clone(),
+            name: name.to_owned(),
+            host: node.get_server_url().to_owned(),
             macaroon: admin_macaroon,
         };
         config.nodes.push(visualizer_node);
     });
     let config_json = get_absolute_path("visualizer/config.json")?;
-    debug!(options.global_logger(),"config_json: {}", config_json.display());
+    debug!(
+        options.global_logger(),
+        "config_json: {}",
+        config_json.display()
+    );
     let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .truncate(true)
-            .create(true)
-            .open(config_json)?;
-    
+        .read(true)
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(config_json)?;
+
     let json_string = to_string(&config)?;
-    debug!(options.global_logger(),"preping json config file");
+    debug!(options.global_logger(), "preping json config file");
     file.write_all(json_string.as_bytes())?;
-    debug!(options.global_logger(),"saved json config file");
+    debug!(options.global_logger(), "saved json config file");
 
     Ok(())
 }
 
-fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
+fn update_bash_alias(options: &Options) -> Result<(), Error> {
     let docker_command = if options.docker_command.contains('-') {
         options.docker_command.to_owned()
     } else {
@@ -252,8 +232,8 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
     };
     let mut script_content = String::new();
     script_content.push_str(&format!("{}", options.shell_type.unwrap_or_default()));
-    options.lnds.iter().for_each(|lnd| {
-        let name = lnd.container_name.split('-').last().unwrap();
+    options.lnd_nodes.iter().for_each(|lnd| {
+        let name = lnd.get_container_name().split('-').last().unwrap();
         script_content.push_str(&format!(
             r#"
 {name}() {{
@@ -261,13 +241,14 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
 }}            
 "#, 
         docker_command= docker_command,
-        container_name= lnd.container_name,
+        container_name= lnd.get_container_name(),
         name=name,
-        ip =lnd.ip));
+        ip =lnd.get_ip()));
         script_content.push('\n');
     });
     options.bitcoinds.iter().for_each(|bitcoind| {
-        let name = bitcoind.container_name.split('-').last().unwrap();
+        let container_name = bitcoind.get_container_name();
+        let name = container_name.split('-').last().unwrap();
         script_content.push_str(&format!(
             r#"
 {name}() {{
@@ -276,7 +257,7 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
 "#,
             docker_command= docker_command,
             name = name,
-            container_name = bitcoind.container_name,
+            container_name = bitcoind.get_container_name(),
         ));
         script_content.push('\n');
     });
@@ -289,22 +270,17 @@ fn update_bash_alias(options: &mut Options) -> Result<(), Error> {
         .create(true)
         .open(full_path.clone())?;
     file.write_all(script_content.as_bytes())?;
-    debug!(options.global_logger(), "wrote aliases script @ {}", full_path.display());
+    debug!(
+        options.global_logger(),
+        "wrote aliases script @ {}",
+        full_path.display()
+    );
     let mut permissions = file.metadata()?.permissions();
     permissions.set_mode(0o755);
     file.set_permissions(permissions)?;
     debug!(options.global_logger(), "wrote aliases script");
 
     Ok(())
-}
-
-fn get_admin_macaroon(node: &mut Lnd) -> Result<String, Error> {
-    let macaroon_path = node.macaroon_path.clone();
-    let mut file = OpenOptions::new().read(true).open(macaroon_path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-    let mac_as_hex = hex::encode(buffer);
-    Ok(mac_as_hex)
 }
 
 pub fn generate_ipv4_sequence_in_subnet(
@@ -326,25 +302,25 @@ pub fn generate_ipv4_sequence_in_subnet(
     next_ip
 }
 
-fn connect_lnd_nodes(options: &mut Options) -> Result<(), Error> {
-    let mut get_a_node = options.lnds.iter();
-    options.lnds.iter().for_each(|from_lnd| {
+fn connect_lnd_nodes(options: &Options) -> Result<(), Error> {
+    let mut get_a_node = options.lnd_nodes.iter();
+    options.lnd_nodes.iter().for_each(|from_lnd| {
         let back_a_node = get_a_node.next_back();
         if back_a_node.is_none() {
             return;
         }
         let mut to_lnd = back_a_node.unwrap();
-        if to_lnd.name == from_lnd.name {
+        if to_lnd.get_name() == from_lnd.get_name() {
             to_lnd = get_a_node.next().unwrap();
         }
         let node_command = &NodeCommand {
             name: "connect".to_owned(),
-            from: from_lnd.name.clone(),
-            to: to_lnd.name.clone(),
+            from: from_lnd.get_name().to_owned(),
+            to: to_lnd.get_name().to_owned(),
             amt: None,
             subcommand: None,
         };
-        connect(options, node_command).unwrap_or_default();
+        from_lnd.connect(options, node_command).unwrap_or_default();
     });
     Ok(())
 }

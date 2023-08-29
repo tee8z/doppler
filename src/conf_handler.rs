@@ -19,7 +19,10 @@ use std::{
     vec,
 };
 
-use crate::{generate_ipv4_sequence_in_subnet, MinerTime, NETWORK, SUBNET};
+use crate::{
+    add_bitcoinds, add_lnd_nodes, generate_ipv4_sequence_in_subnet, Bitcoind, L1Node, L2Node, Lnd,
+    NETWORK, SUBNET,
+};
 
 #[derive(Subcommand)]
 pub enum AppSubCommands {
@@ -29,7 +32,6 @@ pub enum AppSubCommands {
 
 #[derive(Args, Debug)]
 pub struct Script {
-
     /// Set the shell language to use for the aliases file
     #[arg(value_enum)]
     pub shell_type: Option<ShellType>,
@@ -56,11 +58,10 @@ impl std::fmt::Display for ShellType {
         }
     }
 }
-
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Options {
     pub bitcoinds: Vec<Bitcoind>,
-    pub lnds: Vec<Lnd>,
+    pub lnd_nodes: Vec<Lnd>,
     ports: Vec<i64>,
     ip_addresses: Vec<Ipv4Addr>,
     pub compose_path: Option<String>,
@@ -109,8 +110,11 @@ impl Options {
             _ => panic!("Only IPv4 is supported"),
         };
         let (aliases, shell_type) = if app_sub_commands.is_some() {
-            let AppSubCommands::DetailedCommand(sub_commands) = app_sub_commands.unwrap();
-            (true, sub_commands.shell_type)
+            if let Some(AppSubCommands::DetailedCommand(sub_commands)) = app_sub_commands {
+                (true, sub_commands.shell_type)
+            } else {
+                (false, Some(ShellType::default()))
+            }
         } else {
             (true, Some(ShellType::default()))
         };
@@ -121,7 +125,7 @@ impl Options {
         };
         Self {
             bitcoinds: vec::Vec::new(),
-            lnds: vec::Vec::new(),
+            lnd_nodes: vec::Vec::new(),
             ports: starting_port,
             ip_addresses: vec![start_ip],
             compose_path: None,
@@ -144,13 +148,6 @@ impl Options {
     }
     pub fn get_thread_handlers(&self) -> Arc<Mutex<Vec<Thread>>> {
         self.thread_handlers.clone()
-    }
-    pub fn get_bitcoind(&self, name: String) -> Bitcoind {
-        self.bitcoinds
-            .iter()
-            .find(|bitcoind| bitcoind.name == name)
-            .unwrap()
-            .clone()
     }
     pub fn new_port(&mut self) -> i64 {
         let last_port = self.ports.last().unwrap();
@@ -223,7 +220,7 @@ impl Options {
 
     pub fn load_compose(&mut self) -> Result<(), io::Error> {
         let compose_path = self.compose_path.clone().unwrap();
-        let target_file = std::path::Path::new(compose_path.as_str());
+        let target_file = std::path::Path::new(&compose_path);
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -249,56 +246,28 @@ impl Options {
         self.services = inner_index_map;
         Ok(())
     }
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct Bitcoind {
-    pub conf: FileConf,
-    pub data_dir: String,
-    pub container_name: String,
-    pub name: String,
-    pub p2pport: String,
-    pub rpcport: String,
-    pub user: String,
-    pub password: String,
-    pub zmqpubrawblock: String,
-    pub zmqpubrawtx: String,
-    pub path_vol: String,
-    pub ip: String,
-    pub miner_time: Option<MinerTime>,
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct Lnd {
-    pub container_name: String,
-    pub name: String,
-    pub pubkey: Option<String>,
-    pub alias: String,
-    pub rest_port: String,
-    pub grpc_port: String,
-    pub p2p_port: String,
-    pub server_url: String,
-    pub rpc_server: String,
-    pub macaroon_path: String,
-    pub certificate_path: String,
-    pub path_vol: String,
-    pub ip: String,
-}
-
-impl Lnd {
-    pub fn get_rpc_server_command(&self) -> String {
-        format!("--rpcserver={}:10000", self.ip)
+    pub fn get_lnd_by_name(&self, name: &str) -> Result<&Lnd, Error> {
+        let lnd = self
+            .lnd_nodes
+            .iter()
+            .find(|node| node.get_name() == name)
+            .unwrap_or_else(|| panic!("invalid node name: {:?}", name));
+        Ok(lnd)
     }
-    pub fn get_macaroon_command(&self) -> String {
-        "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon".to_owned()
+    pub fn get_bitcoind_by_name(&self, name: &str) -> Result<&Bitcoind, Error> {
+        let btcd = self
+            .bitcoinds
+            .iter()
+            .find(|node| node.get_name() == *name)
+            .unwrap_or_else(|| panic!("invalid node name: {:?}", name));
+        Ok(btcd)
     }
-    pub fn get_connection_url(&self) -> String {
-        format!(
-            "{}@{}:{}",
-            self.pubkey.as_ref().unwrap(),
-            self.container_name,
-            self.p2p_port.clone()
-        )
+    pub fn load_bitcoinds(&mut self) -> Result<(), Error> {
+        add_bitcoinds(self)?;
+        Ok(())
+    }
+    pub fn load_lnds(&mut self) -> Result<(), Error> {
+        add_lnd_nodes(self)
     }
 }
 
@@ -316,7 +285,6 @@ pub fn copy_file(
 ) -> Result<PathBuf, anyhow::Error> {
     let destination_file = format!("{}/{}", destination_directory, conf_name);
     if Path::new(destination_directory).exists() {
-        //TODO: figure out how to update conf file in directory between runs
         return get_absolute_path(&destination_file);
     }
 
