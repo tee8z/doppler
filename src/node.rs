@@ -1,32 +1,22 @@
 use crate::{Bitcoind, Options};
 use anyhow::Error;
-use conf_parser::processer::FileConf;
 use rand::Rng;
 use serde_yaml::{from_slice, Value};
+use slog::info;
 use std::{any::Any, process::Output};
 
 pub trait L2Node: Any {
     fn get_connection_url(&self) -> String;
-    fn get_name(&self) -> &str;
-    fn get_pubkey(&self) -> String;
     fn get_server_url(&self) -> &str;
+    fn get_name(&self) -> &str;
     fn get_container_name(&self) -> &str;
     fn get_ip(&self) -> &str;
-    fn get_rpc_server_command(&self) -> String;
-    fn get_node_info(&self, options: &Options) -> Result<String, Error>;
+    fn get_pubkey(&self) -> String;
     fn set_pubkey(&mut self, pubkey: String);
-    fn create_wallet(&self, option: &Options) -> Result<(), Error>;
-    fn create_address(&self, option: &Options) -> Result<String, Error>;
+    fn get_node_info(&self, options: &Options) -> Result<String, Error>;
     fn open_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn connect(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
-    fn get_peers_channels(
-        &self,
-        options: &Options,
-        node_command: &NodeCommand,
-    ) -> Result<String, Error>;
-    fn send_ln(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
-    fn send_on_chain(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn create_invoice(
         &self,
         options: &Options,
@@ -38,17 +28,34 @@ pub trait L2Node: Any {
         node_command: &NodeCommand,
         payment_request: String,
     ) -> Result<(), Error>;
-    fn create_on_chain_address(
-        &self,
-        options: &Options,
-        node_command: &NodeCommand,
-    ) -> Result<String, Error>;
+    fn create_on_chain_address(&self, options: &Options) -> Result<String, Error>;
     fn pay_address(
         &self,
         options: &Options,
         node_command: &NodeCommand,
         address: &str,
     ) -> Result<String, Error>;
+    fn send_ln(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+        let to_node = options.get_l2_by_name(&node_command.to)?;
+        let invoice = to_node.create_invoice(options, node_command)?;
+        self.pay_invoice(options, node_command, invoice)?;
+        Ok(())
+    }
+    fn send_on_chain(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+        let to_node = options.get_l2_by_name(&node_command.to)?;
+        let on_chain_address_from = to_node.create_on_chain_address(options)?;
+        let tx_id = self.pay_address(options, node_command, on_chain_address_from.as_str())?;
+        info!(
+            options.global_logger(),
+            "on chain transaction created: {}", tx_id
+        );
+        Ok(())
+    }
+    fn fund_node(&self, options: &Options, miner: &Bitcoind) -> Result<(), Error> {
+        let address = self.create_on_chain_address(options)?;
+        miner.clone().mine_to_address(options, 2, address)?;
+        Ok(())
+    }
     fn get_property(&self, name: &str, output: Output) -> Option<String> {
         get_property(name, output)
     }
@@ -63,8 +70,6 @@ pub trait L2Node: Any {
     fn generate_memo(&self) -> String {
         generate_memo()
     }
-    fn set_l1_values(&self, conf: &mut FileConf, bitcoin_node: &dyn L1Node) -> Result<(), Error>;
-    fn fund_node(&self, option: &Options, miner: &Bitcoind) -> Result<(), Error>;
 }
 
 pub trait L1Node: Any {
@@ -78,6 +83,7 @@ pub trait L1Node: Any {
     fn get_miner_time(&self) -> &Option<MinerTime>;
     fn get_ip(&self) -> String;
     fn get_zmqpubrawblock(&self) -> String;
+    fn get_zmqpubhashblock(&self) -> String;
     fn get_zmqpubrawtx(&self) -> String;
     fn get_rpc_username(&self) -> String;
     fn get_rpc_password(&self) -> String;

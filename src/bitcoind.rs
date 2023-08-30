@@ -28,6 +28,7 @@ pub struct Bitcoind {
     pub user: String,
     pub password: String,
     pub zmqpubrawblock: String,
+    pub zmqpubhashblock: String,
     pub zmqpubrawtx: String,
     pub path_vol: String,
     pub ip: String,
@@ -62,6 +63,9 @@ impl L1Node for Bitcoind {
     }
     fn get_zmqpubrawblock(&self) -> String {
         self.zmqpubrawblock.clone()
+    }
+    fn get_zmqpubhashblock(&self) -> String {
+        self.zmqpubhashblock.clone()
     }
     fn get_zmqpubrawtx(&self) -> String {
         self.zmqpubrawtx.clone()
@@ -227,6 +231,12 @@ fn load_config(
             .last()
             .unwrap()
             .to_owned(),
+        zmqpubhashblock: regtest_section
+            .get_property("zmqpubhashblock")
+            .split(':')
+            .last()
+            .unwrap()
+            .to_owned(),
         zmqpubrawtx: regtest_section
             .get_property("zmqpubrawtx")
             .split(':')
@@ -276,6 +286,12 @@ fn get_bitcoind_config(
             .last()
             .unwrap()
             .to_owned(),
+        zmqpubhashblock: regtest_section
+            .get_property("zmqpubhashblock")
+            .split(':')
+            .last()
+            .unwrap()
+            .to_owned(),
         zmqpubrawtx: regtest_section
             .get_property("zmqpubrawtx")
             .split(':')
@@ -307,6 +323,10 @@ fn set_regtest_section(
     );
     bitcoin.set_property(
         "zmqpubrawtx",
+        &format!("tcp://{}:{}", ip, options.new_port()),
+    );
+    bitcoin.set_property(
+        "zmqpubhashblock",
         &format!("tcp://{}:{}", ip, options.new_port()),
     );
     let regtest_section = get_regtest_section(conf)?;
@@ -503,6 +523,11 @@ fn pair_node(
 
     for node in nodes.iter() {
         let container_name = current_node.get_container_name();
+        // -rpcport="3133" -rpcuser="alice" -rpcpassword="hello"
+        let rpc_port = format!("-rpcport={}", current_node.get_rpc_port());
+        let rpc_user = format!("-rpcuser={}", current_node.get_rpc_username());
+        let rpc_password = format!("-rpcuser={}", current_node.get_rpc_username());
+
         let commands = vec![
             "-f",
             compose_path.as_ref(),
@@ -512,6 +537,9 @@ fn pair_node(
             &container_name,
             "bitcoin-cli",
             datadir_flag,
+            &rpc_port,
+            &rpc_user,
+            &rpc_password,
             "addnode",
             node,
             r#"add"#,

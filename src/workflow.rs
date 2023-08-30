@@ -1,6 +1,6 @@
 use crate::{
-    build_bitcoind, build_lnd, load_options_from_compose, run_cluster, DopplerParser, L1Node,
-    L2Node, MinerTime, NodeCommand, NodeKind, Options, Rule,
+    build_bitcoind, build_eclair, build_lnd, load_options_from_compose, run_cluster, DopplerParser,
+    L1Node, MinerTime, NodeCommand, NodeKind, Options, Rule,
 };
 use anyhow::{Error, Result};
 use indexmap::IndexMap;
@@ -27,7 +27,6 @@ pub fn run_workflow(options: &mut Options, parsed: Pair<'_, Rule>) -> Result<(),
     for pair in parsed.into_inner() {
         match pair.as_rule() {
             Rule::loop_content => {
-                debug!(options.global_logger(), "entering loop");
                 handle_loop(options, &mut loops, pair).expect("invalid loop block")
             }
             Rule::conf => handle_conf(options, pair).expect("invalid conf line"),
@@ -36,7 +35,7 @@ pub fn run_workflow(options: &mut Options, parsed: Pair<'_, Rule>) -> Result<(),
                 handle_skip_conf(options).expect("failed load current cluster into options")
             }
             Rule::ln_node_action => {
-                handle_lnd_action(options, pair).expect("invalid node action line")
+                handle_ln_action(options, pair).expect("invalid node action line")
             }
             Rule::btc_node_action => {
                 handle_btc_action(options, pair).expect("invalid node action line")
@@ -167,7 +166,6 @@ fn handle_loop(
     line: Pair<'_, Rule>,
 ) -> Result<()> {
     let line_inner = line.clone().into_inner();
-    debug!(options.global_logger(), "line_inner: {:?}", line_inner);
 
     let current_loop = loops.last();
     let mut node_command = None;
@@ -185,8 +183,8 @@ fn handle_loop(
                 node_command = Some(process_btc_action(inner_pair));
             }
             Rule::ln_node_action => {
-                debug!(logger, "processing lnd node command");
-                node_command = Some(process_lnd_action(inner_pair));
+                debug!(logger, "processing ln node command");
+                node_command = Some(process_ln_action(inner_pair));
             }
             Rule::end => {
                 debug!(logger, "processing end command");
@@ -240,7 +238,6 @@ fn run_loop(
             current_options.main_thread_active.val()
         );
         while current_options.main_thread_active.val() {
-            debug!(current_options.global_logger(), "in while");
             if iter_count == 0 {
                 debug!(
                     current_options.global_logger(),
@@ -395,6 +392,9 @@ fn handle_build_command(
         NodeKind::Bitcoind => build_bitcoind(options, name, &None),
         NodeKind::BitcoindMiner => build_bitcoind(options, name, &details.unwrap().miner_time),
         NodeKind::Lnd => build_lnd(options, name, details.unwrap().pair_name.unwrap().as_str()),
+        NodeKind::Eclair => {
+            build_eclair(options, name, details.unwrap().pair_name.unwrap().as_str())
+        }
         _ => unimplemented!("deploying kind {:?} not implemented yet", kind),
     }
 }
@@ -411,7 +411,7 @@ fn handle_up(options: &mut Options) -> Result<(), Error> {
     //pause until input
     info!(
         options.global_logger(),
-        "doppler cluster has been created, please press any key to continue the script"
+        "doppler cluster has been created, please press enter to continue the script"
     );
     options.main_thread_paused.set(true);
     let mut input = String::new();
@@ -423,8 +423,8 @@ fn handle_up(options: &mut Options) -> Result<(), Error> {
     Ok(())
 }
 
-fn handle_lnd_action(options: &Options, line: Pair<Rule>) -> Result<()> {
-    let command = process_lnd_action(line);
+fn handle_ln_action(options: &Options, line: Pair<Rule>) -> Result<()> {
+    let command = process_ln_action(line);
     match command.name.as_str() {
         "OPEN_CHANNEL" => open_channel(options, &command),
         "SEND_LN" => send_ln(options, &command),
@@ -440,7 +440,7 @@ fn handle_lnd_action(options: &Options, line: Pair<Rule>) -> Result<()> {
     }
 }
 
-fn process_lnd_action(line: Pair<Rule>) -> NodeCommand {
+fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
     let mut line_inner = line.into_inner();
     let (from_node, command_name, to_node, amt) = {
         let mut next = || line_inner.next().expect("invalid input");
@@ -506,7 +506,7 @@ fn handle_skip_conf(options: &mut Options) -> Result<(), Error> {
     load_options_from_compose(options, COMPOSE_PATH)?;
     info!(
         options.global_logger(),
-        "doppler cluster has been found and loaded, contining with script"
+        "doppler cluster has been found and loaded, continuing with script"
     );
     Ok(())
 }
@@ -518,21 +518,21 @@ fn node_mine_bitcoin(options: &Options, miner_name: String, amt: i64) -> Result<
 }
 
 fn open_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let from = option.get_lnd_by_name(node_command.from.as_str())?;
+    let from = option.get_l2_by_name(node_command.from.as_str())?;
     from.open_channel(option, node_command)
 }
 
 fn send_ln(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let from = option.get_lnd_by_name(node_command.from.as_str())?;
+    let from = option.get_l2_by_name(node_command.from.as_str())?;
     from.send_ln(option, node_command)
 }
 
 fn send_on_chain(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let from = option.get_lnd_by_name(node_command.from.as_str())?;
+    let from = option.get_l2_by_name(node_command.from.as_str())?;
     from.send_on_chain(option, node_command)
 }
 
 fn close_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let from = option.get_lnd_by_name(node_command.from.as_str())?;
+    let from = option.get_l2_by_name(node_command.from.as_str())?;
     from.close_channel(option, node_command)
 }

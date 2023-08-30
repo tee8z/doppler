@@ -27,6 +27,8 @@ pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> R
     debug!(options.global_logger(), "loaded bitcoinds");
     options.load_lnds()?;
     debug!(options.global_logger(), "loaded lnds");
+    options.load_eclairs()?;
+    debug!(options.global_logger(), "loaded eclairs");
     Ok(())
 }
 
@@ -90,7 +92,7 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
 
     //TODO: make optional to be mining in the background
     start_miners(options)?;
-    setup_lnd_nodes(options)?;
+    setup_l2_nodes(options)?;
     mine_initial_blocks(options)?;
     update_visualizer_conf(options)?;
     if options.aliases {
@@ -135,7 +137,7 @@ fn mine_initial_blocks(options: &Options) -> Result<(), Error> {
     Ok(())
 }
 
-fn setup_lnd_nodes(options: &mut Options) -> Result<(), Error> {
+fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
     let miner = options
         .bitcoinds
         .iter()
@@ -148,32 +150,34 @@ fn setup_lnd_nodes(options: &mut Options) -> Result<(), Error> {
 
     let logger = options.global_logger();
     let inner_option = options.clone();
-    options.lnd_nodes.iter_mut().for_each(|node| {
-        let result = node
+    options.get_l2_nodes_mut().iter_mut().for_each(|node| {
+        let node_clone = node.clone();
+        let mut node_borrow = node_clone.borrow_mut();
+        let result = node_borrow
             .get_node_info(&inner_option.clone())
             .and_then(|pubkey| {
-                node.set_pubkey(pubkey);
+                node_borrow.set_pubkey(pubkey);
                 info!(
                     logger,
                     "container: {} pubkey: {}",
-                    node.get_container_name(),
-                    node.get_pubkey()
+                    node_borrow.get_container_name(),
+                    node_borrow.get_pubkey()
                 );
                 let found_miner = miner.unwrap();
-                node.fund_node(&inner_option.clone(), found_miner)
+                node_borrow.fund_node(&inner_option.clone(), found_miner)
             });
 
         match result {
             Ok(_) => info!(
                 logger,
                 "container: {} funded",
-                node.get_container_name().clone()
+                node_borrow.get_container_name().clone()
             ),
             Err(e) => error!(logger, "failed to start/fund node: {}", e),
         }
     });
 
-    connect_lnd_nodes(options)?;
+    connect_l2_nodes(options)?;
 
     Ok(())
 }
@@ -302,25 +306,33 @@ pub fn generate_ipv4_sequence_in_subnet(
     next_ip
 }
 
-fn connect_lnd_nodes(options: &Options) -> Result<(), Error> {
+fn connect_l2_nodes(options: &Options) -> Result<(), Error> {
     let mut get_a_node = options.lnd_nodes.iter();
-    options.lnd_nodes.iter().for_each(|from_lnd| {
+    options.get_l2_nodes().iter().for_each(|from_node| {
         let back_a_node = get_a_node.next_back();
         if back_a_node.is_none() {
             return;
         }
-        let mut to_lnd = back_a_node.unwrap();
-        if to_lnd.get_name() == from_lnd.get_name() {
-            to_lnd = get_a_node.next().unwrap();
+        let mut to_node = back_a_node.unwrap();
+        if to_node.get_name() == from_node.get_name() {
+            to_node = get_a_node.next().unwrap();
         }
         let node_command = &NodeCommand {
             name: "connect".to_owned(),
-            from: from_lnd.get_name().to_owned(),
-            to: to_lnd.get_name().to_owned(),
+            from: from_node.get_name().to_owned(),
+            to: to_node.get_name().to_owned(),
             amt: None,
             subcommand: None,
         };
-        from_lnd.connect(options, node_command).unwrap_or_default();
+        from_node.connect(options, node_command).unwrap_or_default();
     });
     Ok(())
+}
+
+pub fn restart_service(options: &Options, service_name: String) -> Result<Output, Error> {
+    let compose_path = options.compose_path.as_ref().unwrap();
+
+    let commands = vec!["-f", compose_path, "restart", &service_name];
+    let output = run_command(options, "restart service".to_owned(), commands.clone())?;
+    Ok(output)
 }

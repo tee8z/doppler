@@ -60,3 +60,6 @@ this allows you to call the containers like this from your current command promp
 ```
 lnd1 --help
 ```
+
+### Config options for eclair nodes:
+https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf

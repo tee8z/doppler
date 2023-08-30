@@ -1,15 +1,13 @@
 use crate::{
-    copy_file, get_absolute_path, run_command, Bitcoind, L1Node, L2Node, NodeCommand, Options,
-    NETWORK,
+    copy_file, get_absolute_path, run_command, L1Node, L2Node, NodeCommand, Options, NETWORK,
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{
-    AdvancedNetworkSettings, AdvancedNetworks, EnvFile, MapOrEmpty, Networks, Ports, Service,
-    Volumes,
+    AdvancedNetworkSettings, AdvancedNetworks, DependsOnOptions, EnvFile, MapOrEmpty, Networks,
+    Ports, Service, Volumes,
 };
 use indexmap::IndexMap;
-use serde_yaml::{from_slice, Value};
 use slog::{debug, error, info};
 use std::{
     fs::{File, OpenOptions},
@@ -36,6 +34,7 @@ pub struct Lnd {
     pub certificate_path: String,
     pub path_vol: String,
     pub ip: String,
+    pub bitcoind_node_container_name: String,
 }
 
 impl Lnd {
@@ -46,13 +45,20 @@ impl Lnd {
     pub fn get_macaroon_path(&self) -> &str {
         "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon"
     }
+    pub fn get_rpc_server_command(&self) -> String {
+        format!("--rpcserver={}:10000", self.ip.clone()).clone()
+    }
+    /// A channel point is the outpoint (txid:index) of the funding transaction.
+    pub fn get_peers_channel_point(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+    ) -> Result<String, Error> {
+        get_peers_channel_point(self, options, node_command)
+    }
 }
 
 impl L2Node for Lnd {
-    fn set_l1_values(&self, conf: &mut FileConf, bitcoin_node: &dyn L1Node) -> Result<(), Error> {
-        set_l1_values(conf, bitcoin_node)
-    }
-
     fn get_connection_url(&self) -> String {
         if let Some(pubkey) = self.pubkey.as_ref() {
             format!(
@@ -68,9 +74,6 @@ impl L2Node for Lnd {
     fn get_server_url(&self) -> &str {
         self.server_url.as_str()
     }
-    fn get_rpc_server_command(&self) -> String {
-        format!("--rpcserver={}:10000", self.ip.clone()).clone()
-    }
     fn get_name(&self) -> &str {
         self.name.as_str()
     }
@@ -83,9 +86,6 @@ impl L2Node for Lnd {
     fn get_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
     }
-    fn get_node_info(&self, options: &Options) -> Result<String, Error> {
-        get_node_info(self, options)
-    }
     fn set_pubkey(&mut self, pubkey: String) {
         self.pubkey = if !pubkey.is_empty() {
             Some(pubkey)
@@ -93,36 +93,17 @@ impl L2Node for Lnd {
             None
         }
     }
-    fn fund_node(&self, options: &Options, miner: &Bitcoind) -> Result<(), Error> {
-        fund_node(self, options, miner)
-    }
-    fn create_wallet(&self, options: &Options) -> Result<(), Error> {
-        create_lnd_wallet(self, options)
-    }
-    fn create_address(&self, options: &Options) -> Result<String, Error> {
-        create_lnd_address(self, options)
+    fn get_node_info(&self, options: &Options) -> Result<String, Error> {
+        get_node_info(self, options)
     }
     fn open_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         open_channel(self, options, node_command)
     }
     fn connect(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-        connect(options, node_command)
+        connect(self, options, node_command)
     }
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         close_channel(self, options, node_command)
-    }
-    fn get_peers_channels(
-        &self,
-        options: &Options,
-        node_command: &NodeCommand,
-    ) -> Result<String, Error> {
-        get_peers_channels(self, options, node_command)
-    }
-    fn send_ln(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-        send_ln(self, options, node_command)
-    }
-    fn send_on_chain(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-        send_on_chain(self, options, node_command)
     }
     fn create_invoice(
         &self,
@@ -137,14 +118,10 @@ impl L2Node for Lnd {
         node_command: &NodeCommand,
         payment_request: String,
     ) -> Result<(), Error> {
-        pay_invoice(options, node_command, payment_request)
+        pay_invoice(self, options, node_command, payment_request)
     }
-    fn create_on_chain_address(
-        &self,
-        options: &Options,
-        node_command: &NodeCommand,
-    ) -> Result<String, Error> {
-        create_on_chain_address(self, options, node_command)
+    fn create_on_chain_address(&self, options: &Options) -> Result<String, Error> {
+        create_lnd_address(self, options)
     }
     fn pay_address(
         &self,
@@ -174,7 +151,9 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
             ..Default::default()
         }),
     );
+    let bitcoind = vec![lnd_conf.bitcoind_node_container_name.clone()];
     let lnd = Service {
+        depends_on: DependsOnOptions::Simple(bitcoind),
         image: Some(LND_IMAGE.to_string()),
         container_name: Some(lnd_conf.container_name.clone()),
         ports: Ports::Short(vec![lnd_conf.p2p_port.clone()]),
@@ -250,6 +229,7 @@ fn build_config(options: &Options, name: &str, pair_name: &str, ip: &str) -> Res
         grpc_port: "10000".to_owned(),
         rest_port: "8080".to_owned(),
         p2p_port: "9735".to_owned(),
+        bitcoind_node_container_name: bitcoind_node.container_name.clone(),
     })
 }
 
@@ -269,7 +249,18 @@ pub fn add_lnd_nodes(options: &mut Options) -> Result<(), Error> {
                     found_ip = advance_setting.ipv4_address.clone();
                 }
             }
-            load_config(lnd_name, container_name.to_owned(), found_ip.unwrap())
+            let mut bitcoind_service = "".to_owned();
+            if let DependsOnOptions::Simple(layer_1_nodes) =
+                service.1.as_ref().unwrap().depends_on.clone()
+            {
+                bitcoind_service = layer_1_nodes[0].clone();
+            }
+            load_config(
+                lnd_name,
+                container_name.to_owned(),
+                found_ip.unwrap(),
+                bitcoind_service.to_owned(),
+            )
         })
         .filter_map(|res| res.ok())
         .collect();
@@ -298,7 +289,12 @@ pub fn add_lnd_nodes(options: &mut Options) -> Result<(), Error> {
     Ok(())
 }
 
-fn load_config(name: &str, container_name: String, ip: String) -> Result<Lnd, Error> {
+fn load_config(
+    name: &str,
+    container_name: String,
+    ip: String,
+    bitcoind_service: String,
+) -> Result<Lnd, Error> {
     let full_path = &format!("data/{}/.lnd", name);
     Ok(Lnd {
         name: name.to_owned(),
@@ -317,6 +313,7 @@ fn load_config(name: &str, container_name: String, ip: String) -> Result<Lnd, Er
         grpc_port: "10000".to_owned(),
         rest_port: "8080".to_owned(),
         p2p_port: "9735".to_owned(),
+        bitcoind_node_container_name: bitcoind_service,
     })
 }
 
@@ -381,8 +378,6 @@ fn set_application_options_values(conf: &mut FileConf, name: &str, ip: &str) -> 
 }
 
 fn get_node_info(lnd: &Lnd, options: &Options) -> Result<String, Error> {
-    let mut output_found = None;
-    let mut retries = 3;
     let rpc_command = lnd.get_rpc_server_command();
     let macaroon_path = lnd.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
@@ -400,9 +395,14 @@ fn get_node_info(lnd: &Lnd, options: &Options) -> Result<String, Error> {
         &rpc_command,
         "getinfo",
     ];
+
+    let mut retries = 3;
+    let mut output_found = None;
     while retries > 0 {
         let output = run_command(options, "pubkey".to_owned(), commands.clone())?;
-        if from_utf8(&output.stderr)?.contains("the RPC server is in the process of starting up, but not yet ready to accept calls") {
+        if from_utf8(&output.stderr)?.contains(
+            "the RPC server is in the process of starting up, but not yet ready to accept calls",
+        ) {
             debug!(options.global_logger(), "trying to get pubkey again");
             thread::sleep(Duration::from_secs(2));
             retries -= 1;
@@ -421,40 +421,6 @@ fn get_node_info(lnd: &Lnd, options: &Options) -> Result<String, Error> {
         }
     }
     Ok("".to_owned())
-}
-
-fn fund_node(node: &dyn L2Node, options: &Options, miner: &Bitcoind) -> Result<(), Error> {
-    node.create_wallet(options)?;
-    let address = node.create_address(options)?;
-    miner.clone().mine_to_address(options, 2, address)?;
-    Ok(())
-}
-
-fn create_lnd_wallet(node: &Lnd, options: &Options) -> Result<(), Error> {
-    let rpc_command = node.get_rpc_server_command();
-    let macaroon_path = node.get_macaroon_path();
-    let compose_path = options.compose_path.as_ref().unwrap();
-
-    let commands = vec![
-        "-f",
-        compose_path,
-        "exec",
-        "--user",
-        "1000:1000",
-        &node.container_name,
-        "lncli",
-        "--lnddir=/home/lnd/.lnd",
-        "--network=regtest",
-        macaroon_path,
-        &rpc_command,
-        "newaddress",
-        "p2tr", //TODO: allow for other types beside taproot addresses
-    ];
-    let output = run_command(options, "newaddress".to_owned(), commands)?;
-    if output.status.success() {
-        let _response: Value = from_slice(&output.stdout).expect("failed to parse JSON");
-    }
-    Ok(())
 }
 
 fn create_lnd_address(lnd: &Lnd, options: &Options) -> Result<String, Error> {
@@ -490,11 +456,10 @@ fn open_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Re
     let _ = node.connect(options, node_command).map_err(|e| {
         debug!(options.global_logger(), "failed to connect: {}", e);
     });
-    let to_lnd = options.get_lnd_by_name(node_command.to.as_str())?;
-    let from_lnd = options.get_lnd_by_name(node_command.from.as_str())?;
+    let to_lnd = options.get_l2_by_name(node_command.to.as_str())?;
     let amt = node_command.amt.unwrap_or(100000).to_string();
-    let rpc_command = from_lnd.get_rpc_server_command();
-    let macaroon_path = from_lnd.get_macaroon_path();
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
     let to_pubkey = to_lnd.get_pubkey();
     let commands = vec![
@@ -503,7 +468,7 @@ fn open_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Re
         "exec",
         "--user",
         "1000:1000",
-        from_lnd.get_container_name(),
+        node.get_container_name(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
@@ -518,26 +483,25 @@ fn open_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Re
         info!(
             options.global_logger(),
             "successfully opened channel from {} to {}",
-            from_lnd.get_name(),
+            node.get_name(),
             to_lnd.get_name()
         );
     } else {
         error!(
             options.global_logger(),
             "failed to open channel from {} to {}",
-            from_lnd.get_name(),
+            node.get_name(),
             to_lnd.get_name()
         );
     }
     Ok(())
 }
 
-fn connect(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let to_lnd = options.get_lnd_by_name(node_command.to.as_str())?;
-    let from_lnd = options.get_lnd_by_name(node_command.from.as_str())?;
+fn connect(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let to_lnd = options.get_l2_by_name(node_command.to.as_str())?;
     let connection_url = to_lnd.get_connection_url();
-    let rpc_command = from_lnd.get_rpc_server_command();
-    let macaroon_path = from_lnd.get_macaroon_path();
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
 
     let commands = vec![
@@ -546,7 +510,7 @@ fn connect(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         "exec",
         "--user",
         "1000:1000",
-        from_lnd.get_container_name(),
+        node.get_container_name(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
@@ -561,14 +525,14 @@ fn connect(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         info!(
             options.global_logger(),
             "successfully connected from {} to {}",
-            from_lnd.get_name(),
+            node.get_name(),
             to_lnd.get_name()
         );
     } else {
         error!(
             options.global_logger(),
             "failed to connect from {} to {}",
-            from_lnd.get_name(),
+            node.get_name(),
             to_lnd.get_name()
         );
     }
@@ -576,11 +540,11 @@ fn connect(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
 }
 
 fn close_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let peer_channel_point = node.get_peers_channels(options, node_command)?;
-    let to_lnd = options.get_lnd_by_name(node_command.to.as_str())?;
-    let from_lnd = options.get_lnd_by_name(node_command.from.as_str())?;
-    let rpc_command = from_lnd.get_rpc_server_command();
-    let macaroon_path = from_lnd.get_macaroon_path();
+    //TODO: find a way to specify which channel to close, right now we just grab a random one for this peer
+    let peer_channel_point = node.get_peers_channel_point(options, node_command)?;
+    let to_lnd = options.get_l2_by_name(node_command.to.as_str())?;
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
     let commands = vec![
         "-f",
@@ -588,7 +552,7 @@ fn close_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> R
         "exec",
         "--user",
         "1000:1000",
-        from_lnd.get_container_name(),
+        node.get_container_name(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
@@ -604,29 +568,28 @@ fn close_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> R
         info!(
             options.global_logger(),
             "successfully closed channel from {} to {}",
-            from_lnd.get_name(),
+            node.get_name(),
             to_lnd.get_name()
         );
     } else {
         error!(
             options.global_logger(),
             "failed to close channel from {} to {}",
-            from_lnd.get_name(),
+            node.get_name(),
             to_lnd.get_name()
         );
     }
     Ok(())
 }
 
-fn get_peers_channels(
+fn get_peers_channel_point(
     node: &Lnd,
     options: &Options,
     node_command: &NodeCommand,
 ) -> Result<String, Error> {
-    let to_lnd = options.get_lnd_by_name(node_command.to.as_str())?;
-    let from_lnd = options.get_lnd_by_name(node_command.from.as_str())?;
-    let rpc_command = from_lnd.get_rpc_server_command();
-    let macaroon_path = from_lnd.get_macaroon_path();
+    let to_lnd = options.get_l2_by_name(node_command.to.as_str())?;
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
     let to_pubkey = to_lnd.get_pubkey();
     let commands = vec![
@@ -635,7 +598,7 @@ fn get_peers_channels(
         "exec",
         "--user",
         "1000:1000",
-        from_lnd.get_container_name(),
+        node.get_container_name(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
@@ -653,32 +616,15 @@ fn get_peers_channels(
     Ok(channel_point.unwrap())
 }
 
-fn send_ln(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let invoice = node.create_invoice(options, node_command)?;
-    node.pay_invoice(options, node_command, invoice)?;
-    Ok(())
-}
-
-fn send_on_chain(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let on_chain_address_from = node.create_on_chain_address(options, node_command)?;
-    let tx_id = node.pay_address(options, node_command, on_chain_address_from.as_str())?;
-    info!(
-        options.global_logger(),
-        "on chain transaction created: {}", tx_id
-    );
-    Ok(())
-}
-
 fn create_invoice(
     node: &Lnd,
     options: &Options,
     node_command: &NodeCommand,
 ) -> Result<String, Error> {
-    let to_lnd = options.get_lnd_by_name(node_command.to.as_str())?;
     let amt = node_command.amt.unwrap_or(1000).to_string();
     let memo = node.generate_memo();
-    let rpc_command = to_lnd.get_rpc_server_command();
-    let macaroon_path = to_lnd.get_macaroon_path();
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
 
     let commands = vec![
@@ -687,7 +633,7 @@ fn create_invoice(
         "exec",
         "--user",
         "1000:1000",
-        to_lnd.get_container_name(),
+        node.get_container_name(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
@@ -703,19 +649,19 @@ fn create_invoice(
     let found_payment_request: Option<String> =
         node.get_property("payment_request", output.clone());
     if found_payment_request.is_none() {
-        error!(options.global_logger(), "no payment hash found");
+        error!(options.global_logger(), "no payment request found");
     }
     Ok(found_payment_request.unwrap())
 }
 
 fn pay_invoice(
+    node: &Lnd,
     options: &Options,
     node_command: &NodeCommand,
     payment_request: String,
 ) -> Result<(), Error> {
-    let from_lnd = options.get_lnd_by_name(node_command.from.as_str())?;
-    let rpc_command = from_lnd.get_rpc_server_command();
-    let macaroon_path = from_lnd.get_macaroon_path();
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
 
     let commands = vec![
@@ -724,7 +670,7 @@ fn pay_invoice(
         "exec",
         "--user",
         "1000:1000",
-        from_lnd.get_container_name(),
+        node.get_container_name(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
@@ -750,56 +696,16 @@ fn pay_invoice(
     Ok(())
 }
 
-fn create_on_chain_address(
-    node: &Lnd,
-    options: &Options,
-    node_command: &NodeCommand,
-) -> Result<String, Error> {
-    let to_lnd = options.get_lnd_by_name(node_command.to.as_str())?;
-    let rpc_command = to_lnd.get_rpc_server_command();
-    let macaroon_path = to_lnd.get_macaroon_path();
-    let compose_path = options.compose_path.as_ref().unwrap();
-
-    let commands = vec![
-        "-f",
-        compose_path,
-        "exec",
-        "--user",
-        "1000:1000",
-        to_lnd.get_container_name(),
-        "lncli",
-        "--lnddir=/home/lnd/.lnd",
-        "--network=regtest",
-        macaroon_path,
-        &rpc_command,
-        "newaddress",
-        "p2tr", //TODO: allow for other types beside taproot addresses
-    ];
-    let output = run_command(options, "newaddress".to_owned(), commands)?;
-    let found_address: Option<String> = node.get_property("address", output.clone());
-    if found_address.is_none() {
-        error!(options.global_logger(), "no on chain address found");
-    }
-    debug!(
-        options.global_logger(),
-        "output.stdout: {}, output.stderr: {}",
-        from_utf8(&output.stdout)?,
-        from_utf8(&output.stderr)?
-    );
-    Ok(found_address.unwrap())
-}
-
 fn pay_address(
     node: &Lnd,
     options: &Options,
     node_command: &NodeCommand,
     address: &str,
 ) -> Result<String, Error> {
-    let to_lnd = options.get_lnd_by_name(node_command.to.as_str())?;
     let amt = node_command.amt.unwrap_or(1000).to_string();
     let subcommand = node_command.subcommand.to_owned().unwrap_or("".to_owned());
-    let rpc_command = to_lnd.get_rpc_server_command();
-    let macaroon_path = to_lnd.get_macaroon_path();
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
 
     let commands = vec![
@@ -808,18 +714,18 @@ fn pay_address(
         "exec",
         "--user",
         "1000:1000",
-        to_lnd.get_container_name(),
+        node.get_container_name(),
         "lncli",
         "--lnddir=/home/lnd/.lnd",
         "--network=regtest",
         macaroon_path,
         &rpc_command,
         "sendcoins",
-        subcommand.as_ref(),
+        &subcommand,
         "--addr",
         address,
         "--amt",
-        amt.as_ref(),
+        &amt,
     ];
     let output = run_command(options, "sendcoins".to_owned(), commands)?;
     let found_tx_id: Option<String> = node.get_property("txid", output.clone());

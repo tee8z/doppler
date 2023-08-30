@@ -1,4 +1,4 @@
-use anyhow::Error;
+use anyhow::{anyhow, Error};
 use clap::{Args, Subcommand, ValueEnum};
 use conf_parser::processer::FileConf;
 use docker_compose_types::{Compose, ComposeNetworks, Ipam, MapOrEmpty, Service, Services};
@@ -6,10 +6,12 @@ use indexmap::map::IndexMap;
 use ipnetwork::IpNetwork;
 use slog::{debug, error, Logger};
 use std::{
+    cell::RefCell,
     fs::{create_dir_all, OpenOptions},
     io::{self, ErrorKind, Read, Write},
     net::Ipv4Addr,
     path::{Path, PathBuf},
+    rc::Rc,
     str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -20,8 +22,8 @@ use std::{
 };
 
 use crate::{
-    add_bitcoinds, add_lnd_nodes, generate_ipv4_sequence_in_subnet, Bitcoind, L1Node, L2Node, Lnd,
-    NETWORK, SUBNET,
+    add_bitcoinds, add_eclair_nodes, add_lnd_nodes, generate_ipv4_sequence_in_subnet, Bitcoind,
+    Eclair, L1Node, L2Node, Lnd, NETWORK, SUBNET,
 };
 
 #[derive(Subcommand)]
@@ -58,10 +60,13 @@ impl std::fmt::Display for ShellType {
         }
     }
 }
+
+//TODO: make lnd_node and eclair nodes private
 #[derive(Clone)]
 pub struct Options {
     pub bitcoinds: Vec<Bitcoind>,
     pub lnd_nodes: Vec<Lnd>,
+    pub eclair_nodes: Vec<Eclair>,
     ports: Vec<i64>,
     ip_addresses: Vec<Ipv4Addr>,
     pub compose_path: Option<String>,
@@ -126,6 +131,7 @@ impl Options {
         Self {
             bitcoinds: vec::Vec::new(),
             lnd_nodes: vec::Vec::new(),
+            eclair_nodes: vec::Vec::new(),
             ports: starting_port,
             ip_addresses: vec![start_ip],
             compose_path: None,
@@ -246,13 +252,45 @@ impl Options {
         self.services = inner_index_map;
         Ok(())
     }
-    pub fn get_lnd_by_name(&self, name: &str) -> Result<&Lnd, Error> {
-        let lnd = self
-            .lnd_nodes
-            .iter()
-            .find(|node| node.get_name() == name)
-            .unwrap_or_else(|| panic!("invalid node name: {:?}", name));
-        Ok(lnd)
+    pub fn get_l2_by_name(&self, name: &str) -> Result<Box<dyn L2Node>, Error> {
+        let lnd = self.lnd_nodes.iter().find(|node| node.get_name() == name);
+        if lnd.is_none() {
+            let eclair_node = self
+                .eclair_nodes
+                .iter()
+                .find(|node| node.get_name() == name);
+            if eclair_node.is_none() {
+                return Err(anyhow!("node not found"));
+            }
+            return Ok(Box::new(eclair_node.unwrap().to_owned()));
+        }
+        Ok(Box::new(lnd.unwrap().to_owned()))
+    }
+    pub fn get_l2_nodes(&self) -> Vec<Box<dyn L2Node>> {
+        let mut l2_nodes: Vec<Box<dyn L2Node>> = Vec::new();
+
+        for lnd in self.lnd_nodes.iter() {
+            l2_nodes.push(Box::new(lnd.clone()));
+        }
+
+        for eclair in self.eclair_nodes.iter() {
+            l2_nodes.push(Box::new(eclair.clone()));
+        }
+
+        l2_nodes
+    }
+    pub fn get_l2_nodes_mut(&self) -> Vec<Rc<RefCell<dyn L2Node>>> {
+        let mut l2_nodes: Vec<Rc<RefCell<dyn L2Node>>> = Vec::new();
+
+        for lnd in self.lnd_nodes.iter() {
+            l2_nodes.push(Rc::new(RefCell::new(lnd.clone())));
+        }
+
+        for eclair in self.eclair_nodes.iter() {
+            l2_nodes.push(Rc::new(RefCell::new(eclair.clone())));
+        }
+
+        l2_nodes
     }
     pub fn get_bitcoind_by_name(&self, name: &str) -> Result<&Bitcoind, Error> {
         let btcd = self
@@ -268,6 +306,9 @@ impl Options {
     }
     pub fn load_lnds(&mut self) -> Result<(), Error> {
         add_lnd_nodes(self)
+    }
+    pub fn load_eclairs(&mut self) -> Result<(), Error> {
+        add_eclair_nodes(self)
     }
 }
 

@@ -159,9 +159,9 @@ checksum = "acbf1af155f9b9ef647e42cdc158db4b64a1b61f743629225fde6f3e0be2a7c7"
 
 [[package]]
 name = "conf_parser"
-version = "0.1.6"
+version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5416aac5cb4538b642105a1b18aad22b4629138ec2ad5aa9f6242aa2b4612cab"
+checksum = "5e7ec122262a68026dcc9e8d1613cf0dd8cc8adae6ff0350d701575789b93de4"
 
 [[package]]
 name = "cpufeatures"
