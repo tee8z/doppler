@@ -31,11 +31,11 @@
 </head>
 
 <body>
-    <div id="graphContainer"></div>
+    <div id="graphContainer">Graph</div>
 
     <script>
         async function config() {
-            let configData = await fetch("./config.json");
+            let configData = await fetch("./config.json", {cache: "no-store"});
             return configData.json();
         }
         async function fetchData() {
@@ -44,6 +44,7 @@
             console.log(first_node);
             try {
                 if (first_node && first_node.name && first_node.host ) {
+                    console.log("Fetching graph data from " + first_node.host);
                     const requestOptions = {
                         method: 'GET',
                         rejectUnauthorized: false,
@@ -94,6 +95,7 @@
 
         async function main() {
             const graphData = await fetchData();
+            consoloe.log("Retrieved graph data")
             visualizeGraph(graphData);
         }
 

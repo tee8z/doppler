@@ -1,6 +1,6 @@
 use crate::{
-    build_bitcoind, build_cln, build_eclair, build_lnd, load_options_from_compose, run_cluster,
-    DopplerParser, L1Node, MinerTime, NodeCommand, NodeKind, Options, Rule,
+    build_bitcoind, build_lnd, build_operator, load_options_from_compose, run_cluster, DopplerParser, L1Node,
+    MinerTime, NodeCommand, NodeKind, Options, Rule, build_eclair, build_cln,
 };
 use anyhow::{Error, Result};
 use indexmap::IndexMap;
@@ -396,6 +396,7 @@ fn handle_build_command(
             build_eclair(options, name, details.unwrap().pair_name.unwrap().as_str())
         }
         NodeKind::Coreln => build_cln(options, name, details.unwrap().pair_name.unwrap().as_str()),
+        NodeKind::Operator  => build_operator(options, name),
     }
 }
 

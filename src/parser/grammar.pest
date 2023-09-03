@@ -9,7 +9,7 @@ num = @{ ASCII_DIGIT+ }
 
 time_digits = { "s" | "m" | "h" }
 
-node_kind = { "BITCOIND_MINER" | "BITCOIND" | "LND" | "CORELN" | "ECLAIR" }
+node_kind = { "BITCOIND_MINER" | "BITCOIND" | "LND" | "CORELN" | "ECLAIR" | "OPERATOR" }
 
 node_def = { node_kind ~ ident }
 

@@ -77,6 +77,9 @@ impl L2Node for Lnd {
     fn get_server_url(&self) -> &str {
         self.server_url.as_str()
     }
+    fn get_alias(&self) -> &str {
+        &self.alias
+    }
     fn get_name(&self) -> &str {
         self.name.as_str()
     }
@@ -155,7 +158,7 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
         depends_on: DependsOnOptions::Simple(bitcoind),
         image: Some(LND_IMAGE.to_string()),
         container_name: Some(lnd_conf.container_name.clone()),
-        ports: Ports::Short(vec![lnd_conf.p2p_port.clone()]),
+        ports: Ports::Short(vec![lnd_conf.p2p_port.clone(), lnd_conf.grpc_port.clone()]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         volumes: Volumes::Simple(vec![format!("{}:/home/lnd/.lnd:rw", lnd_conf.path_vol)]),
         networks: Networks::Advanced(AdvancedNetworks(cur_network)),
@@ -224,7 +227,7 @@ fn build_and_save_config(
         ip: ip.to_owned(),
         rpc_server: format!("{}:10000", ip),
         server_url: format!("http://{}:10000", ip),
-        certificate_path: format!("{}/tls.crt", full_path),
+        certificate_path: format!("{}/tls.cert", full_path),
         macaroon_path: format!(
             "{}/data/chain/bitcoin/{}/admin.macaroon",
             full_path, "regtest"

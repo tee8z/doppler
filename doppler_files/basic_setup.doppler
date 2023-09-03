@@ -5,6 +5,7 @@ BITCOIND bd3
 LND lnd1 PAIR bd1
 LND lnd2 PAIR bd2
 LND lnd3 PAIR bd3
+OPERATOR operator
 UP
 
 lnd1 OPEN_CHANNEL lnd2 AMT 500000

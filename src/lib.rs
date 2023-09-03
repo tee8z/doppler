@@ -1,5 +1,6 @@
 mod bitcoind;
 mod cln;
+mod operator;
 mod conf_handler;
 mod docker;
 mod eclair;
@@ -11,6 +12,7 @@ mod workflow;
 
 pub use bitcoind::*;
 pub use cln::*;
+pub use operator::*;
 pub use conf_handler::*;
 pub use docker::*;
 pub use eclair::*;

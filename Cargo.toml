@@ -8,6 +8,7 @@ version = "0.1.0"
 [dependencies]
 anyhow = "1.0.71"
 hex = "0.4.3"
+rust-ini = "0.19"
 log = "0.4.18"
 pest = "2.6.0"
 pest_derive = "2.6.0"

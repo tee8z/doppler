@@ -3,6 +3,8 @@ use anyhow::{anyhow, Error};
 use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
 use serde_json::to_string;
+extern crate ini;
+use ini::Ini;
 use slog::{debug, error, info, Logger};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -31,6 +33,8 @@ pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> R
     debug!(options.global_logger(), "loaded eclairs");
     options.load_coreln()?;
     debug!(options.global_logger(), "loaded corelsn");
+    options.load_operator()?;
+    debug!(options.global_logger(), "loaded operator");
     Ok(())
 }
 
@@ -97,6 +101,7 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     setup_l2_nodes(options)?;
     mine_initial_blocks(options)?;
     update_visualizer_conf(options)?;
+    provision_operator(options)?;
     if options.aliases {
         update_bash_alias(options)?;
     }
@@ -169,6 +174,112 @@ fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
 
     Ok(())
 }
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct OperatorNode {
+    name: String,
+    host: String,
+    alias: String,
+    pubkey: String,
+}
+
+struct OperatorConfig {
+    nodes: Vec<OperatorNode>,
+}
+
+fn provision_operator(options: &Options) -> Result<(), Error> {
+    debug!(options.global_logger(), "provisioning operator");
+    let operator_config = build_operator_config(options)?;
+    write_operator_config_to_ini(&operator_config)?;
+    copy_authentication_files(options)?;
+    Ok(())
+}
+
+fn build_operator_config(options: &Options) -> Result<OperatorConfig, Error> {
+    let mut config = OperatorConfig { nodes: vec![] };
+    options.lnd_nodes.iter().for_each(|node| {
+        let name = node.get_name();
+        let alias = node.get_alias();
+        let pubkey = node.get_cached_pubkey();
+        let host = node.rpc_server.clone();
+
+        let operator_node = OperatorNode {
+            name: name.to_owned(),
+            host: host.to_owned(),
+            alias: alias.to_owned(),
+            pubkey: pubkey.to_owned(),
+        };
+        config.nodes.push(operator_node);
+    });
+
+    Ok(config)
+}
+
+fn write_operator_config_to_ini(config: &OperatorConfig) -> Result<(), Error> {
+    // Step 1: Initialize an empty Ini object
+    let mut conf = Ini::new();
+
+    // Step 2: Loop through the nodes in OperatorConfig and populate the Ini object
+    for node in &config.nodes {
+        // Creating a section for each OperatorNode based on its name
+        conf.with_section(Some(node.name.clone()))
+            .set("host", &node.host)
+            .set("alias", &node.alias)
+            .set("pubkey", &node.pubkey);
+    }
+
+    let path = get_absolute_path("data/operator/config/nodes.ini")?;
+    // Create directory if it doesn't exist
+    std::fs::create_dir_all(path.parent().unwrap())?;
+    // Step 3: Write Ini object to a file
+    conf.write_to_file(path)?;
+
+    let mut app_conf = Ini::new();
+    app_conf.with_section(Some("logging".to_owned()))
+        .set("log_dir", "./logs");
+
+    let path = get_absolute_path("data/operator/config/graph_server.ini")?;
+    app_conf.write_to_file(path)?;
+    Ok(())
+}
+
+fn copy_authentication_files(options: &Options) -> Result<(), Error> {
+    let path = get_absolute_path("data/operator/auth")?;
+    std::fs::create_dir_all(path)?;
+
+    debug!(options.global_logger(), "copying macaroon and tls cert files");
+    options.lnd_nodes.iter().for_each(|node| {
+        let container_name = node.get_container_name();
+        let name = container_name.split('-').last().unwrap();
+
+        let dest_macaroon_path = format!("data/operator/auth/{}.macaroon", name);
+        let dest_tls_cert_path = format!("data/operator/auth/{}.cert", name);
+        let dest_macaroon_path = get_absolute_path(&dest_macaroon_path).unwrap();
+        let dest_tls_cert_path = get_absolute_path(&dest_tls_cert_path).unwrap();
+        let source_macaroon_path = node.macaroon_path.clone();
+        let source_tls_cert_path = node.certificate_path.clone();
+        let source_macaroon_path = get_absolute_path(&source_macaroon_path).unwrap();
+        let source_tls_cert_path = get_absolute_path(&source_tls_cert_path).unwrap();
+        debug!(
+            options.global_logger(),
+            "copying macaroon from {} to {}",
+            source_macaroon_path.display(),
+            dest_macaroon_path.display()
+        );
+
+        std::fs::copy(source_macaroon_path, dest_macaroon_path).unwrap();
+        debug!(
+            options.global_logger(),
+            "copying tls cert from {} to {}",
+            source_tls_cert_path.display(),
+            dest_tls_cert_path.display()
+        );
+        std::fs::copy(source_tls_cert_path, dest_tls_cert_path).unwrap();
+
+    });
+    Ok(())
+}
+
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct VisualizerConfig {

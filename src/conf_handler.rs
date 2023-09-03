@@ -20,8 +20,8 @@ use std::{
 };
 
 use crate::{
-    add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_lnd_nodes,
-    generate_ipv4_sequence_in_subnet, Bitcoind, Cln, Eclair, L1Node, L2Node, Lnd, NETWORK, SUBNET,
+    add_bitcoinds, add_lnd_nodes, add_operator, generate_ipv4_sequence_in_subnet, Bitcoind, L1Node, L2Node, Lnd,
+    NETWORK, SUBNET, Eclair, Cln, add_coreln_nodes, add_eclair_nodes,
 };
 
 #[derive(Subcommand)]
@@ -66,6 +66,7 @@ pub struct Options {
     pub lnd_nodes: Vec<Lnd>,
     pub eclair_nodes: Vec<Eclair>,
     pub cln_nodes: Vec<Cln>,
+    pub utility_services: Vec<Service>,
     ports: Vec<i64>,
     ip_addresses: Vec<Ipv4Addr>,
     pub compose_path: Option<String>,
@@ -132,6 +133,7 @@ impl Options {
             lnd_nodes: vec::Vec::new(),
             eclair_nodes: vec::Vec::new(),
             cln_nodes: vec::Vec::new(),
+            utility_services: vec::Vec::new(),
             ports: starting_port,
             ip_addresses: vec![start_ip],
             compose_path: None,
@@ -323,7 +325,13 @@ impl Options {
     pub fn load_coreln(&mut self) -> Result<(), Error> {
         add_coreln_nodes(self)
     }
+    pub fn load_operator(&mut self) -> Result<(), Error> {
+        add_operator(self)?;
+        Ok(())
+    }
 }
+
+
 
 pub fn get_absolute_path(relative_path: &str) -> Result<PathBuf, Error> {
     let current_dir = std::env::current_dir()?;
