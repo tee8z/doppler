@@ -6,7 +6,7 @@ use crate::{get_absolute_path, Options, NETWORK};
 
 const OPERATOR_IMAGE: &str = "litch/operator:latest";
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Operator {
     pub name: String,
     pub ip: String,
