@@ -3,8 +3,6 @@ import socketserver
 import signal
 import sys
 
-
-
 def signal_handler(sig, frame):
     print("\nShutting down the server...")
     httpd.server_close()
@@ -12,17 +10,8 @@ def signal_handler(sig, frame):
 
 PORT = 8006
 
-class MyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
-    def end_headers(self):
-        self.send_my_headers()
-        http.server.SimpleHTTPRequestHandler.end_headers(self)
-
-    def send_my_headers(self):
-        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
-        self.send_header("Pragma", "no-cache")
-        self.send_header("Expires", "0")
-
-Handler = MyHTTPRequestHandler
+# Set up the request handler
+Handler = http.server.SimpleHTTPRequestHandler
 
 # Create the server
 httpd = socketserver.TCPServer(("", PORT), Handler)
