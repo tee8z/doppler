@@ -19,5 +19,6 @@ pub use eclair::*;
 pub use lnd::*;
 pub use node::*;
 pub use node_kind::*;
+pub use operator::*;
 pub use parser::*;
 pub use workflow::*;

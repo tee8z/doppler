@@ -21,7 +21,7 @@ use std::{
 
 use crate::{
     add_bitcoinds, add_lnd_nodes, add_operator, generate_ipv4_sequence_in_subnet, Bitcoind, L1Node, L2Node, Lnd,
-    NETWORK, SUBNET, Eclair, Cln, add_coreln_nodes, add_eclair_nodes,
+    NETWORK, SUBNET, Eclair, Cln, add_coreln_nodes, add_eclair_nodes, Operator,
 };
 
 #[derive(Subcommand)]
@@ -59,14 +59,14 @@ impl std::fmt::Display for ShellType {
     }
 }
 
-//TODO: make lnd_node and eclair nodes private
+//TODO: make l2 nodes private
 #[derive(Clone)]
 pub struct Options {
     pub bitcoinds: Vec<Bitcoind>,
     pub lnd_nodes: Vec<Lnd>,
     pub eclair_nodes: Vec<Eclair>,
     pub cln_nodes: Vec<Cln>,
-    pub utility_services: Vec<Service>,
+    pub utility_services: Vec<Operator>,
     ports: Vec<i64>,
     ip_addresses: Vec<Ipv4Addr>,
     pub compose_path: Option<String>,
@@ -330,8 +330,6 @@ impl Options {
         Ok(())
     }
 }
-
-
 
 pub fn get_absolute_path(relative_path: &str) -> Result<PathBuf, Error> {
     let current_dir = std::env::current_dir()?;

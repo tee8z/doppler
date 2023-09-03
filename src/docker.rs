@@ -235,7 +235,8 @@ fn write_operator_config_to_ini(config: &OperatorConfig) -> Result<(), Error> {
     conf.write_to_file(path)?;
 
     let mut app_conf = Ini::new();
-    app_conf.with_section(Some("logging".to_owned()))
+    app_conf
+        .with_section(Some("logging".to_owned()))
         .set("log_dir", "./logs");
 
     let path = get_absolute_path("data/operator/config/graph_server.ini")?;
@@ -247,7 +248,10 @@ fn copy_authentication_files(options: &Options) -> Result<(), Error> {
     let path = get_absolute_path("data/operator/auth")?;
     std::fs::create_dir_all(path)?;
 
-    debug!(options.global_logger(), "copying macaroon and tls cert files");
+    debug!(
+        options.global_logger(),
+        "copying macaroon and tls cert files"
+    );
     options.lnd_nodes.iter().for_each(|node| {
         let container_name = node.get_container_name();
         let name = container_name.split('-').last().unwrap();
@@ -275,11 +279,9 @@ fn copy_authentication_files(options: &Options) -> Result<(), Error> {
             dest_tls_cert_path.display()
         );
         std::fs::copy(source_tls_cert_path, dest_tls_cert_path).unwrap();
-
     });
     Ok(())
 }
-
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct VisualizerConfig {
