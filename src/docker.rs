@@ -205,9 +205,9 @@ fn build_operator_config(options: &Options) -> Result<OperatorConfig, Error> {
 
         let operator_node = OperatorNode {
             name: name.to_owned(),
-            host: host.to_owned(),
+            host,
             alias: alias.to_owned(),
-            pubkey: pubkey.to_owned(),
+            pubkey,
         };
         config.nodes.push(operator_node);
     });

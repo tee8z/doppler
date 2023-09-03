@@ -312,7 +312,7 @@ fn load_config(
     Ok(Lnd {
         name: name.to_owned(),
         alias: name.to_owned(),
-        container_name: container_name.to_owned(),
+        container_name,
         pubkey: None,
         ip: ip.clone(),
         rpc_server: format!("{}:10000", ip),
@@ -426,7 +426,7 @@ fn get_node_pubkey(lnd: &Lnd, options: &Options) -> Result<String, Error> {
     }
     if let Some(output) = output_found {
         if output.status.success() {
-            if let Some(pubkey) = lnd.get_property("identity_pubkey", output.clone()) {
+            if let Some(pubkey) = lnd.get_property("identity_pubkey", output) {
                 return Ok(pubkey);
             } else {
                 error!(options.global_logger(), "no pubkey found");
@@ -457,7 +457,7 @@ fn create_lnd_address(lnd: &Lnd, options: &Options) -> Result<String, Error> {
         "p2tr", // TODO: set as a taproot address by default, make this configurable
     ];
     let output = run_command(options, "newaddress".to_owned(), commands)?;
-    let found_address: Option<String> = lnd.get_property("address", output.clone());
+    let found_address: Option<String> = lnd.get_property("address", output);
     if found_address.is_none() {
         error!(options.global_logger(), "no addess found");
         return Ok("".to_string());
@@ -660,7 +660,7 @@ fn create_invoice(
     ];
     let output = run_command(options, "addinvoice".to_owned(), commands)?;
     let found_payment_request: Option<String> =
-        node.get_property("payment_request", output.clone());
+        node.get_property("payment_request", output);
     if found_payment_request.is_none() {
         error!(options.global_logger(), "no payment request found");
     }
@@ -741,7 +741,7 @@ fn pay_address(
         &amt,
     ];
     let output = run_command(options, "sendcoins".to_owned(), commands)?;
-    let found_tx_id: Option<String> = node.get_property("txid", output.clone());
+    let found_tx_id: Option<String> = node.get_property("txid", output);
     if found_tx_id.is_none() {
         error!(options.global_logger(), "no tx id found");
         return Ok("".to_owned());

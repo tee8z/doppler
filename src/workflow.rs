@@ -154,7 +154,7 @@ fn process_loop_sleep(
             next().as_str().chars().next(),
         )
     };
-    let mut raw_loop_options = loop_options.clone().unwrap();
+    let mut raw_loop_options = loop_options.unwrap();
     raw_loop_options.sleep_time_amt = sleep_interval;
     raw_loop_options.sleep_time_interval_type = sleep_time_type;
     raw_loop_options
@@ -463,7 +463,7 @@ fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
         from: from_node.to_owned(),
         to: to_node.to_owned(),
         amt,
-        subcommand: subcommand.to_owned(),
+        subcommand,
     }
 }
 

@@ -35,8 +35,8 @@ pub fn add_operator(options: &mut Options) -> Result<(), Error> {
 
             Operator {
                 name: operator_name.to_string(),
-                ip: ip.to_string(),
-                data_dir: data_dir.clone(),
+                ip,
+                data_dir,
                 container_name: container_name.to_string(),
             }
         })

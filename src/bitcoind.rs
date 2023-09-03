@@ -333,7 +333,7 @@ fn set_regtest_section(
         &format!("tcp://{}:{}", ip, options.new_port()),
     );
     let regtest_section = get_regtest_section(conf)?;
-    Ok(regtest_section.to_owned())
+    Ok(regtest_section)
 }
 
 fn get_regtest_section(conf: &mut FileConf) -> Result<Section, Error> {
@@ -387,7 +387,7 @@ fn start_mining(node: &Bitcoind, options: &Options) -> Result<()> {
     spawn(move || {
         cloned_node.mine_bitcoin_continously(&cloned_options);
         let thread_handle = thread::current();
-        cloned_options.clone().add_thread(thread_handle);
+        cloned_options.add_thread(thread_handle);
     });
     Ok(())
 }
