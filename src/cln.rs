@@ -9,6 +9,7 @@ use docker_compose_types::{
     Networks, Ports, Service, Volumes,
 };
 use indexmap::IndexMap;
+use serde_json::{from_slice, Value};
 use slog::{debug, error, info};
 use std::{
     fmt::Debug,
@@ -17,6 +18,7 @@ use std::{
     thread,
     time::Duration,
 };
+use uuid::Uuid;
 
 const CLN_IMAGE: &str = "elementsproject/lightningd:v23.05.1";
 
@@ -42,6 +44,13 @@ impl Cln {
             self.container_name,
             self.p2p_port.clone()
         )
+    }
+    pub fn get_peers_short_channel_id(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+    ) -> Result<String, Error> {
+        get_peers_short_channel_id(self, options, node_command, "source")
     }
 }
 
@@ -143,7 +152,7 @@ pub fn build_cln(options: &mut Options, name: &str, pair_name: &str) -> Result<(
 
     // Passing these args on the command line is unavoidable due to how the docker image is setup
     let command = Command::Simple("--network=regtest --lightning-dir=/home/clightning".to_string());
-    
+
     let bitcoind = vec![cln_conf.bitcoind_node_container_name.clone()];
     let cln = Service {
         depends_on: DependsOnOptions::Simple(bitcoind),
@@ -337,13 +346,13 @@ fn get_node_pubkey(node: &Cln, options: &Options) -> Result<String, Error> {
         "-f",
         compose_path,
         "exec",
-        &node.get_container_name(),
+        node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
         "--network=regtest",
         "getinfo",
     ];
-    let mut retries = 3;
+    let mut retries = 4;
     let mut output_found = None;
     while retries > 0 {
         let output = run_command(options, "pubkey".to_owned(), commands.clone())?;
@@ -354,7 +363,16 @@ fn get_node_pubkey(node: &Cln, options: &Options) -> Result<String, Error> {
             );
             thread::sleep(Duration::from_secs(4));
             retries -= 1;
-        } else {
+            continue;
+        } else if let Some(is_syncing) =
+            node.get_property("warning_lightningd_sync", output.clone())
+        {
+            is_syncing.contains("Still loading latest blocks from bitcoind");
+            thread::sleep(Duration::from_secs(4));
+            retries -= 1;
+            continue;
+        }
+        {
             output_found = Some(output);
             break;
         }
@@ -377,7 +395,7 @@ fn create_cln_address(node: &Cln, options: &Options) -> Result<String, Error> {
         "-f",
         compose_path.as_ref(),
         "exec",
-        &node.get_container_name(),
+        node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
         "--network=regtest",
@@ -405,13 +423,14 @@ fn open_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> Re
         "-f",
         compose_path.as_ref(),
         "exec",
-        &node.get_container_name(),
+        node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
         "--network=regtest",
         "fundchannel",
         &to_pubkey,
-        &amt
+        &amt,
+        "slow",
     ];
     let output = run_command(options, "newaddr".to_owned(), commands)?;
     if output.status.success() {
@@ -440,14 +459,14 @@ fn connect(node: &Cln, options: &Options, node_command: &NodeCommand) -> Result<
         "-f",
         compose_path.as_ref(),
         "exec",
-        &node.get_container_name(),
+        node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
         "--network=regtest",
         "connect",
         &to_pubkey,
         to_node.get_ip(),
-        to_node.get_p2p_port()
+        to_node.get_p2p_port(),
     ];
     let output = run_command(options, "connect".to_owned(), commands)?;
     if output.status.success() || from_utf8(&output.stderr)?.contains("already connected") {
@@ -476,21 +495,24 @@ fn create_invoice(
     let amt = (node_command.amt.unwrap_or(1000) * 1000).to_string();
     let memo = node.generate_memo();
     let compose_path = options.compose_path.as_ref().unwrap();
+    let uuid = Uuid::new_v4();
+    let random_label = uuid.to_string();
 
     let commands = vec![
         "-f",
         compose_path,
         "exec",
-        &node.get_container_name(),
+        node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
         "--network=regtest",
         "invoice",
-        &memo,
         &amt,
+        &random_label,
+        &memo,
     ];
     let output = run_command(options, "invoice".to_owned(), commands)?;
-    let found_payment_request: Option<String> = node.get_property("serialized", output.clone());
+    let found_payment_request: Option<String> = node.get_property("bolt11", output.clone());
     if found_payment_request.is_none() {
         error!(options.global_logger(), "no payment requests found");
     }
@@ -508,7 +530,7 @@ fn pay_invoice(
         "-f",
         compose_path,
         "exec",
-        &node.get_container_name(),
+        node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
         "--network=regtest",
@@ -544,12 +566,12 @@ fn pay_address(
         "-f",
         compose_path,
         "exec",
-        &node.get_container_name(),
+        node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
         "--network=regtest",
         "withdraw",
-        &address,
+        address,
         &amt,
     ];
     let output = run_command(options, "withdraw".to_owned(), commands)?;
@@ -566,17 +588,26 @@ fn close_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> R
     let compose_path = options.compose_path.as_ref().unwrap();
     //TODO: find a way to specify which channel to close, right now we just grab a random one for this peer
     let to_node = options.get_l2_by_name(node_command.to.as_str())?;
-    let to_node_peer_id = to_node.get_cached_pubkey();
+    let to_node_channel_id = node.get_peers_short_channel_id(options, node_command)?;
+    if to_node_channel_id.is_empty() {
+        info!(
+            options.global_logger(),
+            "no channels to closed from {} to {}",
+            node.get_name(),
+            to_node.get_name()
+        );
+        return Ok(());
+    }
     let commands = vec![
         "-f",
         compose_path,
         "exec",
-        &node.get_container_name(),
+        node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
         "--network=regtest",
         "close",
-        &to_node_peer_id,
+        &to_node_channel_id,
     ];
     let output = run_command(options, "close channel".to_owned(), commands)?;
     if output.status.success() {
@@ -595,4 +626,49 @@ fn close_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> R
         );
     }
     Ok(())
+}
+
+fn get_peers_short_channel_id(
+    node: &Cln,
+    options: &Options,
+    node_command: &NodeCommand,
+    param: &str,
+) -> Result<String, Error> {
+    let compose_path = options.compose_path.as_ref().unwrap();
+    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+    let to_pubkey = format!("{}={}", param, to_node.get_cached_pubkey());
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        node.get_container_name(),
+        "lightning-cli",
+        "--lightning-dir=/home/clightning",
+        "--network=regtest",
+        "listchannels",
+        &to_pubkey,
+    ];
+    let output = run_command(options, "channels".to_owned(), commands)?;
+    if output.status.success() {
+        let response: Value = from_slice(&output.stdout).expect("failed to parse JSON");
+        let arr = response.as_array();
+        if arr.into_iter().len() == 0 {
+            if param == "source" {
+                return get_peers_short_channel_id(node, options, node_command, "destination");
+            } else {
+                return Ok(String::from(""));
+            }
+        }
+        match response
+            .as_array()
+            .and_then(|obj| obj.first())
+            .and_then(|item| item.get("short_channel_id"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+        {
+            Some(value) => return Ok(value),
+            None => return Ok(String::from("")),
+        }
+    }
+    Ok(String::from(""))
 }

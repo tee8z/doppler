@@ -1,6 +1,6 @@
 use crate::{
-    build_bitcoind, build_eclair, build_lnd, load_options_from_compose, run_cluster, DopplerParser,
-    L1Node, MinerTime, NodeCommand, NodeKind, Options, Rule, build_cln,
+    build_bitcoind, build_cln, build_eclair, build_lnd, load_options_from_compose, run_cluster,
+    DopplerParser, L1Node, MinerTime, NodeCommand, NodeKind, Options, Rule,
 };
 use anyhow::{Error, Result};
 use indexmap::IndexMap;
@@ -388,7 +388,6 @@ fn handle_build_command(
     kind: NodeKind,
     details: Option<BuildDetails>,
 ) -> Result<()> {
-
     match kind {
         NodeKind::Bitcoind => build_bitcoind(options, name, &None),
         NodeKind::BitcoindMiner => build_bitcoind(options, name, &details.unwrap().miner_time),

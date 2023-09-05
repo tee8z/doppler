@@ -263,6 +263,32 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
         ip =lnd.get_ip()));
         script_content.push('\n');
     });
+    options.cln_nodes.iter().for_each(|lnd| {
+        let name = lnd.get_container_name().split('-').last().unwrap();
+        script_content.push_str(&format!(
+            r#"
+{name}() {{
+    {docker_command} -f ./doppler-cluster.yaml exec {container_name} lightning-cli --lightning-dir=/home/clightning --network=regtest "$@"
+}}
+"#,
+        docker_command= docker_command,
+        container_name= lnd.get_container_name(),
+        name=name));
+        script_content.push('\n');
+    });
+    options.eclair_nodes.iter().for_each(|lnd| {
+        let name = lnd.get_container_name().split('-').last().unwrap();
+        script_content.push_str(&format!(
+            r#"
+{name}() {{
+    {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} eclair-cli -p test1234! "$@"
+}}
+"#,
+        docker_command= docker_command,
+        container_name= lnd.get_container_name(),
+        name=name));
+        script_content.push('\n');
+    });
     options.bitcoinds.iter().for_each(|bitcoind| {
         let container_name = bitcoind.get_container_name();
         let name = container_name.split('-').last().unwrap();
@@ -329,10 +355,9 @@ fn connect_l2_nodes(options: &Options) -> Result<(), Error> {
         let mut to_node = back_a_node.unwrap();
         if to_node.get_name() == from_node.get_name() {
             let next_node = get_a_node.next();
-            if next_node.is_some() {
-                to_node = next_node.unwrap();
-            }
-            else {
+            if let Some(next_node) = next_node {
+                to_node = next_node;
+            } else {
                 return;
             }
         }

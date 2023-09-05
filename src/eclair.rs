@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{
-    AdvancedNetworkSettings, AdvancedNetworks, DependsOnOptions, MapOrEmpty, Networks, Ports,
-    Service, Volumes, EnvFile,
+    AdvancedNetworkSettings, AdvancedNetworks, DependsOnOptions, EnvFile, MapOrEmpty, Networks,
+    Ports, Service, Volumes,
 };
 use indexmap::IndexMap;
 use serde_json::{from_slice, Value};
@@ -15,8 +15,8 @@ use std::{
 };
 
 use crate::{
-    copy_file, get_absolute_path, restart_service, run_command, L1Node, L2Node, NodeCommand,
-    Options, NETWORK, create_folder,
+    copy_file, create_folder, get_absolute_path, restart_service, run_command, L1Node, L2Node,
+    NodeCommand, Options, NETWORK,
 };
 
 const ECLAIR_IMAGE: &str = "polarlightning/eclair:0.9.0";
@@ -168,7 +168,12 @@ pub fn build_eclair(options: &mut Options, name: &str, pair_name: &str) -> Resul
     Ok(())
 }
 
-fn build_and_save_config(options: &Options, name: &str, pair_name: &str, ip: &str) -> Result<Eclair, Error> {
+fn build_and_save_config(
+    options: &Options,
+    name: &str,
+    pair_name: &str,
+    ip: &str,
+) -> Result<Eclair, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
             "bitcoind nodes need to be defined before eclair nodes can be setup"

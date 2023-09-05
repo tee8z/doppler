@@ -182,7 +182,12 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
     Ok(())
 }
 
-fn build_and_save_config(options: &Options, name: &str, pair_name: &str, ip: &str) -> Result<Lnd, Error> {
+fn build_and_save_config(
+    options: &Options,
+    name: &str,
+    pair_name: &str,
+    ip: &str,
+) -> Result<Lnd, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
             "bitcoind nodes need to be defined before lnd nodes can be setup"

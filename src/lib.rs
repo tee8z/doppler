@@ -1,21 +1,21 @@
 mod bitcoind;
+mod cln;
 mod conf_handler;
 mod docker;
 mod eclair;
 mod lnd;
 mod node;
-mod cln;
 mod node_kind;
 mod parser;
 mod workflow;
 
 pub use bitcoind::*;
+pub use cln::*;
 pub use conf_handler::*;
 pub use docker::*;
 pub use eclair::*;
 pub use lnd::*;
 pub use node::*;
-pub use cln::*;
 pub use node_kind::*;
 pub use parser::*;
 pub use workflow::*;
