@@ -29,6 +29,8 @@ pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> R
     debug!(options.global_logger(), "loaded lnds");
     options.load_eclairs()?;
     debug!(options.global_logger(), "loaded eclairs");
+    options.load_coreln()?;
+    debug!(options.global_logger(), "loaded corelsn");
     Ok(())
 }
 
@@ -154,14 +156,14 @@ fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
         let node_clone = node.clone();
         let mut node_borrow = node_clone.borrow_mut();
         let result = node_borrow
-            .get_node_info(&inner_option.clone())
+            .get_node_pubkey(&inner_option.clone())
             .and_then(|pubkey| {
                 node_borrow.set_pubkey(pubkey);
                 info!(
                     logger,
                     "container: {} pubkey: {}",
                     node_borrow.get_container_name(),
-                    node_borrow.get_pubkey()
+                    node_borrow.get_cached_pubkey()
                 );
                 let found_miner = miner.unwrap();
                 node_borrow.fund_node(&inner_option.clone(), found_miner)
@@ -207,6 +209,17 @@ fn update_visualizer_conf(options: &Options) -> Result<(), Error> {
         };
         config.nodes.push(visualizer_node);
     });
+    options.cln_nodes.iter().for_each(|node| {
+        let name = node.name.clone();
+
+        let visualizer_node = VisualizerNode {
+            name,
+            host: node.server_url.clone(),
+            macaroon: "".to_string(),
+        };
+        config.nodes.push(visualizer_node);
+    });
+
     let config_json = get_absolute_path("visualizer/config.json")?;
     debug!(
         options.global_logger(),
@@ -242,12 +255,38 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
             r#"
 {name}() {{
     {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} lncli --lnddir=/home/lnd/.lnd --network=regtest --macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon --rpcserver={ip}:10000 "$@"
-}}            
-"#, 
+}}
+"#,
         docker_command= docker_command,
         container_name= lnd.get_container_name(),
         name=name,
         ip =lnd.get_ip()));
+        script_content.push('\n');
+    });
+    options.cln_nodes.iter().for_each(|lnd| {
+        let name = lnd.get_container_name().split('-').last().unwrap();
+        script_content.push_str(&format!(
+            r#"
+{name}() {{
+    {docker_command} -f ./doppler-cluster.yaml exec {container_name} lightning-cli --lightning-dir=/home/clightning --network=regtest "$@"
+}}
+"#,
+        docker_command= docker_command,
+        container_name= lnd.get_container_name(),
+        name=name));
+        script_content.push('\n');
+    });
+    options.eclair_nodes.iter().for_each(|lnd| {
+        let name = lnd.get_container_name().split('-').last().unwrap();
+        script_content.push_str(&format!(
+            r#"
+{name}() {{
+    {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} eclair-cli -p test1234! "$@"
+}}
+"#,
+        docker_command= docker_command,
+        container_name= lnd.get_container_name(),
+        name=name));
         script_content.push('\n');
     });
     options.bitcoinds.iter().for_each(|bitcoind| {
@@ -257,7 +296,7 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
             r#"
 {name}() {{
     {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} bitcoin-cli "$@"
-}}            
+}}
 "#,
             docker_command= docker_command,
             name = name,
@@ -315,7 +354,12 @@ fn connect_l2_nodes(options: &Options) -> Result<(), Error> {
         }
         let mut to_node = back_a_node.unwrap();
         if to_node.get_name() == from_node.get_name() {
-            to_node = get_a_node.next().unwrap();
+            let next_node = get_a_node.next();
+            if let Some(next_node) = next_node {
+                to_node = next_node;
+            } else {
+                return;
+            }
         }
         let node_command = &NodeCommand {
             name: "connect".to_owned(),

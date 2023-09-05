@@ -9,7 +9,7 @@ pub enum NodeKind {
     Bitcoind,
     BitcoindMiner,
     Lnd,
-    CoreLn,
+    Coreln,
     Eclair,
 }
 
@@ -23,7 +23,7 @@ impl<'a> TryFrom<Pair<'a, Rule>> for NodeKind {
                 "BITCOIND_MINER" => Ok(NodeKind::BitcoindMiner),
                 "LND" => Ok(NodeKind::Lnd),
                 "ECLAIR" => Ok(NodeKind::Eclair),
-                "CORELN" => Ok(NodeKind::CoreLn),
+                "CORELN" => Ok(NodeKind::Coreln),
                 _ => bail!("invalid node_kind"),
             },
             _ => bail!("pair should be a node_kind"),

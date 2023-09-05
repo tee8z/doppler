@@ -88,6 +88,9 @@ impl L1Node for Bitcoind {
     fn create_wallet(&self, options: &Options) -> Result<(), Error> {
         create_wallet(self, options)
     }
+    fn load_wallet(&self, options: &Options) -> Result<(), Error> {
+        load_wallet(self, options)
+    }
     fn create_address(&self, options: &Options) -> Result<String, Error> {
         create_address(self, options)
     }
@@ -445,7 +448,37 @@ fn create_wallet(node: &dyn L1Node, options: &Options) -> Result<(), Error> {
             .unwrap()
             .contains("Database already exists")
     {
-        error!(options.global_logger(), "failed to create new address");
+        node.load_wallet(options)?;
+    }
+    Ok(())
+}
+
+fn load_wallet(node: &Bitcoind, options: &Options) -> Result<(), Error> {
+    let datadir_flag = &format!("--datadir={}", node.get_data_dir());
+    let container_name = node.get_container_name();
+    let compose_path = options.compose_path.as_ref().unwrap();
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        "--user",
+        "1000:1000",
+        &container_name,
+        "bitcoin-cli",
+        datadir_flag,
+        "loadwallet",
+        &container_name,
+    ];
+
+    let output = run_command(options, "load wallet".to_owned(), commands)?;
+    if !output.status.success() {
+        error!(
+            options.global_logger(),
+            "failed to load wallet for {}: {} {}",
+            node.get_name(),
+            from_utf8(&output.stdout).unwrap().to_owned(),
+            from_utf8(&output.stderr).unwrap().to_owned()
+        )
     }
     Ok(())
 }
