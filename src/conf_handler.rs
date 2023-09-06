@@ -6,12 +6,10 @@ use indexmap::map::IndexMap;
 use ipnetwork::IpNetwork;
 use slog::{debug, error, Logger};
 use std::{
-    cell::RefCell,
     fs::{create_dir_all, OpenOptions},
     io::{self, ErrorKind, Read, Write},
     net::Ipv4Addr,
     path::{Path, PathBuf},
-    rc::Rc,
     str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -289,22 +287,20 @@ impl Options {
 
         l2_nodes
     }
-    pub fn get_l2_nodes_mut(&self) -> Vec<Rc<RefCell<dyn L2Node>>> {
-        let mut l2_nodes: Vec<Rc<RefCell<dyn L2Node>>> = Vec::new();
-
-        for lnd in self.lnd_nodes.iter() {
-            l2_nodes.push(Rc::new(RefCell::new(lnd.clone())));
+    pub fn add_pubkeys_l2_nodes(&mut self) -> Result<(), Error> {
+        let options_clone = self.clone();
+        for lnd in self.lnd_nodes.iter_mut() {
+            lnd.add_pubkey(&options_clone);
         }
 
-        for eclair in self.eclair_nodes.iter() {
-            l2_nodes.push(Rc::new(RefCell::new(eclair.clone())));
+        for eclair in self.eclair_nodes.iter_mut() {
+            eclair.add_pubkey(&options_clone);
         }
 
-        for coreln in self.cln_nodes.iter() {
-            l2_nodes.push(Rc::new(RefCell::new(coreln.clone())));
+        for coreln in self.cln_nodes.iter_mut() {
+            coreln.add_pubkey(&options_clone);
         }
-
-        l2_nodes
+        Ok(())
     }
     pub fn get_bitcoind_by_name(&self, name: &str) -> Result<&Bitcoind, Error> {
         let btcd = self

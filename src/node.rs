@@ -13,7 +13,7 @@ pub trait L2Node: Any {
     fn get_container_name(&self) -> &str;
     fn get_ip(&self) -> &str;
     fn get_cached_pubkey(&self) -> String;
-    fn set_pubkey(&mut self, pubkey: String);
+    fn add_pubkey(&mut self, option: &Options);
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error>;
     fn open_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn connect(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
