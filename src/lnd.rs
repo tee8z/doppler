@@ -60,7 +60,7 @@ impl Lnd {
 
 impl L2Node for Lnd {
     fn get_connection_url(&self) -> String {
-        if let Some(pubkey) = self.pubkey.as_ref() {
+        if let Some(pubkey) = self.pubkey.clone() {
             format!(
                 "{}@{}:{}",
                 pubkey,
@@ -76,6 +76,9 @@ impl L2Node for Lnd {
     }
     fn get_server_url(&self) -> &str {
         self.server_url.as_str()
+    }
+    fn get_alias(&self) -> &str {
+        &self.alias
     }
     fn get_name(&self) -> &str {
         self.name.as_str()
@@ -155,7 +158,7 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
         depends_on: DependsOnOptions::Simple(bitcoind),
         image: Some(LND_IMAGE.to_string()),
         container_name: Some(lnd_conf.container_name.clone()),
-        ports: Ports::Short(vec![lnd_conf.p2p_port.clone()]),
+        ports: Ports::Short(vec![lnd_conf.p2p_port.clone(), lnd_conf.grpc_port.clone()]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         volumes: Volumes::Simple(vec![format!("{}:/home/lnd/.lnd:rw", lnd_conf.path_vol)]),
         networks: Networks::Advanced(AdvancedNetworks(cur_network)),
@@ -224,7 +227,7 @@ fn build_and_save_config(
         ip: ip.to_owned(),
         rpc_server: format!("{}:10000", ip),
         server_url: format!("http://{}:10000", ip),
-        certificate_path: format!("{}/tls.crt", full_path),
+        certificate_path: format!("{}/tls.cert", full_path),
         macaroon_path: format!(
             "{}/data/chain/bitcoin/{}/admin.macaroon",
             full_path, "regtest"
@@ -309,7 +312,7 @@ fn load_config(
     Ok(Lnd {
         name: name.to_owned(),
         alias: name.to_owned(),
-        container_name: container_name.to_owned(),
+        container_name,
         pubkey: None,
         ip: ip.clone(),
         rpc_server: format!("{}:10000", ip),
@@ -423,7 +426,7 @@ fn get_node_pubkey(lnd: &Lnd, options: &Options) -> Result<String, Error> {
     }
     if let Some(output) = output_found {
         if output.status.success() {
-            if let Some(pubkey) = lnd.get_property("identity_pubkey", output.clone()) {
+            if let Some(pubkey) = lnd.get_property("identity_pubkey", output) {
                 return Ok(pubkey);
             } else {
                 error!(options.global_logger(), "no pubkey found");
@@ -454,7 +457,7 @@ fn create_lnd_address(lnd: &Lnd, options: &Options) -> Result<String, Error> {
         "p2tr", // TODO: set as a taproot address by default, make this configurable
     ];
     let output = run_command(options, "newaddress".to_owned(), commands)?;
-    let found_address: Option<String> = lnd.get_property("address", output.clone());
+    let found_address: Option<String> = lnd.get_property("address", output);
     if found_address.is_none() {
         error!(options.global_logger(), "no addess found");
         return Ok("".to_string());
@@ -509,6 +512,13 @@ fn open_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Re
 
 fn connect(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+    info!(
+        options.global_logger(),
+        "to_node {} {} {} ",
+        to_node.get_cached_pubkey(),
+        to_node.get_p2p_port(),
+        to_node.get_container_name()
+    );
     let connection_url = to_node.get_connection_url();
     let rpc_command = node.get_rpc_server_command();
     let macaroon_path = node.get_macaroon_path();
@@ -656,8 +666,7 @@ fn create_invoice(
         amt.as_ref(),
     ];
     let output = run_command(options, "addinvoice".to_owned(), commands)?;
-    let found_payment_request: Option<String> =
-        node.get_property("payment_request", output.clone());
+    let found_payment_request: Option<String> = node.get_property("payment_request", output);
     if found_payment_request.is_none() {
         error!(options.global_logger(), "no payment request found");
     }
@@ -738,7 +747,7 @@ fn pay_address(
         &amt,
     ];
     let output = run_command(options, "sendcoins".to_owned(), commands)?;
-    let found_tx_id: Option<String> = node.get_property("txid", output.clone());
+    let found_tx_id: Option<String> = node.get_property("txid", output);
     if found_tx_id.is_none() {
         error!(options.global_logger(), "no tx id found");
         return Ok("".to_owned());

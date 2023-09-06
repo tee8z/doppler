@@ -1,0 +1,20 @@
+FROM node:16.18.1-alpine as build
+RUN apk add git
+RUN git clone --depth 1 --filter=blob:none https://github.com/litch/lightning-conformance.git
+RUN yarn --cwd lightning-conformance/operator/client install --production --frozen-lockfile
+RUN yarn --cwd lightning-conformance/operator/client run build
+
+FROM python:3.10.13-alpine3.18
+COPY --from=build /lightning-conformance/operator/server/ /app/server
+WORKDIR /app/server
+ENV PYTHONPATH "${PYTHONPATH}:/app"
+RUN pip install -r requirements.txt
+
+
+RUN rm ./config/nodes.ini
+
+COPY --from=build /lightning-conformance/operator/client/build/ ./static/
+
+EXPOSE 5000
+
+CMD ["gunicorn", "-b", ":5000", "graph_server.app:app"]

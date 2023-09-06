@@ -8,8 +8,9 @@ use std::{any::Any, process::Output};
 pub trait L2Node: Any {
     fn get_connection_url(&self) -> String;
     fn get_p2p_port(&self) -> &str;
-    fn get_server_url(&self) -> &str;
     fn get_name(&self) -> &str;
+    fn get_alias(&self) -> &str;
+    fn get_server_url(&self) -> &str;
     fn get_container_name(&self) -> &str;
     fn get_ip(&self) -> &str;
     fn get_cached_pubkey(&self) -> String;

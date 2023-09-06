@@ -60,6 +60,9 @@ impl L2Node for Eclair {
             "".to_owned()
         }
     }
+    fn get_alias(&self) -> &str {
+        &self.alias
+    }
     fn get_p2p_port(&self) -> &str {
         self.p2p_port.as_str()
     }

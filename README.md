@@ -20,9 +20,10 @@ The DSL should empower developers to compose a concise script that configures an
 - [x] SEND_ONCHAIN (only taproot addresses)
 - [x] LOOP a set of commands over an optional interval
 - [x] CLOSE_CHANNEL
+- [X] support multiple node implementations (supports LND, CoreLN, Eclair)
+- [x] add a cluster level UI to see how all the nodes  connect (started, but need to finish in ./visualizer)
 
 ##### TODO:
-- [ ] support more than LND (should support coreln, eclair, and LDK)
 - [ ] create new ldk image for [ldk-node](https://github.com/lightningdevkit/ldk-node)
 - [ ] add a UI to each nodes to view in the browser (thunderhub, ride-the-lightning, etc.)
 - [ ] add ability to have mutliple types of images/version and even allow user to use their own custom that aline with these instructions: [out-of-band](https://github.com/jamaljsr/polar/tree/master/docker#out-of-band-image-updates)
@@ -31,11 +32,6 @@ The DSL should empower developers to compose a concise script that configures an
 - [ ] BUMP_FEE - need some way to identify the transaction created earlier in the script to bump
 - [ ] CLOSE_CHANNEL - come up with grammar allowing scripts to close a specific channel
 - [ ] BATCH_OPEN - build grammar for creating batch opening of channels
-- [ ] add documentation and more examples showing how the grammar works/how to use doppler
-- [ ] add a cluster level UI to see how all the nodes  connect (started, but need to finish in ./visualizer)
-- [ ] add instructions on how to view the visualizer
-- [ ] add "get_info" and some additional data to be shown in the visualizer
-- [ ] improve ip address allocation
 
 ### Acknowledgments
 * Thank you [polar](https://github.com/jamaljsr/polar) for having such easy docker images to work with

@@ -11,6 +11,7 @@ pub enum NodeKind {
     Lnd,
     Coreln,
     Eclair,
+    Visualizer,
 }
 
 impl<'a> TryFrom<Pair<'a, Rule>> for NodeKind {
@@ -24,6 +25,7 @@ impl<'a> TryFrom<Pair<'a, Rule>> for NodeKind {
                 "LND" => Ok(NodeKind::Lnd),
                 "ECLAIR" => Ok(NodeKind::Eclair),
                 "CORELN" => Ok(NodeKind::Coreln),
+                "VISUALIZER" => Ok(NodeKind::Visualizer),
                 _ => bail!("invalid node_kind"),
             },
             _ => bail!("pair should be a node_kind"),

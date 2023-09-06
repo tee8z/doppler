@@ -1,6 +1,6 @@
 use crate::{
-    build_bitcoind, build_cln, build_eclair, build_lnd, load_options_from_compose, run_cluster,
-    DopplerParser, L1Node, MinerTime, NodeCommand, NodeKind, Options, Rule,
+    build_bitcoind, build_lnd, build_visualizer, load_options_from_compose, run_cluster, DopplerParser, L1Node,
+    MinerTime, NodeCommand, NodeKind, Options, Rule, build_eclair, build_cln,
 };
 use anyhow::{Error, Result};
 use indexmap::IndexMap;
@@ -154,7 +154,7 @@ fn process_loop_sleep(
             next().as_str().chars().next(),
         )
     };
-    let mut raw_loop_options = loop_options.clone().unwrap();
+    let mut raw_loop_options = loop_options.unwrap();
     raw_loop_options.sleep_time_amt = sleep_interval;
     raw_loop_options.sleep_time_interval_type = sleep_time_type;
     raw_loop_options
@@ -396,6 +396,7 @@ fn handle_build_command(
             build_eclair(options, name, details.unwrap().pair_name.unwrap().as_str())
         }
         NodeKind::Coreln => build_cln(options, name, details.unwrap().pair_name.unwrap().as_str()),
+        NodeKind::Visualizer  => build_visualizer(options, name),
     }
 }
 
@@ -462,7 +463,7 @@ fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
         from: from_node.to_owned(),
         to: to_node.to_owned(),
         amt,
-        subcommand: subcommand.to_owned(),
+        subcommand,
     }
 }
 

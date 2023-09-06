@@ -20,8 +20,8 @@ use std::{
 };
 
 use crate::{
-    add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_lnd_nodes,
-    generate_ipv4_sequence_in_subnet, Bitcoind, Cln, Eclair, L1Node, L2Node, Lnd, NETWORK, SUBNET,
+    add_bitcoinds, add_lnd_nodes, add_visualizer, generate_ipv4_sequence_in_subnet, Bitcoind, L1Node, L2Node, Lnd,
+    NETWORK, SUBNET, Eclair, Cln, add_coreln_nodes, add_eclair_nodes, Visualizer,
 };
 
 #[derive(Subcommand)]
@@ -59,13 +59,14 @@ impl std::fmt::Display for ShellType {
     }
 }
 
-//TODO: make lnd_node and eclair nodes private
+//TODO: make l2 nodes private
 #[derive(Clone)]
 pub struct Options {
     pub bitcoinds: Vec<Bitcoind>,
     pub lnd_nodes: Vec<Lnd>,
     pub eclair_nodes: Vec<Eclair>,
     pub cln_nodes: Vec<Cln>,
+    pub utility_services: Vec<Visualizer>,
     ports: Vec<i64>,
     ip_addresses: Vec<Ipv4Addr>,
     pub compose_path: Option<String>,
@@ -132,6 +133,7 @@ impl Options {
             lnd_nodes: vec::Vec::new(),
             eclair_nodes: vec::Vec::new(),
             cln_nodes: vec::Vec::new(),
+            utility_services: vec::Vec::new(),
             ports: starting_port,
             ip_addresses: vec![start_ip],
             compose_path: None,
@@ -322,6 +324,10 @@ impl Options {
     }
     pub fn load_coreln(&mut self) -> Result<(), Error> {
         add_coreln_nodes(self)
+    }
+    pub fn load_visualizer(&mut self) -> Result<(), Error> {
+        add_visualizer(self)?;
+        Ok(())
     }
 }
 

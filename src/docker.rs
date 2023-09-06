@@ -1,8 +1,11 @@
-use crate::{get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options};
+extern crate ini;
+use crate::{
+    get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options,
+};
 use anyhow::{anyhow, Error};
+use ini::Ini;
 use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
-use serde_json::to_string;
 use slog::{debug, error, info, Logger};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -31,6 +34,8 @@ pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> R
     debug!(options.global_logger(), "loaded eclairs");
     options.load_coreln()?;
     debug!(options.global_logger(), "loaded corelsn");
+    options.load_visualizer()?;
+    debug!(options.global_logger(), "loaded visualizer");
     Ok(())
 }
 
@@ -96,7 +101,7 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     start_miners(options)?;
     setup_l2_nodes(options)?;
     mine_initial_blocks(options)?;
-    update_visualizer_conf(options)?;
+    provision_visualizer(options)?;
     if options.aliases {
         update_bash_alias(options)?;
     }
@@ -171,59 +176,119 @@ fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct VisualizerConfig {
-    nodes: Vec<VisualizerNode>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-
 pub struct VisualizerNode {
     name: String,
     host: String,
-    macaroon: String,
+    alias: String,
+    pubkey: String,
 }
 
-fn update_visualizer_conf(options: &Options) -> Result<(), Error> {
+#[derive(Serialize)]
+struct VisualizerConfig {
+    nodes: Vec<VisualizerNode>,
+}
+
+fn provision_visualizer(options: &Options) -> Result<(), Error> {
+    debug!(options.global_logger(), "provisioning visualizer");
+    let visualizer_config = build_visualizer_config(options)?;
+    write_visualizer_config_to_ini(&visualizer_config)?;
+    copy_authentication_files(options)?;
+    Ok(())
+}
+
+fn build_visualizer_config(options: &Options) -> Result<VisualizerConfig, Error> {
     let mut config = VisualizerConfig { nodes: vec![] };
     options.lnd_nodes.iter().for_each(|node| {
         let name = node.get_name();
-        let admin_macaroon = node.get_admin_macaroon().unwrap();
+        let alias = node.get_alias();
+        let pubkey = node.get_cached_pubkey();
+        let host = node.rpc_server.clone();
+
         let visualizer_node = VisualizerNode {
             name: name.to_owned(),
-            host: node.get_server_url().to_owned(),
-            macaroon: admin_macaroon,
-        };
-        config.nodes.push(visualizer_node);
-    });
-    options.cln_nodes.iter().for_each(|node| {
-        let name = node.name.clone();
-
-        let visualizer_node = VisualizerNode {
-            name,
-            host: node.server_url.clone(),
-            macaroon: "".to_string(),
+            host,
+            alias: alias.to_owned(),
+            pubkey,
         };
         config.nodes.push(visualizer_node);
     });
 
-    let config_json = get_absolute_path("visualizer/config.json")?;
-    debug!(
-        options.global_logger(),
-        "config_json: {}",
-        config_json.display()
-    );
+    Ok(config)
+}
+
+fn write_visualizer_config_to_ini(config: &VisualizerConfig) -> Result<(), Error> {
+    // Step 1: create an empty Ini object
+    let mut conf = Ini::new();
+
+    // Step 2: Loop through the nodes in VisualizerConfig and populate the Ini object
+    for node in &config.nodes {
+        // Creating a section for each VisualizerNode based on its name
+        conf.with_section(Some(node.name.clone()))
+            .set("host", &node.host)
+            .set("alias", &node.alias)
+            .set("pubkey", &node.pubkey);
+    }
+
+    // Step 3: Write Ini object to a file
+    let path = get_absolute_path("data/visualizer/config/nodes.ini")?;
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .truncate(true)
         .create(true)
-        .open(config_json)?;
+        .open(path)?;
+    conf.write_to(&mut file)?;
 
-    let json_string = to_string(&config)?;
-    debug!(options.global_logger(), "preping json config file");
-    file.write_all(json_string.as_bytes())?;
-    debug!(options.global_logger(), "saved json config file");
 
+    let mut app_conf = Ini::new();
+    app_conf
+        .with_section(Some("logging".to_owned()))
+        .set("log_dir", "./logs");
+
+    let path = get_absolute_path("data/visualizer/config/graph_server.ini")?;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(path)?;
+    app_conf.write_to(&mut file)?;
+    Ok(())
+}
+
+fn copy_authentication_files(options: &Options) -> Result<(), Error> {
+    debug!(
+        options.global_logger(),
+        "copying macaroon and tls cert files"
+    );
+    options.lnd_nodes.iter().for_each(|node| {
+        let container_name = node.get_container_name();
+        let name = container_name.split('-').last().unwrap();
+
+        let dest_macaroon_path = format!("data/visualizer/auth/{}.macaroon", name);
+        let dest_tls_cert_path = format!("data/visualizer/auth/{}.cert", name);
+        let dest_macaroon_path = get_absolute_path(&dest_macaroon_path).unwrap();
+        let dest_tls_cert_path = get_absolute_path(&dest_tls_cert_path).unwrap();
+        let source_macaroon_path = node.macaroon_path.clone();
+        let source_tls_cert_path = node.certificate_path.clone();
+        let source_macaroon_path = get_absolute_path(&source_macaroon_path).unwrap();
+        let source_tls_cert_path = get_absolute_path(&source_tls_cert_path).unwrap();
+        debug!(
+            options.global_logger(),
+            "copying macaroon from {} to {}",
+            source_macaroon_path.display(),
+            dest_macaroon_path.display()
+        );
+
+        std::fs::copy(source_macaroon_path, dest_macaroon_path).unwrap();
+        debug!(
+            options.global_logger(),
+            "copying tls cert from {} to {}",
+            source_tls_cert_path.display(),
+            dest_tls_cert_path.display()
+        );
+        std::fs::copy(source_tls_cert_path, dest_tls_cert_path).unwrap();
+    });
     Ok(())
 }
 

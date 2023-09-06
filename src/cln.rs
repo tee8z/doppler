@@ -76,6 +76,9 @@ impl L2Node for Cln {
     fn get_name(&self) -> &str {
         self.name.as_str()
     }
+    fn get_alias(&self) -> &str {
+        &self.alias
+    }
     fn get_container_name(&self) -> &str {
         self.container_name.as_str()
     }
