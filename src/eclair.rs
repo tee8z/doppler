@@ -78,12 +78,8 @@ impl L2Node for Eclair {
     fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
     }
-    fn set_pubkey(&mut self, pubkey: String) {
-        self.pubkey = if !pubkey.is_empty() {
-            Some(pubkey)
-        } else {
-            None
-        }
+    fn add_pubkey(&mut self, option: &Options) {
+        add_pubkey(self, option)
     }
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error> {
         get_node_pubkey(self, options)
@@ -308,23 +304,12 @@ pub fn add_eclair_nodes(options: &mut Options) -> Result<(), Error> {
         })
         .filter_map(|res| res.ok())
         .collect();
-    let logger = options.global_logger();
 
     let nodes: Vec<_> = node_l2
         .iter_mut()
         .map(|node| {
-            let result = node.get_node_pubkey(options);
-            match result {
-                Ok(pubkey) => {
-                    node.set_pubkey(pubkey);
-                    info!(logger, "container: {} found", node.get_name());
-                    node.clone()
-                }
-                Err(e) => {
-                    error!(logger, "failed to find node: {}", e);
-                    node.clone()
-                }
-            }
+            node.add_pubkey(options);
+            node.clone()
         })
         .collect();
 
@@ -355,6 +340,23 @@ fn load_config(
         api_password: "test1234!".to_owned(),
         bitcoind_node_container_name: bitcoind_service,
     })
+}
+
+fn add_pubkey(node: &mut Eclair, options: &Options) {
+    let result = node.get_node_pubkey(options);
+    match result {
+        Ok(pubkey) => {
+            node.pubkey = Some(pubkey);
+            info!(
+                options.global_logger(),
+                "container: {} found",
+                node.get_name()
+            );
+        }
+        Err(e) => {
+            error!(options.global_logger(), "failed to find node: {}", e);
+        }
+    }
 }
 
 fn get_node_pubkey(node: &Eclair, options: &Options) -> Result<String, Error> {

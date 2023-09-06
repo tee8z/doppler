@@ -140,6 +140,8 @@ fn mine_initial_blocks(options: &Options) -> Result<(), Error> {
 }
 
 fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
+    options.add_pubkeys_l2_nodes()?;
+
     let miner = options
         .bitcoinds
         .iter()
@@ -151,29 +153,13 @@ fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
     }
 
     let logger = options.global_logger();
-    let inner_option = options.clone();
-    options.get_l2_nodes_mut().iter_mut().for_each(|node| {
-        let node_clone = node.clone();
-        let mut node_borrow = node_clone.borrow_mut();
-        let result = node_borrow
-            .get_node_pubkey(&inner_option.clone())
-            .and_then(|pubkey| {
-                node_borrow.set_pubkey(pubkey);
-                info!(
-                    logger,
-                    "container: {} pubkey: {}",
-                    node_borrow.get_container_name(),
-                    node_borrow.get_cached_pubkey()
-                );
-                let found_miner = miner.unwrap();
-                node_borrow.fund_node(&inner_option.clone(), found_miner)
-            });
-
-        match result {
+    options.get_l2_nodes().into_iter().for_each(|node| {
+        let found_miner = miner.unwrap();
+        match node.fund_node(&options.clone(), found_miner) {
             Ok(_) => info!(
                 logger,
                 "container: {} funded",
-                node_borrow.get_container_name().clone()
+                node.get_container_name().clone()
             ),
             Err(e) => error!(logger, "failed to start/fund node: {}", e),
         }

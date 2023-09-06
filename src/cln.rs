@@ -85,12 +85,8 @@ impl L2Node for Cln {
     fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
     }
-    fn set_pubkey(&mut self, pubkey: String) {
-        self.pubkey = if !pubkey.is_empty() {
-            Some(pubkey)
-        } else {
-            None
-        }
+    fn add_pubkey(&mut self, options: &Options) {
+        add_pubkey(self, options)
     }
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error> {
         get_node_pubkey(self, options)
@@ -293,29 +289,35 @@ pub fn add_coreln_nodes(options: &mut Options) -> Result<()> {
         })
         .filter_map(|res| res.ok())
         .collect();
-    let logger = options.global_logger();
 
     let nodes: Vec<_> = node_l2
         .iter_mut()
         .map(|node| {
-            let result = node.get_node_pubkey(options);
-            match result {
-                Ok(pubkey) => {
-                    node.set_pubkey(pubkey);
-                    info!(logger, "container: {} found", node.get_name());
-                    node.clone()
-                }
-                Err(e) => {
-                    error!(logger, "failed to find node: {}", e);
-                    node.clone()
-                }
-            }
+            node.add_pubkey(options);
+            node.clone()
         })
         .collect();
 
     options.cln_nodes = nodes;
 
     Ok(())
+}
+
+fn add_pubkey(node: &mut Cln, options: &Options) {
+    let result = node.get_node_pubkey(options);
+    match result {
+        Ok(pubkey) => {
+            node.pubkey = Some(pubkey);
+            info!(
+                options.global_logger(),
+                "container: {} found",
+                node.get_name()
+            );
+        }
+        Err(e) => {
+            error!(options.global_logger(), "failed to find node: {}", e);
+        }
+    }
 }
 
 fn load_config(
