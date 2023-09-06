@@ -21,7 +21,7 @@ The DSL should empower developers to compose a concise script that configures an
 - [x] LOOP a set of commands over an optional interval
 - [x] CLOSE_CHANNEL
 - [X] support multiple node implementations (supports LND, CoreLN, Eclair)
-- [x] add a cluster level UI to see how all the nodes  connect (started, but need to finish in ./visualizer)
+- [x] add a cluster level UI to see how all the nodes connect (comes from https://github.com/litch/lightning-conformance/tree/master/operator)
 
 ##### TODO:
 - [ ] create new ldk image for [ldk-node](https://github.com/lightningdevkit/ldk-node)
@@ -32,6 +32,7 @@ The DSL should empower developers to compose a concise script that configures an
 - [ ] BUMP_FEE - need some way to identify the transaction created earlier in the script to bump
 - [ ] CLOSE_CHANNEL - come up with grammar allowing scripts to close a specific channel
 - [ ] BATCH_OPEN - build grammar for creating batch opening of channels
+- [ ] KEYSEND - add gramma for keysends
 
 ### Acknowledgments
 * Thank you [polar](https://github.com/jamaljsr/polar) for having such easy docker images to work with
