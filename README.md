@@ -32,7 +32,7 @@ The DSL should empower developers to compose a concise script that configures an
 - [ ] BUMP_FEE - need some way to identify the transaction created earlier in the script to bump
 - [ ] CLOSE_CHANNEL - come up with grammar allowing scripts to close a specific channel
 - [ ] BATCH_OPEN - build grammar for creating batch opening of channels
-- [ ] KEYSEND - add gramma for keysends
+- [ ] KEYSEND - add grammar for keysends
 
 ### Acknowledgments
 * Thank you [polar](https://github.com/jamaljsr/polar) for having such easy docker images to work with
