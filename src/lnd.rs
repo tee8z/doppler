@@ -60,7 +60,7 @@ impl Lnd {
 
 impl L2Node for Lnd {
     fn get_connection_url(&self) -> String {
-        if let Some(pubkey) = self.pubkey.as_ref() {
+        if let Some(pubkey) = self.pubkey.clone() {
             format!(
                 "{}@{}:{}",
                 pubkey,
@@ -512,6 +512,13 @@ fn open_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Re
 
 fn connect(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+    info!(
+        options.global_logger(),
+        "to_node {} {} {} ",
+        to_node.get_cached_pubkey(),
+        to_node.get_p2p_port(),
+        to_node.get_container_name()
+    );
     let connection_url = to_node.get_connection_url();
     let rpc_command = node.get_rpc_server_command();
     let macaroon_path = node.get_macaroon_path();
@@ -659,8 +666,7 @@ fn create_invoice(
         amt.as_ref(),
     ];
     let output = run_command(options, "addinvoice".to_owned(), commands)?;
-    let found_payment_request: Option<String> =
-        node.get_property("payment_request", output);
+    let found_payment_request: Option<String> = node.get_property("payment_request", output);
     if found_payment_request.is_none() {
         error!(options.global_logger(), "no payment request found");
     }
