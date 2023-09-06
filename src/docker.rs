@@ -1,10 +1,11 @@
-use crate::{get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options};
+extern crate ini;
+use crate::{
+    get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options,
+};
 use anyhow::{anyhow, Error};
+use ini::Ini;
 use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
-use serde_json::to_string;
-extern crate ini;
-use ini::Ini;
 use slog::{debug, error, info, Logger};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -100,7 +101,6 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     start_miners(options)?;
     setup_l2_nodes(options)?;
     mine_initial_blocks(options)?;
-    update_visualizer_conf(options)?;
     provision_visualizer(options)?;
     if options.aliases {
         update_bash_alias(options)?;
@@ -181,7 +181,6 @@ pub struct VisualizerNode {
     host: String,
     alias: String,
     pubkey: String,
-    macaroon: String,
 }
 
 #[derive(Serialize)]
@@ -210,7 +209,6 @@ fn build_visualizer_config(options: &Options) -> Result<VisualizerConfig, Error>
             host,
             alias: alias.to_owned(),
             pubkey,
-            macaroon: "".to_owned()
         };
         config.nodes.push(visualizer_node);
     });
@@ -219,7 +217,7 @@ fn build_visualizer_config(options: &Options) -> Result<VisualizerConfig, Error>
 }
 
 fn write_visualizer_config_to_ini(config: &VisualizerConfig) -> Result<(), Error> {
-    // Step 1: Initialize an empty Ini object
+    // Step 1: create an empty Ini object
     let mut conf = Ini::new();
 
     // Step 2: Loop through the nodes in VisualizerConfig and populate the Ini object
@@ -231,11 +229,16 @@ fn write_visualizer_config_to_ini(config: &VisualizerConfig) -> Result<(), Error
             .set("pubkey", &node.pubkey);
     }
 
-    let path = get_absolute_path("data/visualizer/config/nodes.ini")?;
-    // Create directory if it doesn't exist
-    std::fs::create_dir_all(path.parent().unwrap())?;
     // Step 3: Write Ini object to a file
-    conf.write_to_file(path)?;
+    let path = get_absolute_path("data/visualizer/config/nodes.ini")?;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(path)?;
+    conf.write_to(&mut file)?;
+
 
     let mut app_conf = Ini::new();
     app_conf
@@ -243,14 +246,17 @@ fn write_visualizer_config_to_ini(config: &VisualizerConfig) -> Result<(), Error
         .set("log_dir", "./logs");
 
     let path = get_absolute_path("data/visualizer/config/graph_server.ini")?;
-    app_conf.write_to_file(path)?;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(path)?;
+    app_conf.write_to(&mut file)?;
     Ok(())
 }
 
 fn copy_authentication_files(options: &Options) -> Result<(), Error> {
-    let path = get_absolute_path("data/visualizer/auth")?;
-    std::fs::create_dir_all(path)?;
-
     debug!(
         options.global_logger(),
         "copying macaroon and tls cert files"
@@ -283,55 +289,6 @@ fn copy_authentication_files(options: &Options) -> Result<(), Error> {
         );
         std::fs::copy(source_tls_cert_path, dest_tls_cert_path).unwrap();
     });
-    Ok(())
-}
-
-
-fn update_visualizer_conf(options: &Options) -> Result<(), Error> {
-    let mut config = VisualizerConfig { nodes: vec![] };
-    options.lnd_nodes.iter().for_each(|node| {
-        let name = node.get_name();
-        let admin_macaroon = node.get_admin_macaroon().unwrap();
-        let visualizer_node = VisualizerNode {
-            name: name.to_owned(),
-            host: node.get_server_url().to_owned(),
-            alias: node.get_alias().to_string(),
-            pubkey: node.get_cached_pubkey(),
-            macaroon: admin_macaroon,
-        };
-        config.nodes.push(visualizer_node);
-    });
-    options.cln_nodes.iter().for_each(|node| {
-        let name = node.name.clone();
-
-        let visualizer_node = VisualizerNode {
-            name,
-            host: node.server_url.clone(),
-            macaroon: "".to_string(),
-            alias: node.get_alias().to_string(),
-            pubkey: node.get_cached_pubkey(),
-        };
-        config.nodes.push(visualizer_node);
-    });
-
-    let config_json = get_absolute_path("visualizer/config.json")?;
-    debug!(
-        options.global_logger(),
-        "config_json: {}",
-        config_json.display()
-    );
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(config_json)?;
-
-    let json_string = to_string(&config)?;
-    debug!(options.global_logger(), "preping json config file");
-    file.write_all(json_string.as_bytes())?;
-    debug!(options.global_logger(), "saved json config file");
-
     Ok(())
 }
 

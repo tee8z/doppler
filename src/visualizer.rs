@@ -1,10 +1,11 @@
 use anyhow::{Error, Result};
-use docker_compose_types::{AdvancedNetworkSettings, MapOrEmpty, Service, Ports, Volumes, Networks, AdvancedNetworks};
+use docker_compose_types::{
+    AdvancedBuildStep, AdvancedNetworkSettings, AdvancedNetworks, BuildStep, MapOrEmpty, Networks,
+    Ports, Service, Volumes,
+};
 use indexmap::IndexMap;
 
-use crate::{get_absolute_path, Options, NETWORK};
-
-const VISUALIZER_IMAGE: &str = "litch/operator:latest";
+use crate::{create_folder, get_absolute_path, Options, NETWORK};
 
 #[derive(Debug, Clone)]
 pub struct Visualizer {
@@ -57,18 +58,30 @@ pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error>
         }),
     );
 
-    let local_path = get_absolute_path("data/visualizer")?
-        .to_str()
-        .unwrap()
-        .to_string();
+    //Need to create these folders now so the permissions are correct on the volumes
+    let local_path = get_absolute_path("data/visualizer")?;
+    create_folder(local_path.to_str().unwrap())?;
+    let auth_path = get_absolute_path("data/visualizer/auth")?;
+    create_folder(auth_path.to_str().unwrap())?;
+    let config_path = get_absolute_path("data/visualizer/config")?;
+    create_folder(config_path.to_str().unwrap())?;
+
+    let build_steps = AdvancedBuildStep {
+        context: ".".to_owned(),
+        dockerfile: Some("Dockerfile.visualizer".to_owned()),
+        ..Default::default()
+    };
 
     let visualizer = Service {
-        image: Some(VISUALIZER_IMAGE.to_string()),
+        build_: Some(BuildStep::Advanced(build_steps)),
         container_name: Some("doppler-visualizer".to_string()),
         ports: Ports::Short(vec!["5100:5000".to_string()]),
         volumes: Volumes::Simple(vec![
-            format!("{}/auth:/app/server/auth", local_path),
-            format!("{}/config:/app/server/config", local_path),
+            format!("{}/auth:/app/server/auth:rw", local_path.to_string_lossy()),
+            format!(
+                "{}/config:/app/server/config:rw",
+                local_path.to_string_lossy()
+            ),
         ]),
         networks: Networks::Advanced(AdvancedNetworks(cur_network)),
         ..Default::default()
