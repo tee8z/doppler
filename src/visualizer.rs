@@ -4,21 +4,21 @@ use indexmap::IndexMap;
 
 use crate::{get_absolute_path, Options, NETWORK};
 
-const OPERATOR_IMAGE: &str = "litch/operator:latest";
+const VISUALIZER_IMAGE: &str = "litch/operator:latest";
 
 #[derive(Debug, Clone)]
-pub struct Operator {
+pub struct Visualizer {
     pub name: String,
     pub ip: String,
     pub data_dir: String,
     pub container_name: String,
 }
 
-pub fn add_operator(options: &mut Options) -> Result<(), Error> {
-    let operators: Vec<_> = options
+pub fn add_visualizer(options: &mut Options) -> Result<(), Error> {
+    let services: Vec<_> = options
         .services
         .iter_mut()
-        .filter(|service| service.0.contains("operator"))
+        .filter(|service| service.0.contains("visualizer"))
         .map(|service| {
             let container_name = service.0;
             let operator_name = container_name.split('-').last().unwrap();
@@ -33,7 +33,7 @@ pub fn add_operator(options: &mut Options) -> Result<(), Error> {
             let ip = found_ip.unwrap();
             let data_dir = format!("/app/server/data/{}", operator_name);
 
-            Operator {
+            Visualizer {
                 name: operator_name.to_string(),
                 ip,
                 data_dir,
@@ -42,11 +42,11 @@ pub fn add_operator(options: &mut Options) -> Result<(), Error> {
         })
         .collect();
 
-    options.utility_services = operators;
+    options.utility_services = services;
     Ok(())
 }
 
-pub fn build_operator(options: &mut Options, _name: &str) -> Result<(), Error> {
+pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error> {
     let ip = options.new_ipv4().to_string();
     let mut cur_network = IndexMap::new();
     cur_network.insert(
@@ -57,14 +57,14 @@ pub fn build_operator(options: &mut Options, _name: &str) -> Result<(), Error> {
         }),
     );
 
-    let local_path = get_absolute_path("data/operator")?
+    let local_path = get_absolute_path("data/visualizer")?
         .to_str()
         .unwrap()
         .to_string();
 
-    let operator = Service {
-        image: Some(OPERATOR_IMAGE.to_string()),
-        container_name: Some("doppler-operator".to_string()),
+    let visualizer = Service {
+        image: Some(VISUALIZER_IMAGE.to_string()),
+        container_name: Some("doppler-visualizer".to_string()),
         ports: Ports::Short(vec!["5100:5000".to_string()]),
         volumes: Volumes::Simple(vec![
             format!("{}/auth:/app/server/auth", local_path),
@@ -75,7 +75,6 @@ pub fn build_operator(options: &mut Options, _name: &str) -> Result<(), Error> {
     };
     options
         .services
-        .insert("operator".to_string(), Some(operator));
-    // options.utility_services.push(operator);
+        .insert("visualizer".to_string(), Some(visualizer));
     Ok(())
 }

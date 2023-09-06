@@ -33,8 +33,8 @@ pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> R
     debug!(options.global_logger(), "loaded eclairs");
     options.load_coreln()?;
     debug!(options.global_logger(), "loaded corelsn");
-    options.load_operator()?;
-    debug!(options.global_logger(), "loaded operator");
+    options.load_visualizer()?;
+    debug!(options.global_logger(), "loaded visualizer");
     Ok(())
 }
 
@@ -101,7 +101,7 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     setup_l2_nodes(options)?;
     mine_initial_blocks(options)?;
     update_visualizer_conf(options)?;
-    provision_operator(options)?;
+    provision_visualizer(options)?;
     if options.aliases {
         update_bash_alias(options)?;
     }
@@ -176,59 +176,62 @@ fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct OperatorNode {
+pub struct VisualizerNode {
     name: String,
     host: String,
     alias: String,
     pubkey: String,
+    macaroon: String,
 }
 
-struct OperatorConfig {
-    nodes: Vec<OperatorNode>,
+#[derive(Serialize)]
+struct VisualizerConfig {
+    nodes: Vec<VisualizerNode>,
 }
 
-fn provision_operator(options: &Options) -> Result<(), Error> {
-    debug!(options.global_logger(), "provisioning operator");
-    let operator_config = build_operator_config(options)?;
-    write_operator_config_to_ini(&operator_config)?;
+fn provision_visualizer(options: &Options) -> Result<(), Error> {
+    debug!(options.global_logger(), "provisioning visualizer");
+    let visualizer_config = build_visualizer_config(options)?;
+    write_visualizer_config_to_ini(&visualizer_config)?;
     copy_authentication_files(options)?;
     Ok(())
 }
 
-fn build_operator_config(options: &Options) -> Result<OperatorConfig, Error> {
-    let mut config = OperatorConfig { nodes: vec![] };
+fn build_visualizer_config(options: &Options) -> Result<VisualizerConfig, Error> {
+    let mut config = VisualizerConfig { nodes: vec![] };
     options.lnd_nodes.iter().for_each(|node| {
         let name = node.get_name();
         let alias = node.get_alias();
         let pubkey = node.get_cached_pubkey();
         let host = node.rpc_server.clone();
 
-        let operator_node = OperatorNode {
+        let visualizer_node = VisualizerNode {
             name: name.to_owned(),
             host,
             alias: alias.to_owned(),
             pubkey,
+            macaroon: "".to_owned()
         };
-        config.nodes.push(operator_node);
+        config.nodes.push(visualizer_node);
     });
 
     Ok(config)
 }
 
-fn write_operator_config_to_ini(config: &OperatorConfig) -> Result<(), Error> {
+fn write_visualizer_config_to_ini(config: &VisualizerConfig) -> Result<(), Error> {
     // Step 1: Initialize an empty Ini object
     let mut conf = Ini::new();
 
-    // Step 2: Loop through the nodes in OperatorConfig and populate the Ini object
+    // Step 2: Loop through the nodes in VisualizerConfig and populate the Ini object
     for node in &config.nodes {
-        // Creating a section for each OperatorNode based on its name
+        // Creating a section for each VisualizerNode based on its name
         conf.with_section(Some(node.name.clone()))
             .set("host", &node.host)
             .set("alias", &node.alias)
             .set("pubkey", &node.pubkey);
     }
 
-    let path = get_absolute_path("data/operator/config/nodes.ini")?;
+    let path = get_absolute_path("data/visualizer/config/nodes.ini")?;
     // Create directory if it doesn't exist
     std::fs::create_dir_all(path.parent().unwrap())?;
     // Step 3: Write Ini object to a file
@@ -239,13 +242,13 @@ fn write_operator_config_to_ini(config: &OperatorConfig) -> Result<(), Error> {
         .with_section(Some("logging".to_owned()))
         .set("log_dir", "./logs");
 
-    let path = get_absolute_path("data/operator/config/graph_server.ini")?;
+    let path = get_absolute_path("data/visualizer/config/graph_server.ini")?;
     app_conf.write_to_file(path)?;
     Ok(())
 }
 
 fn copy_authentication_files(options: &Options) -> Result<(), Error> {
-    let path = get_absolute_path("data/operator/auth")?;
+    let path = get_absolute_path("data/visualizer/auth")?;
     std::fs::create_dir_all(path)?;
 
     debug!(
@@ -256,8 +259,8 @@ fn copy_authentication_files(options: &Options) -> Result<(), Error> {
         let container_name = node.get_container_name();
         let name = container_name.split('-').last().unwrap();
 
-        let dest_macaroon_path = format!("data/operator/auth/{}.macaroon", name);
-        let dest_tls_cert_path = format!("data/operator/auth/{}.cert", name);
+        let dest_macaroon_path = format!("data/visualizer/auth/{}.macaroon", name);
+        let dest_tls_cert_path = format!("data/visualizer/auth/{}.cert", name);
         let dest_macaroon_path = get_absolute_path(&dest_macaroon_path).unwrap();
         let dest_tls_cert_path = get_absolute_path(&dest_tls_cert_path).unwrap();
         let source_macaroon_path = node.macaroon_path.clone();
@@ -283,18 +286,6 @@ fn copy_authentication_files(options: &Options) -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct VisualizerConfig {
-    nodes: Vec<VisualizerNode>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-
-pub struct VisualizerNode {
-    name: String,
-    host: String,
-    macaroon: String,
-}
 
 fn update_visualizer_conf(options: &Options) -> Result<(), Error> {
     let mut config = VisualizerConfig { nodes: vec![] };
@@ -304,6 +295,8 @@ fn update_visualizer_conf(options: &Options) -> Result<(), Error> {
         let visualizer_node = VisualizerNode {
             name: name.to_owned(),
             host: node.get_server_url().to_owned(),
+            alias: node.get_alias().to_string(),
+            pubkey: node.get_cached_pubkey(),
             macaroon: admin_macaroon,
         };
         config.nodes.push(visualizer_node);
@@ -315,6 +308,8 @@ fn update_visualizer_conf(options: &Options) -> Result<(), Error> {
             name,
             host: node.server_url.clone(),
             macaroon: "".to_string(),
+            alias: node.get_alias().to_string(),
+            pubkey: node.get_cached_pubkey(),
         };
         config.nodes.push(visualizer_node);
     });

@@ -20,8 +20,8 @@ use std::{
 };
 
 use crate::{
-    add_bitcoinds, add_lnd_nodes, add_operator, generate_ipv4_sequence_in_subnet, Bitcoind, L1Node, L2Node, Lnd,
-    NETWORK, SUBNET, Eclair, Cln, add_coreln_nodes, add_eclair_nodes, Operator,
+    add_bitcoinds, add_lnd_nodes, add_visualizer, generate_ipv4_sequence_in_subnet, Bitcoind, L1Node, L2Node, Lnd,
+    NETWORK, SUBNET, Eclair, Cln, add_coreln_nodes, add_eclair_nodes, Visualizer,
 };
 
 #[derive(Subcommand)]
@@ -66,7 +66,7 @@ pub struct Options {
     pub lnd_nodes: Vec<Lnd>,
     pub eclair_nodes: Vec<Eclair>,
     pub cln_nodes: Vec<Cln>,
-    pub utility_services: Vec<Operator>,
+    pub utility_services: Vec<Visualizer>,
     ports: Vec<i64>,
     ip_addresses: Vec<Ipv4Addr>,
     pub compose_path: Option<String>,
@@ -325,8 +325,8 @@ impl Options {
     pub fn load_coreln(&mut self) -> Result<(), Error> {
         add_coreln_nodes(self)
     }
-    pub fn load_operator(&mut self) -> Result<(), Error> {
-        add_operator(self)?;
+    pub fn load_visualizer(&mut self) -> Result<(), Error> {
+        add_visualizer(self)?;
         Ok(())
     }
 }
