@@ -1,7 +1,6 @@
 use anyhow::{Error, Result};
 use docker_compose_types::{
-    AdvancedNetworkSettings, AdvancedNetworks, MapOrEmpty, Networks,
-    Ports, Service, Volumes,
+    AdvancedNetworkSettings, AdvancedNetworks, MapOrEmpty, Networks, Ports, Service, Volumes,
 };
 use indexmap::IndexMap;
 
@@ -53,7 +52,7 @@ pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error>
     cur_network.insert(
         NETWORK.to_string(),
         MapOrEmpty::Map(AdvancedNetworkSettings {
-            ipv4_address: Some(ip),
+            ipv4_address: Some(ip.clone()),
             ..Default::default()
         }),
     );
@@ -65,8 +64,6 @@ pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error>
     create_folder(auth_path.to_str().unwrap())?;
     let config_path = get_absolute_path("data/visualizer/config")?;
     create_folder(config_path.to_str().unwrap())?;
-
-
 
     let visualizer = Service {
         image: Some("litch/operator:latest".to_string()),
@@ -85,5 +82,16 @@ pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error>
     options
         .services
         .insert("visualizer".to_string(), Some(visualizer));
+
+    let operator_name = "visualizer";
+
+    let data_dir = format!("/app/server/data/{}", operator_name);
+
+    options.utility_services.push(Visualizer {
+        name: operator_name.to_owned(),
+        ip,
+        data_dir: data_dir,
+        container_name: "doppler-visualizer".to_owned(),
+    });
     Ok(())
 }
