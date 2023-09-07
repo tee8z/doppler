@@ -1,6 +1,6 @@
 use anyhow::{Error, Result};
 use docker_compose_types::{
-    AdvancedBuildStep, AdvancedNetworkSettings, AdvancedNetworks, BuildStep, MapOrEmpty, Networks,
+    AdvancedNetworkSettings, AdvancedNetworks, MapOrEmpty, Networks,
     Ports, Service, Volumes,
 };
 use indexmap::IndexMap;
@@ -66,14 +66,10 @@ pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error>
     let config_path = get_absolute_path("data/visualizer/config")?;
     create_folder(config_path.to_str().unwrap())?;
 
-    let build_steps = AdvancedBuildStep {
-        context: ".".to_owned(),
-        dockerfile: Some("Dockerfile.visualizer".to_owned()),
-        ..Default::default()
-    };
+
 
     let visualizer = Service {
-        build_: Some(BuildStep::Advanced(build_steps)),
+        image: Some("litch/operator:latest".to_string()),
         container_name: Some("doppler-visualizer".to_string()),
         ports: Ports::Short(vec!["5100:5000".to_string()]),
         volumes: Volumes::Simple(vec![
