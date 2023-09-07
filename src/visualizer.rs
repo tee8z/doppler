@@ -1,6 +1,7 @@
 use anyhow::{Error, Result};
 use docker_compose_types::{
-    AdvancedNetworkSettings, AdvancedNetworks, MapOrEmpty, Networks, Ports, Service, Volumes,
+    AdvancedNetworkSettings, AdvancedNetworks, MapOrEmpty, Networks,
+    Ports, Service, Volumes, DependsOnOptions,
 };
 use indexmap::IndexMap;
 
@@ -57,6 +58,11 @@ pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error>
         }),
     );
 
+    let lnd_node = options
+        .lnd_nodes
+        .first()
+        .expect("an lnd node must be configured before using a visualizer");
+
     //Need to create these folders now so the permissions are correct on the volumes
     let local_path = get_absolute_path("data/visualizer")?;
     create_folder(local_path.to_str().unwrap())?;
@@ -65,10 +71,13 @@ pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error>
     let config_path = get_absolute_path("data/visualizer/config")?;
     create_folder(config_path.to_str().unwrap())?;
 
+    let depends_on_options = DependsOnOptions::Simple(vec![lnd_node.container_name.clone()]);
+
     let visualizer = Service {
         image: Some("litch/operator:latest".to_string()),
         container_name: Some("doppler-visualizer".to_string()),
         ports: Ports::Short(vec!["5100:5000".to_string()]),
+        depends_on: depends_on_options,
         volumes: Volumes::Simple(vec![
             format!("{}/auth:/app/server/auth:rw", local_path.to_string_lossy()),
             format!(
