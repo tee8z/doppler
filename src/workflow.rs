@@ -1,9 +1,9 @@
 use crate::{
-    build_bitcoind, build_lnd, build_visualizer, load_options_from_compose, run_cluster, DopplerParser, L1Node,
-    MinerTime, NodeCommand, NodeKind, Options, Rule, build_eclair, build_cln,
+    build_bitcoind, build_cln, build_eclair, build_lnd, build_visualizer,
+    load_options_from_compose, run_cluster, DopplerParser, L1Node, MinerTime, NodeCommand,
+    NodeKind, Options, Rule,
 };
 use anyhow::{Error, Result};
-use indexmap::IndexMap;
 use pest::{
     iterators::{Pair, Pairs},
     Parser,
@@ -17,18 +17,16 @@ use std::{
     },
     thread::{self, spawn},
     time::Duration,
+    vec,
 };
 use uuid::Uuid;
 
 const COMPOSE_PATH: &str = "doppler-cluster.yaml";
 
 pub fn run_workflow(options: &mut Options, parsed: Pair<'_, Rule>) -> Result<(), Error> {
-    let mut loops = IndexMap::new();
     for pair in parsed.into_inner() {
         match pair.as_rule() {
-            Rule::loop_content => {
-                handle_loop(options, &mut loops, pair).expect("invalid loop block")
-            }
+            Rule::loop_content => handle_loop(options, pair).expect("invalid loop block"),
             Rule::conf => handle_conf(options, pair).expect("invalid conf line"),
             Rule::up => handle_up(options).expect("failed to start the cluster"),
             Rule::skip_conf => {
@@ -40,7 +38,10 @@ pub fn run_workflow(options: &mut Options, parsed: Pair<'_, Rule>) -> Result<(),
             Rule::btc_node_action => {
                 handle_btc_action(options, pair).expect("invalid node action line")
             }
-            Rule::EOI => break,
+            Rule::EOI => {
+                options.clone().read_end_of_doppler_file.as_ref().swap(true, Ordering::SeqCst);
+                break;
+            }
             _ => continue,
         }
     }
@@ -60,14 +61,20 @@ pub fn run_workflow_until_stop(
     let all_threads = options.get_thread_handlers();
     run_workflow(options, parsed).unwrap();
     // if we have no child threads, this must be a script we just want to run through
-    if all_threads.lock().unwrap().is_empty() {
+    if all_threads.lock().unwrap().is_empty() && options.loop_count.as_ref().load(Ordering::SeqCst) == 0 {
         main_thread_active.set(false);
         return Ok(());
     }
     let terminate = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&terminate))?;
-    while !terminate.load(Ordering::Relaxed) {
-        // tick every second to see if we should terminated
+    let mut current_loop_count = options.loop_count.as_ref().load(Ordering::SeqCst);
+    let mut read_end_of_doppler_file = options.read_end_of_doppler_file.as_ref().load(Ordering::SeqCst);
+    while current_loop_count > 0 || !read_end_of_doppler_file {
+        if terminate.load(Ordering::Relaxed) {
+            break
+        }
+        current_loop_count = options.clone().loop_count.as_ref().load(Ordering::SeqCst);
+        read_end_of_doppler_file = options.read_end_of_doppler_file.as_ref().load(Ordering::SeqCst);
         thread::sleep(Duration::from_secs(1));
     }
     main_thread_active.set(false);
@@ -160,49 +167,39 @@ fn process_loop_sleep(
     raw_loop_options
 }
 
-fn handle_loop(
-    options: &mut Options,
-    loops: &mut IndexMap<LoopOptions, Vec<NodeCommand>>,
-    line: Pair<'_, Rule>,
-) -> Result<()> {
+fn handle_loop(options: &mut Options, line: Pair<'_, Rule>) -> Result<()> {
     let line_inner = line.clone().into_inner();
-
-    let current_loop = loops.last();
-    let mut node_command = None;
-    let mut new_loop = None;
     let logger = options.global_logger();
 
+    let mut command_stack = vec![];
+    let mut current_loop = None;
     for inner_pair in line_inner {
         match inner_pair.as_rule() {
             Rule::start => {
                 debug!(logger, "processing start command");
-                new_loop = Some(process_start_loop(inner_pair));
+                options.loop_count.as_ref().fetch_add(1, Ordering::SeqCst);
+                current_loop = Some(process_start_loop(inner_pair));
             }
             Rule::btc_node_action => {
                 debug!(logger, "processing btc node command");
-                node_command = Some(process_btc_action(inner_pair));
+                let node_command = process_btc_action(inner_pair);
+                command_stack.push(node_command);
             }
             Rule::ln_node_action => {
                 debug!(logger, "processing ln node command");
-                node_command = Some(process_ln_action(inner_pair));
+                let node_command = process_ln_action(inner_pair);
+                command_stack.push(node_command);
             }
             Rule::end => {
                 debug!(logger, "processing end command");
-                let loop_options = current_loop.unwrap().0.clone();
-                let loop_stack = current_loop.unwrap().1.clone();
-                run_loop(options, loop_options, loop_stack)?;
+                run_loop(
+                    options,
+                    current_loop.clone().unwrap(),
+                    command_stack.clone(),
+                )?;
             }
             _ => unreachable!(),
         }
-    }
-    if let Some(cur_loop) = new_loop {
-        loops.insert(cur_loop, vec![]);
-    } else if let Some(command) = node_command {
-        let mut action_stack = current_loop.unwrap().1.clone();
-        action_stack.push(command);
-        loops.insert(current_loop.unwrap().0.clone(), action_stack.to_vec());
-    } else {
-        loops.remove(&current_loop.unwrap().0.clone());
     }
 
     Ok(())
@@ -243,6 +240,7 @@ fn run_loop(
                     current_options.global_logger(),
                     "finished iterations, stopping loop: {}", loop_options.name
                 );
+                current_options.clone().loop_count.as_ref().fetch_sub(1, Ordering::SeqCst);
                 break;
             }
             if current_options.main_thread_paused.val() {
@@ -396,7 +394,7 @@ fn handle_build_command(
             build_eclair(options, name, details.unwrap().pair_name.unwrap().as_str())
         }
         NodeKind::Coreln => build_cln(options, name, details.unwrap().pair_name.unwrap().as_str()),
-        NodeKind::Visualizer  => build_visualizer(options, name),
+        NodeKind::Visualizer => build_visualizer(options, name),
     }
 }
 
