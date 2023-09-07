@@ -24,17 +24,8 @@ loop = { "LOOP" }
 start  = { ((loop ~ num ~ every ~ num ~ time_digits ) | (loop ~ num) | (loop ~ every ~ num ~ time_digits ))  }
 end = { "END" }
 
-loop_block = _{
-    // The first line in the block
-    PEEK_ALL ~ PUSH("  "+ | "\t"+) ~ loop_content ~
-    // Subsequent lines in the block
-    (PEEK_ALL ~ loop_content)* ~
-    // Remove the last layer of indentation from the stack when exiting the block
-    DROP
-}
-
 loop_content = {
-    (start |  ln_node_action | btc_node_action | end) ~ NEWLINE ~ loop_block*
+    start ~ NEWLINE ~ ( (ln_node_action | btc_node_action) ~ NEWLINE )* ~ end
 }
 
 up = { "UP" }
@@ -47,5 +38,5 @@ ln_node_action = { (ident ~ ln_node_action_type ~ ident ~ "AMT" ~ (num ~ sub_com
 btc_node_action_type = { "MINE_BLOCKS" }
 btc_node_action = { (ident ~ btc_node_action_type ~ ( num ~ sub_command | num)) }
 
-page = { SOI ~ (COMMENT |  ( ((skip_conf ~ NEWLINE) | (conf ~ NEWLINE)* ~ (up ~ NEWLINE) )  ~ ( EMPTY_LINE | (ln_node_action ~ NEWLINE ) | (btc_node_action ~ NEWLINE ) | (loop_content* ~ NEWLINE ) )*) ) ~ EOI }
+page = { SOI ~ (COMMENT |  ( ((skip_conf ~ NEWLINE) | (conf ~ NEWLINE)* ~ (up ~ NEWLINE) )  ~ ( EMPTY_LINE | (loop_content* ~ NEWLINE ) | (ln_node_action ~ NEWLINE ) | (btc_node_action ~ NEWLINE ) )*) ) ~ EOI }
 

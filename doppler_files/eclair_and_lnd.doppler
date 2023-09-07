@@ -27,4 +27,3 @@ LOOP 2
     eclair2 SEND_LN lnd2 AMT 10
     eclair1 SEND_LN lnd2 AMT 10
 END
-

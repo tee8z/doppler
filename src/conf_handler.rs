@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, Ordering, AtomicI64},
         Arc, Mutex,
     },
     thread::Thread,
@@ -73,12 +73,13 @@ pub struct Options {
     pub services: IndexMap<String, Option<Service>>,
     pub main_thread_active: ThreadController,
     pub main_thread_paused: ThreadController,
-    pub loop_stack: IndexMap<String, String>,
     global_logger: Logger,
     thread_handlers: Arc<Mutex<Vec<Thread>>>,
     pub aliases: bool,
     pub shell_type: Option<ShellType>,
     pub docker_command: String,
+    pub loop_count: Arc<AtomicI64>,
+    pub read_end_of_doppler_file: Arc<AtomicBool>
 }
 
 #[derive(Default, Debug, Clone)]
@@ -140,12 +141,13 @@ impl Options {
             services: indexmap::IndexMap::new(),
             main_thread_active: ThreadController::new(true),
             main_thread_paused: ThreadController::new(false),
-            loop_stack: indexmap::IndexMap::new(),
             global_logger: logger,
             thread_handlers: Arc::new(Mutex::new(Vec::new())),
             aliases,
             shell_type,
             docker_command: docker_command.to_owned(),
+            loop_count: Arc::new(AtomicI64::new(0)),
+            read_end_of_doppler_file: Arc::new(AtomicBool::new(true))
         }
     }
     pub fn global_logger(&self) -> Logger {

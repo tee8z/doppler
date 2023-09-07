@@ -101,7 +101,9 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     start_miners(options)?;
     setup_l2_nodes(options)?;
     mine_initial_blocks(options)?;
-    provision_visualizer(options)?;
+    if !options.utility_services.is_empty() {
+        provision_visualizer(options)?;
+    }
     if options.aliases {
         update_bash_alias(options)?;
     }
