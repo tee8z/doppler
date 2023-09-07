@@ -12,6 +12,13 @@ source ./scripts/container_aliases.sh
 
 alice_pk=$(alice getinfo | jq '.identity_pubkey' -r)
 carol_pk=$(carol getinfo | jq '.identity_pubkey' -r)
+bob_pk=$(carol getinfo | jq '.identity_pubkey' -r)
 
 alice sendpayment --keysend --amt 1000 --dest $carol_pk
 carol sendpayment --keysend --amt 1000 --dest $alice_pk
+
+
+bob_channels=$(bob listchannels)
+remote_balance=$(echo "${bob_channels}" | jq -r --arg pubkey "$carol_pk" '.channels[] | select(.remote_pubkey == $pubkey) | .remote_balance')
+chan_reserve_sat_remote=$(echo "${bob_channels}" | jq -r --arg pubkey "$carol_pk" '.channels[] | select(.remote_pubkey == $pubkey) | .remote_constraints.chan_reserve_sat')
+chan_reserve_sat_local=$(echo "${bob_channels}" | jq -r --arg pubkey "$carol_pk" '.channels[] | select(.remote_pubkey == $pubkey) | .remote_constraints.chan_reserve_sat')

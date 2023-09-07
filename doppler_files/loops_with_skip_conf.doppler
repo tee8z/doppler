@@ -1,8 +1,27 @@
 SKIP_CONF
 
+// burst open 4 channels 2 times with 20s wait between runs
+LOOP 2 EVERY 20s
+  lnd1 OPEN_CHANNEL lnd2 AMT 500000
+  lnd2 OPEN_CHANNEL lnd3 AMT 8000000
+  lnd3 OPEN_CHANNEL lnd1 AMT 900000
+  lnd1 OPEN_CHANNEL lnd2 AMT 299999
+  bd1 MINE_BLOCKS 10 
+END
+
+// send on chain funds in the same pattern 3 times with no wait time
 LOOP 3
     lnd1 SEND_ON_CHAIN lnd2 AMT 900
     lnd3 SEND_ON_CHAIN lnd2 AMT 900
     lnd2 SEND_ON_CHAIN lnd1 AMT 900
     lnd2 SEND_ON_CHAIN lnd3 AMT 900
+END
+
+LOOP EVERY 4s
+  lnd2 SEND_LN lnd3 AMT 90 --amp
+  lnd3 SEND_LN lnd2 AMT 90
+  lnd1 SEND_LN lnd3 AMT 90 --keysend
+  lnd3 SEND_LN lnd1 AMT 90 --keysend
+  lnd2 SEND_LN lnd1 AMT 90 --amp
+  lnd1 SEND_LN lnd2 AMT 90
 END
