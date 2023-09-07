@@ -4,4 +4,5 @@ BITCOIND bd3
 CORELN coreln1 PAIR bd3
 ECLAIR eclair1 PAIR bd1
 LND lnd1 PAIR bd2
+VISUALIZER view
 UP
