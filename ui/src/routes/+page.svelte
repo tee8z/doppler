@@ -1,6 +1,6 @@
 <script lang="ts">
 	import Blockly from 'blockly';
-	import { theme, themeIcon, toggleDarkMode } from '$lib/theme';
+	import { DarkTheme, theme, themeIcon, toggleDarkMode } from '$lib/theme';
 	import type { WorkspaceSvg } from 'blockly';
 	import Icon from '../components/Icon/Icon.svelte';
 	import { onMount } from 'svelte';
@@ -8,9 +8,13 @@
 	import { initGenerators } from '$lib/generators';
 	import { javascriptGenerator } from 'blockly/javascript';
 	import { toolbox } from '$lib/toolbox';
+	import { browser } from '$app/environment';
 
 	let workspace: WorkspaceSvg;
 	let code = '';
+
+	$: blocklyTheme = $theme === 'dark' ? DarkTheme : Blockly.Themes.Classic;
+	$: browser && Blockly.getMainWorkspace() && workspace.setTheme(blocklyTheme);
 
 	function updateCode() {
 		code = javascriptGenerator.workspaceToCode(workspace);
@@ -19,27 +23,8 @@
 	onMount(() => {
 		initBlocks();
 		initGenerators();
-
-		workspace = Blockly.inject('blockly', { toolbox, trashcan: true });
+		workspace = Blockly.inject('blockly', { toolbox, trashcan: true, theme: blocklyTheme});
 		workspace.addChangeListener(updateCode);
-
-		Blockly.Theme.defineTheme('dark', {
-			base: Blockly.Themes.Classic,
-			componentStyles: {
-				workspaceBackgroundColour: '#1e1e1e',
-				toolboxBackgroundColour: 'blackBackground',
-				toolboxForegroundColour: '#fff',
-				flyoutBackgroundColour: '#252526',
-				flyoutForegroundColour: '#ccc',
-				flyoutOpacity: 1,
-				scrollbarColour: '#797979',
-				insertionMarkerColour: '#fff',
-				insertionMarkerOpacity: 0.3,
-				scrollbarOpacity: 0.4,
-				cursorColour: '#d0d0d0'
-			},
-			name: ''
-		});
 	});
 </script>
 
@@ -53,8 +38,7 @@
 	<section class="flex h-full">
 		<div id="blockly" class="w-2/3" />
 		<div class="flex flex-col gap-2 flex-1">
-			<button class="bg-green-200 p-2 rounded-lg" on:click={updateCode}>Update</button>
-			<textarea class="w-full h-full bg-green-100 rounded-lg" id="code">{code}</textarea>
+			<textarea class="w-full h-full bg-green-100 dark:bg-gray-900 outline-1 outline-green-500 rounded-lg" id="code">{code}</textarea>
 		</div>
 	</section>
 </main>
