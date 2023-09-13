@@ -112,7 +112,6 @@ export function initBlocks() {
 			this.setTooltip(() => {
 				return 'Add a number to variable "%1".'.replace('%1', this.getFieldValue('VAR'));
 			});
-			this.setColour(230);
 		}
 	};
 

@@ -17,7 +17,31 @@ export const bitcoind_miner = {
 	],
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
+	colour: '#F7931A',
+	tooltip: '',
+	helpUrl: ''
+};
+
+export const mine_blocks = {
+	type: 'mine_blocks',
+	message0: '%1 MINE_BLOCKS %2',
+	args0: [
+		{
+			type: 'field_input',
+			name: 'BITCOIND_NAME',
+			text: 'bd1'
+		},
+		{
+			type: 'field_number',
+			name: 'NAME',
+			value: 0,
+			min: 0,
+			precision: 1
+		}
+	],
+	previousStatement: null,
+	nextStatement: null,
+	colour: '#F7931A',
 	tooltip: '',
 	helpUrl: ''
 };
@@ -48,7 +72,7 @@ export const ln_pair = {
 	],
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
+	colour: '#6731A4',
 	tooltip: '',
 	helpUrl: ''
 };
@@ -65,7 +89,7 @@ export const visualizer = {
 	],
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
+	colour: '#71AF90',
 	tooltip: '',
 	helpUrl: ''
 };
@@ -75,7 +99,7 @@ export const up = {
 	message0: 'UP',
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
+	colour: '#71AF90',
 	tooltip: '',
 	helpUrl: ''
 };
@@ -102,31 +126,7 @@ export const open_channel = {
 	],
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
-	tooltip: '',
-	helpUrl: ''
-};
-
-export const mine_blocks = {
-	type: 'mine_blocks',
-	message0: '%1 MINE_BLOCKS %2',
-	args0: [
-		{
-			type: 'field_input',
-			name: 'BITCOIND_NAME',
-			text: 'bd1'
-		},
-		{
-			type: 'field_number',
-			name: 'NAME',
-			value: 0,
-			min: 0,
-			precision: 1
-		}
-	],
-	previousStatement: null,
-	nextStatement: null,
-	colour: 230,
+	colour: '#6731A4',
 	tooltip: '',
 	helpUrl: ''
 };
@@ -136,7 +136,7 @@ export const skip_conf = {
 	message0: 'SKIP_CONF',
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
+	colour: '#71AF90',
 	tooltip: '',
 	helpUrl: ''
 };
@@ -158,7 +158,7 @@ export const close_channel = {
 	],
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
+	colour: '#6731A4',
 	tooltip: '',
 	helpUrl: ''
 };
@@ -187,7 +187,7 @@ export const send_ln = {
 	],
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
+	colour: '#6731A4',
 	tooltip: '',
 	helpUrl: ''
 };
@@ -204,7 +204,7 @@ export const bitcoind = {
 	],
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
+	colour: '#F7931A',
 	tooltip: '',
 	helpUrl: ''
 };
@@ -233,7 +233,7 @@ export const send_on_chain = {
 	],
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
+	colour: '#F7931A',
 	tooltip: '',
 	helpUrl: ''
 };
@@ -256,7 +256,7 @@ export const loop = {
 	],
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
+	colour: '#E87779',
 	tooltip: '',
 	helpUrl: ''
 };
@@ -279,7 +279,7 @@ export const loop_every = {
 	],
 	previousStatement: null,
 	nextStatement: null,
-	colour: 230,
+	colour: '#E87779',
 	tooltip: '',
 	helpUrl: ''
 };
