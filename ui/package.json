@@ -32,5 +32,8 @@
 		"vite": "^4.4.2",
 		"vitest": "^0.34.0"
 	},
-	"type": "module"
+	"type": "module",
+	"dependencies": {
+		"blockly": "^10.1.3"
+	}
 }
