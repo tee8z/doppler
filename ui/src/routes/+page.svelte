@@ -28,6 +28,15 @@
 		setTimeout(() => (copied = false), 2000);
 	}
 
+	function download() {
+		const blob = new Blob([code], { type: 'text/plain' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'custom.doppler';
+		a.click();
+	}
+
 	onMount(() => {
 		initBlocks();
 		initGenerators();
@@ -38,23 +47,36 @@
 
 <main class="flex flex-col h-screen">
 	<section class="flex flex-col justify-between items-center m-4 md:flex-row">
-		<h1>Doppler</h1>
+		<div class="flex gap-2">
+			<h1>Doppler</h1>
+			<Icon name="radar" />
+		</div>
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<span class="cursor-pointer" on:click={toggleDarkMode}><Icon name={$themeIcon} /></span>
+		<div class="flex gap-2">
+			<a href="https://github.com/tee8z/doppler"><Icon name="octocat" /></a>
+			<span class="cursor-pointer" on:click={toggleDarkMode}><Icon name={$themeIcon} /></span>
+		</div>
 	</section>
 	<section class="flex h-full gap-2">
 		<div id="blockly" class="w-2/3" />
 		<div class="flex flex-col gap-2 flex-1">
-			<Button on:click={copy}>
-				<div class="flex justify-center items-center gap-2">
-					{#if copied}
-						<Icon name="check" />
-					{:else}
-						<Icon name="copy" />
-					{/if}
-				</div>
-			</Button>
+			<div class="flex gap-2">
+				<Button wide on:click={copy}>
+					<div class="flex justify-center items-center gap-2">
+						{#if copied}
+							<Icon name="check" />
+						{:else}
+							<Icon name="copy" />
+						{/if}
+					</div>
+				</Button>
+				<Button wide on:click={download}>
+					<div class="flex justify-center items-center gap-2">
+						<Icon name="download" />
+					</div>
+				</Button>
+			</div>
 			<textarea
 				class="w-full h-full bg-green-100 dark:bg-gray-900 outline-1 outline-green-500 rounded-lg"
 				id="code">{code}</textarea

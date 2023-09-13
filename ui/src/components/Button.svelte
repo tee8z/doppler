@@ -1,8 +1,9 @@
 <script lang="ts">
 	export let type: 'button' | 'submit' = 'button';
+	export let wide =false
 </script>
 
-<button {type} on:click>
+<button class={`${wide ? 'w-full' : ''}`} {type} on:click>
 	<slot />
 </button>
 
