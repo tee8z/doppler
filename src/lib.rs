@@ -1,6 +1,5 @@
 mod bitcoind;
 mod cln;
-mod visualizer;
 mod conf_handler;
 mod docker;
 mod eclair;
@@ -8,17 +7,18 @@ mod lnd;
 mod node;
 mod node_kind;
 mod parser;
+mod visualizer;
 mod workflow;
 
 pub use bitcoind::*;
 pub use cln::*;
-pub use visualizer::*;
 pub use conf_handler::*;
 pub use docker::*;
 pub use eclair::*;
 pub use lnd::*;
 pub use node::*;
 pub use node_kind::*;
-pub use visualizer::*;
 pub use parser::*;
+pub use visualizer::*;
+pub use visualizer::*;
 pub use workflow::*;

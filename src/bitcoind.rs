@@ -1,11 +1,7 @@
 use crate::{copy_file, get_absolute_path, run_command, L1Node, MinerTime, Options, NETWORK};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
-use docker_compose_types::{
-    AdvancedNetworkSettings, AdvancedNetworks, EnvFile, MapOrEmpty, Networks, Ports, Service,
-    Volumes,
-};
-use indexmap::IndexMap;
+use docker_compose_types::{EnvFile, Networks, Ports, Service, Volumes};
 use slog::{error, Logger};
 use std::{
     fs::{File, OpenOptions},
@@ -31,7 +27,6 @@ pub struct Bitcoind {
     pub zmqpubhashblock: String,
     pub zmqpubrawtx: String,
     pub path_vol: String,
-    pub ip: String,
     pub miner_time: Option<MinerTime>,
 }
 
@@ -54,9 +49,6 @@ impl L1Node for Bitcoind {
     }
     fn get_miner_time(&self) -> &Option<MinerTime> {
         &self.miner_time
-    }
-    fn get_ip(&self) -> String {
-        self.ip.clone()
     }
     fn get_p2p_port(&self) -> String {
         self.p2pport.clone()
@@ -108,17 +100,11 @@ pub fn get_config(
     options: &mut Options,
     name: &str,
     miner_time: &Option<MinerTime>,
-    ip: &str,
 ) -> Result<Bitcoind, Error> {
-    get_bitcoind_config(options, name, miner_time, ip)
+    get_bitcoind_config(options, name, miner_time)
 }
-pub fn add_config(
-    options: &Options,
-    name: &str,
-    container_name: &str,
-    ip: &str,
-) -> Result<Bitcoind, Error> {
-    load_config(name, container_name, options.global_logger(), ip)
+pub fn add_config(options: &Options, name: &str, container_name: &str) -> Result<Bitcoind, Error> {
+    load_config(name, container_name, options.global_logger())
 }
 
 pub fn build_bitcoind(
@@ -126,30 +112,20 @@ pub fn build_bitcoind(
     name: &str,
     miner_time: &Option<MinerTime>,
 ) -> Result<()> {
-    let ip = options.new_ipv4().to_string();
-    let bitcoind_conf = get_config(options, name, miner_time, ip.as_str()).unwrap();
-    let mut cur_network = IndexMap::new();
-    cur_network.insert(
-        NETWORK.to_string(),
-        MapOrEmpty::Map(AdvancedNetworkSettings {
-            ipv4_address: Some(ip),
-            ..Default::default()
-        }),
-    );
-
+    let bitcoind_conf = get_config(options, name, miner_time).unwrap();
     let bitcoind = Service {
         image: Some(BITCOIND_IMAGE.to_string()),
         container_name: Some(bitcoind_conf.container_name.clone()),
         ports: Ports::Short(vec![
-            format!("{}", bitcoind_conf.p2pport),
-            format!("{}", bitcoind_conf.rpcport),
+            format!("{}:{}", options.new_port(), bitcoind_conf.p2pport),
+            format!("{}:{}", options.new_port(), bitcoind_conf.rpcport),
         ]),
         volumes: Volumes::Simple(vec![format!(
             "{}:/home/bitcoin/.bitcoin:rw",
             bitcoind_conf.path_vol
         )]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
-        networks: Networks::Advanced(AdvancedNetworks(cur_network)),
+        networks: Networks::Simple(vec![NETWORK.to_owned()]),
         ..Default::default()
     };
     options
@@ -168,20 +144,7 @@ pub fn add_bitcoinds(options: &mut Options) -> Result<()> {
         .map(|service| {
             let container_name = service.0;
             let bitcoind_name = container_name.split('-').last().unwrap();
-            let mut found_ip: Option<_> = None;
-            if let Networks::Advanced(AdvancedNetworks(networks)) =
-                service.1.as_ref().unwrap().networks.clone()
-            {
-                if let MapOrEmpty::Map(advance_setting) = networks.first().unwrap().1 {
-                    found_ip = advance_setting.ipv4_address.clone();
-                }
-            }
-            load_config(
-                bitcoind_name,
-                container_name.as_str(),
-                logger.clone(),
-                found_ip.unwrap().as_str(),
-            )
+            load_config(bitcoind_name, container_name.as_str(), logger.clone())
         })
         .filter_map(|res| res.ok())
         .collect();
@@ -189,12 +152,7 @@ pub fn add_bitcoinds(options: &mut Options) -> Result<()> {
     Ok(())
 }
 
-fn load_config(
-    name: &str,
-    container_name: &str,
-    logger: Logger,
-    ip: &str,
-) -> Result<Bitcoind, Error> {
+fn load_config(name: &str, container_name: &str, logger: Logger) -> Result<Bitcoind, Error> {
     let bitcoind_config: &String = &format!("data/{}/.bitcoin/bitcoin.conf", name);
     let full_path = get_absolute_path(bitcoind_config)?
         .to_str()
@@ -218,7 +176,6 @@ fn load_config(
 
     Ok(Bitcoind {
         conf: conf.to_owned(),
-        ip: ip.to_owned(),
         name: name.to_owned(),
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
         miner_time: None,
@@ -253,14 +210,13 @@ fn get_bitcoind_config(
     options: &mut Options,
     name: &str,
     miner_time: &Option<MinerTime>,
-    ip: &str,
 ) -> Result<Bitcoind, Error> {
     let original = get_absolute_path("config/bitcoin.conf")?;
     let source: File = File::open(original)?;
 
     let destination_dir: &String = &format!("data/{}/.bitcoin", name);
     let conf = conf_parser::processer::read_to_file_conf_mut(&source)?;
-    let regtest_section = set_regtest_section(conf, options, ip)?;
+    let regtest_section = set_regtest_section(conf, options)?;
     let _ = copy_file(conf, destination_dir, "bitcoin.conf")?;
 
     let full_path = get_absolute_path(destination_dir)?
@@ -273,7 +229,6 @@ fn get_bitcoind_config(
     };
     Ok(Bitcoind {
         conf: conf.to_owned(),
-        ip: ip.to_owned(),
         name: name.to_owned(),
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
         miner_time: miner_time.to_owned(),
@@ -304,33 +259,29 @@ fn get_bitcoind_config(
     })
 }
 
-fn set_regtest_section(
-    conf: &mut FileConf,
-    options: &mut Options,
-    ip: &str,
-) -> Result<Section, Error> {
+fn set_regtest_section(conf: &mut FileConf, options: &mut Options) -> Result<Section, Error> {
     if conf.sections.get("regtest").is_none() {
         conf.sections.insert("regtest".to_owned(), Section::new());
     }
     let bitcoin = conf.sections.get_mut("regtest").unwrap();
     let port = options.new_port();
     let rpc_port = options.new_port();
-    bitcoin.set_property("bind", ip);
+    bitcoin.set_property("bind", "0.0.0.0");
     bitcoin.set_property("port", &port.to_string());
     bitcoin.set_property("rpcport", &rpc_port.to_string());
     bitcoin.set_property("rpcuser", "admin");
     bitcoin.set_property("rpcpassword", "1234");
     bitcoin.set_property(
         "zmqpubrawblock",
-        &format!("tcp://{}:{}", ip, options.new_port()),
+        &format!("tcp://0.0.0.0:{}", options.new_port()),
     );
     bitcoin.set_property(
         "zmqpubrawtx",
-        &format!("tcp://{}:{}", ip, options.new_port()),
+        &format!("tcp://0.0.0.0:{}", options.new_port()),
     );
     bitcoin.set_property(
         "zmqpubhashblock",
-        &format!("tcp://{}:{}", ip, options.new_port()),
+        &format!("tcp://0.0.0.0:{}", options.new_port()),
     );
     let regtest_section = get_regtest_section(conf)?;
     Ok(regtest_section)
@@ -361,7 +312,11 @@ pub fn pair_bitcoinds(options: &Options) -> Result<(), Error> {
                 .iter()
                 .filter(|bitcoind| !bitcoind.get_container_name().eq_ignore_ascii_case(name))
                 .for_each(|announce| {
-                    let add_node = format!(r#"{}:{}"#, announce.get_ip(), announce.get_p2p_port());
+                    let add_node = format!(
+                        r#"{}:{}"#,
+                        announce.get_container_name(),
+                        announce.get_p2p_port()
+                    );
                     listen_to.push(add_node)
                 });
             pair_node(options_clone, current_bitcoind, listen_to).expect("failed to add nodes");

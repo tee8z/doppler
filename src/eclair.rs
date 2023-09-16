@@ -1,10 +1,6 @@
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
-use docker_compose_types::{
-    AdvancedNetworkSettings, AdvancedNetworks, DependsOnOptions, EnvFile, MapOrEmpty, Networks,
-    Ports, Service, Volumes,
-};
-use indexmap::IndexMap;
+use docker_compose_types::{DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
 use serde_json::{from_slice, Value};
 use slog::{debug, error, info};
 use std::{
@@ -12,6 +8,7 @@ use std::{
     str::from_utf8,
     thread,
     time::Duration,
+    vec,
 };
 
 use crate::{
@@ -33,7 +30,6 @@ pub struct Eclair {
     pub rpc_server: String,
     pub api_password: String,
     pub path_vol: String,
-    pub ip: String,
     pub bitcoind_node_container_name: String,
 }
 
@@ -74,9 +70,6 @@ impl L2Node for Eclair {
     }
     fn get_container_name(&self) -> &str {
         self.container_name.as_str()
-    }
-    fn get_ip(&self) -> &str {
-        self.ip.as_str()
     }
     fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
@@ -125,31 +118,25 @@ impl L2Node for Eclair {
 }
 
 pub fn build_eclair(options: &mut Options, name: &str, pair_name: &str) -> Result<()> {
-    let ip = options.new_ipv4().to_string();
-    let mut eclair_conf = build_and_save_config(options, name, pair_name, ip.as_str()).unwrap();
+    let mut eclair_conf = build_and_save_config(options, name, pair_name).unwrap();
     debug!(
         options.global_logger(),
         "{} volume: {}", name, eclair_conf.path_vol
     );
 
     let rest_port = options.new_port();
-    let mut cur_network = IndexMap::new();
-    cur_network.insert(
-        NETWORK.to_string(),
-        MapOrEmpty::Map(AdvancedNetworkSettings {
-            ipv4_address: Some(ip),
-            ..Default::default()
-        }),
-    );
     let bitcoind = vec![eclair_conf.bitcoind_node_container_name.clone()];
     let eclair = Service {
         depends_on: DependsOnOptions::Simple(bitcoind),
         image: Some(ECLAIR_IMAGE.to_string()),
         container_name: Some(eclair_conf.container_name.clone()),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
-        ports: Ports::Short(vec![eclair_conf.p2p_port.clone()]),
+        ports: Ports::Short(vec![
+            format!("{}:{}", options.new_port(), eclair_conf.p2p_port.clone()),
+            format!("{}:{}", options.new_port(), eclair_conf.rest_port.clone()),
+        ]),
         volumes: Volumes::Simple(vec![format!("{}:/home/eclair:rw", eclair_conf.path_vol)]),
-        networks: Networks::Advanced(AdvancedNetworks(cur_network)),
+        networks: Networks::Simple(vec![NETWORK.to_owned()]),
         ..Default::default()
     };
     options
@@ -167,12 +154,7 @@ pub fn build_eclair(options: &mut Options, name: &str, pair_name: &str) -> Resul
     Ok(())
 }
 
-fn build_and_save_config(
-    options: &Options,
-    name: &str,
-    pair_name: &str,
-    ip: &str,
-) -> Result<Eclair, Error> {
+fn build_and_save_config(options: &Options, name: &str, pair_name: &str) -> Result<Eclair, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
             "bitcoind nodes need to be defined before eclair nodes can be setup"
@@ -212,15 +194,14 @@ fn build_and_save_config(
         .to_str()
         .unwrap()
         .to_string();
-
+    let container_name = format!("doppler-eclair-{}", name);
     Ok(Eclair {
         name: name.to_owned(),
         alias: name.to_owned(),
-        container_name: format!("doppler-eclair-{}", name),
+        container_name: container_name.clone(),
         pubkey: None,
-        ip: ip.to_owned(),
-        rpc_server: format!("{}:10000", ip),
-        server_url: format!("http://{}:10000", ip),
+        rpc_server: format!("{}:10000", container_name),
+        server_url: format!("http://{}:10000", container_name),
         path_vol: full_path,
         api_password: api_password.to_owned(),
         rest_port: "8080".to_owned(),
@@ -247,7 +228,7 @@ fn set_values(
         "eclair.bitcoind.zmqblock",
         format!(
             r#""tcp://{}:{}""#,
-            bitcoind_node.get_ip(),
+            bitcoind_node.get_container_name(),
             &bitcoind_node.get_zmqpubhashblock()
         )
         .as_str(),
@@ -256,7 +237,7 @@ fn set_values(
         "eclair.bitcoind.zmqtx",
         format!(
             r#""tcp://{}:{}""#,
-            bitcoind_node.get_ip(),
+            bitcoind_node.get_container_name(),
             &bitcoind_node.get_zmqpubrawtx()
         )
         .as_str(),
@@ -269,7 +250,7 @@ fn set_values(
     base_section.set_property("eclair.bitcoind.auth", "\"password\"");
     base_section.set_property(
         "eclair.bitcoind.host",
-        &format!(r#""{}""#, bitcoind_node.get_ip()),
+        &format!(r#""{}""#, bitcoind_node.get_container_name()),
     );
     base_section.set_property("eclair.bitcoind.rpcport", &bitcoind_node.get_rpc_port());
 
@@ -284,14 +265,6 @@ pub fn add_eclair_nodes(options: &mut Options) -> Result<(), Error> {
         .map(|service| {
             let container_name = service.0;
             let node_name = container_name.split('-').last().unwrap();
-            let mut found_ip: Option<_> = None;
-            if let Networks::Advanced(AdvancedNetworks(networks)) =
-                service.1.as_ref().unwrap().networks.clone()
-            {
-                if let MapOrEmpty::Map(advance_setting) = networks.first().unwrap().1 {
-                    found_ip = advance_setting.ipv4_address.clone();
-                }
-            }
             let mut bitcoind_service = "".to_owned();
             if let DependsOnOptions::Simple(layer_1_nodes) =
                 service.1.as_ref().unwrap().depends_on.clone()
@@ -301,7 +274,6 @@ pub fn add_eclair_nodes(options: &mut Options) -> Result<(), Error> {
             load_config(
                 node_name,
                 container_name.to_owned(),
-                found_ip.unwrap(),
                 bitcoind_service.to_owned(),
             )
         })
@@ -324,7 +296,6 @@ pub fn add_eclair_nodes(options: &mut Options) -> Result<(), Error> {
 fn load_config(
     name: &str,
     container_name: String,
-    ip: String,
     bitcoind_service: String,
 ) -> Result<Eclair, Error> {
     let full_path = &format!("data/{}", name);
@@ -333,9 +304,8 @@ fn load_config(
         alias: name.to_owned(),
         container_name: container_name.to_owned(),
         pubkey: None,
-        ip: ip.clone(),
-        rpc_server: format!("{}:10000", ip),
-        server_url: format!("https://{}:8080", ip),
+        rpc_server: format!("{}:10000", container_name),
+        server_url: format!("https://{}:8080", container_name),
         path_vol: full_path.to_owned(),
         rest_port: "8080".to_owned(),
         p2p_port: "9735".to_owned(),

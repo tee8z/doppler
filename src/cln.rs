@@ -4,11 +4,7 @@ use crate::{
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
-use docker_compose_types::{
-    AdvancedNetworkSettings, AdvancedNetworks, Command, DependsOnOptions, EnvFile, MapOrEmpty,
-    Networks, Ports, Service, Volumes,
-};
-use indexmap::IndexMap;
+use docker_compose_types::{Command, DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
 use serde_json::{from_slice, Value};
 use slog::{debug, error, info};
 use std::{
@@ -32,7 +28,6 @@ pub struct Cln {
     pub p2p_port: String,
     pub server_url: String,
     pub path_vol: String,
-    pub ip: String,
     pub bitcoind_node_container_name: String,
 }
 
@@ -82,9 +77,6 @@ impl L2Node for Cln {
     fn get_container_name(&self) -> &str {
         self.container_name.as_str()
     }
-    fn get_ip(&self) -> &str {
-        self.ip.as_str()
-    }
     fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
     }
@@ -132,21 +124,10 @@ impl L2Node for Cln {
 }
 
 pub fn build_cln(options: &mut Options, name: &str, pair_name: &str) -> Result<()> {
-    let ip = options.new_ipv4().to_string();
-    info!(options.global_logger(), "ip: {}", ip);
-    let cln_conf = build_and_save_config(options, name, pair_name, ip.as_str()).unwrap();
+    let cln_conf = build_and_save_config(options, name, pair_name).unwrap();
     debug!(
         options.global_logger(),
         "{} volume: {}", name, cln_conf.path_vol
-    );
-
-    let mut cur_network = IndexMap::new();
-    cur_network.insert(
-        NETWORK.to_string(),
-        MapOrEmpty::Map(AdvancedNetworkSettings {
-            ipv4_address: Some(ip),
-            ..Default::default()
-        }),
     );
 
     // Passing these args on the command line is unavoidable due to how the docker image is setup
@@ -157,11 +138,15 @@ pub fn build_cln(options: &mut Options, name: &str, pair_name: &str) -> Result<(
         depends_on: DependsOnOptions::Simple(bitcoind),
         image: Some(CLN_IMAGE.to_string()),
         container_name: Some(cln_conf.container_name.clone()),
-        ports: Ports::Short(vec![cln_conf.p2p_port.clone()]),
+        ports: Ports::Short(vec![format!(
+            "{}:{}",
+            options.new_port(),
+            cln_conf.p2p_port.clone()
+        )]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         command: Some(command),
         volumes: Volumes::Simple(vec![format!("{}:/home/clightning:rw", cln_conf.path_vol)]),
-        networks: Networks::Advanced(AdvancedNetworks(cur_network)),
+        networks: Networks::Simple(vec![NETWORK.to_owned()]),
         ..Default::default()
     };
     options
@@ -180,7 +165,6 @@ pub fn build_and_save_config(
     options: &mut Options,
     name: &str,
     pair_name: &str,
-    ip: &str,
 ) -> Result<Cln, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
@@ -204,8 +188,13 @@ pub fn build_and_save_config(
     if let Some(node) = found_node {
         bitcoind_node = node;
     }
-
-    set_values(&mut conf, name.to_owned(), ip, bitcoind_node)?;
+    let container_name = format!("doppler-cln-{}", name);
+    set_values(
+        &mut conf,
+        name.to_owned(),
+        container_name.clone(),
+        bitcoind_node,
+    )?;
     let _ = copy_file(&conf, &destination_dir.clone(), "config")?;
 
     // Needed so that the data store in the regtest folder have permissions by the current user and not root
@@ -218,14 +207,11 @@ pub fn build_and_save_config(
     Ok(Cln {
         name: name.to_owned(),
         alias: name.to_owned(),
-        container_name: format!("doppler-cln-{}", name),
+        container_name: container_name.clone(),
         pubkey: None,
-        ip: ip.to_owned(),
-
-        server_url: format!("http://{}:10000", ip),
+        server_url: format!("http://{}:10000", container_name),
         path_vol: full_path,
         grpc_port: "10000".to_owned(),
-
         p2p_port: "9735".to_owned(),
         bitcoind_node_container_name: bitcoind_node.container_name.clone(),
     })
@@ -234,7 +220,7 @@ pub fn build_and_save_config(
 fn set_values(
     conf: &mut FileConf,
     name: String,
-    ip: &str,
+    container_name: String,
     bitcoind_node: &dyn L1Node,
 ) -> Result<(), Error> {
     if conf.sections.get("").is_none() {
@@ -245,7 +231,7 @@ fn set_values(
         "bitcoin-rpcconnect",
         format!(
             "{}:{}",
-            bitcoind_node.get_ip(),
+            bitcoind_node.get_container_name(),
             &bitcoind_node.get_rpc_port()
         )
         .as_str(),
@@ -254,8 +240,8 @@ fn set_values(
     base_section.set_property("bitcoin-rpcuser", &bitcoind_node.get_rpc_username());
     base_section.set_property("bitcoin-rpcport", &bitcoind_node.get_rpc_port());
     base_section.set_property("alias", &name);
-    base_section.set_property("bind-addr", &format!("{}:9735", ip));
-    base_section.set_property("announce-addr", &format!("{}:9735", ip));
+    base_section.set_property("bind-addr", &format!("{}:9735", container_name));
+    base_section.set_property("announce-addr", &format!("{}:9735", container_name));
     base_section.set_property("grpc-port", "10000");
 
     Ok(())
@@ -269,14 +255,6 @@ pub fn add_coreln_nodes(options: &mut Options) -> Result<()> {
         .map(|service| {
             let container_name = service.0;
             let node_name = container_name.split('-').last().unwrap();
-            let mut found_ip: Option<_> = None;
-            if let Networks::Advanced(AdvancedNetworks(networks)) =
-                service.1.as_ref().unwrap().networks.clone()
-            {
-                if let MapOrEmpty::Map(advance_setting) = networks.first().unwrap().1 {
-                    found_ip = advance_setting.ipv4_address.clone();
-                }
-            }
             let mut bitcoind_service = "".to_owned();
             if let DependsOnOptions::Simple(layer_1_nodes) =
                 service.1.as_ref().unwrap().depends_on.clone()
@@ -286,7 +264,6 @@ pub fn add_coreln_nodes(options: &mut Options) -> Result<()> {
             load_config(
                 node_name,
                 container_name.to_owned(),
-                found_ip.unwrap(),
                 bitcoind_service.to_owned(),
             )
         })
@@ -323,20 +300,14 @@ fn add_pubkey(node: &mut Cln, options: &Options) {
     }
 }
 
-fn load_config(
-    name: &str,
-    container_name: String,
-    ip: String,
-    bitcoind_service: String,
-) -> Result<Cln, Error> {
+fn load_config(name: &str, container_name: String, bitcoind_service: String) -> Result<Cln, Error> {
     let full_path = &format!("data/{}/.cln", name);
     Ok(Cln {
         name: name.to_owned(),
         alias: name.to_owned(),
         container_name: container_name.to_owned(),
         pubkey: None,
-        ip: ip.clone(),
-        server_url: format!("https://{}:8080", ip),
+        server_url: format!("https://{}:8080", container_name),
         path_vol: full_path.to_owned(),
         grpc_port: "10000".to_owned(),
         p2p_port: "9735".to_owned(),
@@ -470,7 +441,7 @@ fn connect(node: &Cln, options: &Options, node_command: &NodeCommand) -> Result<
         "--network=regtest",
         "connect",
         &to_pubkey,
-        to_node.get_ip(),
+        to_node.get_container_name(),
         to_node.get_p2p_port(),
     ];
     let output = run_command(options, "connect".to_owned(), commands)?;
