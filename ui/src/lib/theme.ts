@@ -1,17 +1,21 @@
+import { browser } from '$app/environment';
 import Blockly from 'blockly';
 import { get, writable } from 'svelte/store';
 
-export const theme = writable<'light' | 'dark'>('dark');
-export const themeIcon = writable<'sun' | 'moon'>('sun');
+const localTheme = browser && (localStorage.getItem('theme') as 'light' | 'dark');
+export const theme = writable<'light' | 'dark'>(localTheme || 'dark');
+export const themeIcon = writable<'sun' | 'moon'>(localTheme === 'light' ? 'sun' : 'moon');
 
 export function toggleDarkMode() {
-	const newTheme = get(theme) === 'light' ? 'dark' : 'light';
-	const newThemeIcon = get(themeIcon) === 'sun' ? 'moon' : 'sun';
-	theme.set(newTheme);
-	themeIcon.set(newThemeIcon);
-	localStorage.setItem('theme', newTheme);
-	const html = document.querySelector('html');
-	if (html) html.classList.toggle('dark');
+	if (browser) {
+		const newTheme = get(theme) === 'light' ? 'dark' : 'light';
+		const newThemeIcon = get(themeIcon) === 'sun' ? 'moon' : 'sun';
+		theme.set(newTheme);
+		themeIcon.set(newThemeIcon);
+		localStorage.setItem('theme', newTheme);
+		const html = document.querySelector('html');
+		if (html) html.classList.toggle('dark');
+	}
 }
 
 export const DarkTheme = Blockly.Theme.defineTheme('dark', {

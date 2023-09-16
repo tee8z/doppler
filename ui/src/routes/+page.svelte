@@ -15,7 +15,9 @@
 	let code = '';
 	let copied = false;
 
-	$: blocklyTheme = $theme === 'dark' ? DarkTheme : Blockly.Themes.Classic;
+	$: console.log({ blocklyTheme, $theme });
+
+	$: blocklyTheme = $theme === 'light' ? Blockly.Themes.Classic : DarkTheme;
 	$: browser && Blockly.getMainWorkspace() && workspace && workspace.setTheme(blocklyTheme);
 
 	function updateCode() {
