@@ -1,18 +1,15 @@
 use anyhow::{anyhow, Error};
 use clap::{Args, Subcommand, ValueEnum};
 use conf_parser::processer::FileConf;
-use docker_compose_types::{Compose, ComposeNetworks, Ipam, MapOrEmpty, Service, Services};
+use docker_compose_types::{Compose, ComposeNetworks, MapOrEmpty, Service, Services};
 use indexmap::map::IndexMap;
-use ipnetwork::IpNetwork;
 use slog::{debug, error, Logger};
 use std::{
     fs::{create_dir_all, OpenOptions},
     io::{self, ErrorKind, Read, Write},
-    net::Ipv4Addr,
     path::{Path, PathBuf},
-    str::FromStr,
     sync::{
-        atomic::{AtomicBool, Ordering, AtomicI64},
+        atomic::{AtomicBool, AtomicI64, Ordering},
         Arc, Mutex,
     },
     thread::Thread,
@@ -20,8 +17,8 @@ use std::{
 };
 
 use crate::{
-    add_bitcoinds, add_lnd_nodes, add_visualizer, generate_ipv4_sequence_in_subnet, Bitcoind, L1Node, L2Node, Lnd,
-    NETWORK, SUBNET, Eclair, Cln, add_coreln_nodes, add_eclair_nodes, Visualizer,
+    add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_lnd_nodes, add_visualizer, Bitcoind,
+    Cln, Eclair, L1Node, L2Node, Lnd, Visualizer, NETWORK,
 };
 
 #[derive(Subcommand)]
@@ -68,7 +65,6 @@ pub struct Options {
     pub cln_nodes: Vec<Cln>,
     pub utility_services: Vec<Visualizer>,
     ports: Vec<i64>,
-    ip_addresses: Vec<Ipv4Addr>,
     pub compose_path: Option<String>,
     pub services: IndexMap<String, Option<Service>>,
     pub main_thread_active: ThreadController,
@@ -79,7 +75,7 @@ pub struct Options {
     pub shell_type: Option<ShellType>,
     pub docker_command: String,
     pub loop_count: Arc<AtomicI64>,
-    pub read_end_of_doppler_file: Arc<AtomicBool>
+    pub read_end_of_doppler_file: Arc<AtomicBool>,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -109,12 +105,6 @@ impl Options {
         app_sub_commands: Option<AppSubCommands>,
     ) -> Self {
         let starting_port = vec![9089];
-        let starting_ip = "10.5.0.2";
-        let cidr = IpNetwork::from_str(starting_ip).unwrap();
-        let start_ip = match cidr {
-            IpNetwork::V4(cidr_v4) => cidr_v4.network(),
-            _ => panic!("Only IPv4 is supported"),
-        };
         let (aliases, shell_type) = if app_sub_commands.is_some() {
             if let Some(AppSubCommands::DetailedCommand(sub_commands)) = app_sub_commands {
                 (true, sub_commands.shell_type)
@@ -136,7 +126,6 @@ impl Options {
             cln_nodes: vec::Vec::new(),
             utility_services: vec::Vec::new(),
             ports: starting_port,
-            ip_addresses: vec![start_ip],
             compose_path: None,
             services: indexmap::IndexMap::new(),
             main_thread_active: ThreadController::new(true),
@@ -147,7 +136,7 @@ impl Options {
             shell_type,
             docker_command: docker_command.to_owned(),
             loop_count: Arc::new(AtomicI64::new(0)),
-            read_end_of_doppler_file: Arc::new(AtomicBool::new(true))
+            read_end_of_doppler_file: Arc::new(AtomicBool::new(true)),
         }
     }
     pub fn global_logger(&self) -> Logger {
@@ -164,12 +153,6 @@ impl Options {
         let next_port = last_port + 1;
         self.ports.push(next_port);
         next_port
-    }
-    pub fn new_ipv4(&mut self) -> Ipv4Addr {
-        let last_ip = self.ip_addresses.last().unwrap();
-        let next_ip = generate_ipv4_sequence_in_subnet(self.global_logger(), SUBNET, last_ip);
-        self.ip_addresses.push(next_ip);
-        next_ip
     }
     pub fn save_compose(
         &mut self,
@@ -198,14 +181,6 @@ impl Options {
             })?;
         let mut networks = IndexMap::new();
         let network = docker_compose_types::NetworkSettings {
-            driver: Some("bridge".to_owned()),
-            ipam: Some(Ipam {
-                driver: None,
-                config: vec![docker_compose_types::IpamConfig {
-                    subnet: SUBNET.to_string(),
-                    gateway: Some("10.5.0.1".to_string()),
-                }],
-            }),
             ..Default::default()
         };
         networks.insert(NETWORK.to_owned(), MapOrEmpty::Map(network));

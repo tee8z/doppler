@@ -1,16 +1,11 @@
 use anyhow::{Error, Result};
-use docker_compose_types::{
-    AdvancedNetworkSettings, AdvancedNetworks, MapOrEmpty, Networks,
-    Ports, Service, Volumes, DependsOnOptions,
-};
-use indexmap::IndexMap;
+use docker_compose_types::{DependsOnOptions, Networks, Ports, Service, Volumes};
 
 use crate::{create_folder, get_absolute_path, Options, NETWORK};
 
 #[derive(Debug, Clone)]
 pub struct Visualizer {
     pub name: String,
-    pub ip: String,
     pub data_dir: String,
     pub container_name: String,
 }
@@ -23,20 +18,10 @@ pub fn add_visualizer(options: &mut Options) -> Result<(), Error> {
         .map(|service| {
             let container_name = service.0;
             let operator_name = container_name.split('-').last().unwrap();
-            let mut found_ip: Option<_> = None;
-            if let Networks::Advanced(AdvancedNetworks(networks)) =
-                service.1.as_ref().unwrap().networks.clone()
-            {
-                if let MapOrEmpty::Map(advance_setting) = networks.first().unwrap().1 {
-                    found_ip = advance_setting.ipv4_address.clone();
-                }
-            }
-            let ip = found_ip.unwrap();
             let data_dir = format!("/app/server/data/{}", operator_name);
 
             Visualizer {
                 name: operator_name.to_string(),
-                ip,
                 data_dir,
                 container_name: container_name.to_string(),
             }
@@ -48,16 +33,6 @@ pub fn add_visualizer(options: &mut Options) -> Result<(), Error> {
 }
 
 pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error> {
-    let ip = options.new_ipv4().to_string();
-    let mut cur_network = IndexMap::new();
-    cur_network.insert(
-        NETWORK.to_string(),
-        MapOrEmpty::Map(AdvancedNetworkSettings {
-            ipv4_address: Some(ip.clone()),
-            ..Default::default()
-        }),
-    );
-
     let lnd_node = options
         .lnd_nodes
         .first()
@@ -85,7 +60,7 @@ pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error>
                 local_path.to_string_lossy()
             ),
         ]),
-        networks: Networks::Advanced(AdvancedNetworks(cur_network)),
+        networks: Networks::Simple(vec![NETWORK.to_owned()]),
         ..Default::default()
     };
     options
@@ -98,7 +73,6 @@ pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error>
 
     options.utility_services.push(Visualizer {
         name: operator_name.to_owned(),
-        ip,
         data_dir: data_dir,
         container_name: "doppler-visualizer".to_owned(),
     });

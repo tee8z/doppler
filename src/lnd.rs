@@ -3,11 +3,7 @@ use crate::{
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
-use docker_compose_types::{
-    AdvancedNetworkSettings, AdvancedNetworks, DependsOnOptions, EnvFile, MapOrEmpty, Networks,
-    Ports, Service, Volumes,
-};
-use indexmap::IndexMap;
+use docker_compose_types::{DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
 use slog::{debug, error, info};
 use std::{
     fs::{File, OpenOptions},
@@ -33,7 +29,6 @@ pub struct Lnd {
     pub macaroon_path: String,
     pub certificate_path: String,
     pub path_vol: String,
-    pub ip: String,
     pub bitcoind_node_container_name: String,
 }
 
@@ -46,7 +41,7 @@ impl Lnd {
         "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon"
     }
     pub fn get_rpc_server_command(&self) -> String {
-        format!("--rpcserver={}:10000", self.ip.clone()).clone()
+        "--rpcserver=localhost:10000".to_owned()
     }
     /// A channel point is the outpoint (txid:index) of the funding transaction.
     pub fn get_peers_channel_point(
@@ -85,9 +80,6 @@ impl L2Node for Lnd {
     }
     fn get_container_name(&self) -> &str {
         self.container_name.as_str()
-    }
-    fn get_ip(&self) -> &str {
-        self.ip.as_str()
     }
     fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
@@ -136,8 +128,7 @@ impl L2Node for Lnd {
 }
 
 pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<()> {
-    let ip = options.new_ipv4().to_string();
-    let mut lnd_conf = build_and_save_config(options, name, pair_name, ip.as_str()).unwrap();
+    let mut lnd_conf = build_and_save_config(options, name, pair_name).unwrap();
     debug!(
         options.global_logger(),
         "{} volume: {}", name, lnd_conf.path_vol
@@ -145,23 +136,19 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
 
     let rest_port = options.new_port();
     let grpc_port = options.new_port();
-    let mut cur_network = IndexMap::new();
-    cur_network.insert(
-        NETWORK.to_string(),
-        MapOrEmpty::Map(AdvancedNetworkSettings {
-            ipv4_address: Some(ip),
-            ..Default::default()
-        }),
-    );
     let bitcoind = vec![lnd_conf.bitcoind_node_container_name.clone()];
     let lnd = Service {
         depends_on: DependsOnOptions::Simple(bitcoind),
         image: Some(LND_IMAGE.to_string()),
         container_name: Some(lnd_conf.container_name.clone()),
-        ports: Ports::Short(vec![lnd_conf.p2p_port.clone(), lnd_conf.grpc_port.clone()]),
+        ports: Ports::Short(vec![
+            format!("{}:{}", options.new_port(), lnd_conf.p2p_port.clone()),
+            format!("{}:{}", options.new_port(), lnd_conf.grpc_port.clone()),
+            format!("{}:{}", options.new_port(), lnd_conf.rest_port.clone()),
+        ]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         volumes: Volumes::Simple(vec![format!("{}:/home/lnd/.lnd:rw", lnd_conf.path_vol)]),
-        networks: Networks::Advanced(AdvancedNetworks(cur_network)),
+        networks: Networks::Simple(vec![NETWORK.to_owned()]),
         ..Default::default()
     };
     options
@@ -181,12 +168,7 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
     Ok(())
 }
 
-fn build_and_save_config(
-    options: &Options,
-    name: &str,
-    pair_name: &str,
-    ip: &str,
-) -> Result<Lnd, Error> {
+fn build_and_save_config(options: &Options, name: &str, pair_name: &str) -> Result<Lnd, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
             "bitcoind nodes need to be defined before lnd nodes can be setup"
@@ -211,22 +193,21 @@ fn build_and_save_config(
     }
 
     set_l1_values(&mut conf, bitcoind_node)?;
-    set_application_options_values(&mut conf, name, ip)?;
+    set_application_options_values(&mut conf, name)?;
 
     let _ = copy_file(&conf, &destination_dir.clone(), "lnd.conf")?;
     let full_path = get_absolute_path(destination_dir)?
         .to_str()
         .unwrap()
         .to_string();
-
+    let container_name = format!("doppler-lnd-{}", name);
     Ok(Lnd {
         name: name.to_owned(),
         alias: name.to_owned(),
-        container_name: format!("doppler-lnd-{}", name),
+        container_name: container_name.to_owned(),
         pubkey: None,
-        ip: ip.to_owned(),
-        rpc_server: format!("{}:10000", ip),
-        server_url: format!("http://{}:10000", ip),
+        rpc_server: format!("{}:10000", container_name),
+        server_url: format!("http://{}:10000", container_name),
         certificate_path: format!("{}/tls.cert", full_path),
         macaroon_path: format!(
             "{}/data/chain/bitcoin/{}/admin.macaroon",
@@ -248,14 +229,6 @@ pub fn add_lnd_nodes(options: &mut Options) -> Result<(), Error> {
         .map(|service| {
             let container_name = service.0;
             let lnd_name = container_name.split('-').last().unwrap();
-            let mut found_ip: Option<_> = None;
-            if let Networks::Advanced(AdvancedNetworks(networks)) =
-                service.1.as_ref().unwrap().networks.clone()
-            {
-                if let MapOrEmpty::Map(advance_setting) = networks.first().unwrap().1 {
-                    found_ip = advance_setting.ipv4_address.clone();
-                }
-            }
             let mut bitcoind_service = "".to_owned();
             if let DependsOnOptions::Simple(layer_1_nodes) =
                 service.1.as_ref().unwrap().depends_on.clone()
@@ -265,7 +238,6 @@ pub fn add_lnd_nodes(options: &mut Options) -> Result<(), Error> {
             load_config(
                 lnd_name,
                 container_name.to_owned(),
-                found_ip.unwrap(),
                 bitcoind_service.to_owned(),
             )
         })
@@ -302,21 +274,15 @@ fn add_pubkey(node: &mut Lnd, options: &Options) {
     }
 }
 
-fn load_config(
-    name: &str,
-    container_name: String,
-    ip: String,
-    bitcoind_service: String,
-) -> Result<Lnd, Error> {
+fn load_config(name: &str, container_name: String, bitcoind_service: String) -> Result<Lnd, Error> {
     let full_path = &format!("data/{}/.lnd", name);
     Ok(Lnd {
         name: name.to_owned(),
         alias: name.to_owned(),
-        container_name,
+        container_name: container_name.clone(),
         pubkey: None,
-        ip: ip.clone(),
-        rpc_server: format!("{}:10000", ip),
-        server_url: format!("https://{}:8080", ip),
+        rpc_server: format!("{}:10000", container_name),
+        server_url: format!("https://{}:8080", container_name),
         certificate_path: format!("{}/tls.crt", full_path),
         macaroon_path: format!(
             "{}/data/chain/bitcoin/{}/admin.macaroon",
@@ -347,7 +313,7 @@ fn set_l1_values(conf: &mut FileConf, bitcoind_node: &dyn L1Node) -> Result<(), 
         "bitcoind.zmqpubrawblock",
         format!(
             "tcp://{}:{}",
-            bitcoind_node.get_ip(),
+            bitcoind_node.get_container_name(),
             &bitcoind_node.get_zmqpubrawblock()
         )
         .as_str(),
@@ -356,7 +322,7 @@ fn set_l1_values(conf: &mut FileConf, bitcoind_node: &dyn L1Node) -> Result<(), 
         "bitcoind.zmqpubrawtx",
         format!(
             "tcp://{}:{}",
-            bitcoind_node.get_ip(),
+            bitcoind_node.get_container_name(),
             &bitcoind_node.get_zmqpubrawtx()
         )
         .as_str(),
@@ -367,7 +333,7 @@ fn set_l1_values(conf: &mut FileConf, bitcoind_node: &dyn L1Node) -> Result<(), 
         "bitcoind.rpchost",
         format!(
             "{}:{}",
-            bitcoind_node.get_ip(),
+            bitcoind_node.get_container_name(),
             &bitcoind_node.get_rpc_port()
         )
         .as_str(),
@@ -376,7 +342,7 @@ fn set_l1_values(conf: &mut FileConf, bitcoind_node: &dyn L1Node) -> Result<(), 
     Ok(())
 }
 
-fn set_application_options_values(conf: &mut FileConf, name: &str, ip: &str) -> Result<(), Error> {
+fn set_application_options_values(conf: &mut FileConf, name: &str) -> Result<(), Error> {
     if conf.sections.get("Application Options").is_none() {
         conf.sections
             .insert("Application Options".to_owned(), Section::new());
@@ -384,9 +350,8 @@ fn set_application_options_values(conf: &mut FileConf, name: &str, ip: &str) -> 
     let application_options = conf.sections.get_mut("Application Options").unwrap();
     application_options.set_property("alias", name);
     application_options.set_property("tlsextradomain", name);
-    application_options.set_property("tlsextraip", ip);
-    application_options.set_property("restlisten", &format!("{}:8080", ip));
-    application_options.set_property("rpclisten", &format!("{}:10000", ip));
+    application_options.set_property("restlisten", &format!("0.0.0.0:8080"));
+    application_options.set_property("rpclisten", &format!("0.0.0.0:10000"));
     Ok(())
 }
 

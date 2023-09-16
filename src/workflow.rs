@@ -39,7 +39,11 @@ pub fn run_workflow(options: &mut Options, parsed: Pair<'_, Rule>) -> Result<(),
                 handle_btc_action(options, pair).expect("invalid node action line")
             }
             Rule::EOI => {
-                options.clone().read_end_of_doppler_file.as_ref().swap(true, Ordering::SeqCst);
+                options
+                    .clone()
+                    .read_end_of_doppler_file
+                    .as_ref()
+                    .swap(true, Ordering::SeqCst);
                 break;
             }
             _ => continue,
@@ -61,20 +65,28 @@ pub fn run_workflow_until_stop(
     let all_threads = options.get_thread_handlers();
     run_workflow(options, parsed).unwrap();
     // if we have no child threads, this must be a script we just want to run through
-    if all_threads.lock().unwrap().is_empty() && options.loop_count.as_ref().load(Ordering::SeqCst) == 0 {
+    if all_threads.lock().unwrap().is_empty()
+        && options.loop_count.as_ref().load(Ordering::SeqCst) == 0
+    {
         main_thread_active.set(false);
         return Ok(());
     }
     let terminate = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&terminate))?;
     let mut current_loop_count = options.loop_count.as_ref().load(Ordering::SeqCst);
-    let mut read_end_of_doppler_file = options.read_end_of_doppler_file.as_ref().load(Ordering::SeqCst);
+    let mut read_end_of_doppler_file = options
+        .read_end_of_doppler_file
+        .as_ref()
+        .load(Ordering::SeqCst);
     while current_loop_count > 0 || !read_end_of_doppler_file {
         if terminate.load(Ordering::Relaxed) {
-            break
+            break;
         }
         current_loop_count = options.clone().loop_count.as_ref().load(Ordering::SeqCst);
-        read_end_of_doppler_file = options.read_end_of_doppler_file.as_ref().load(Ordering::SeqCst);
+        read_end_of_doppler_file = options
+            .read_end_of_doppler_file
+            .as_ref()
+            .load(Ordering::SeqCst);
         thread::sleep(Duration::from_secs(1));
     }
     main_thread_active.set(false);
@@ -240,7 +252,11 @@ fn run_loop(
                     current_options.global_logger(),
                     "finished iterations, stopping loop: {}", loop_options.name
                 );
-                current_options.clone().loop_count.as_ref().fetch_sub(1, Ordering::SeqCst);
+                current_options
+                    .clone()
+                    .loop_count
+                    .as_ref()
+                    .fetch_sub(1, Ordering::SeqCst);
                 break;
             }
             if current_options.main_thread_paused.val() {

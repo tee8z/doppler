@@ -1,23 +1,18 @@
 extern crate ini;
-use crate::{
-    get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options,
-};
+use crate::{get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options};
 use anyhow::{anyhow, Error};
 use ini::Ini;
-use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
-use slog::{debug, error, info, Logger};
+use slog::{debug, error, info};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::net::Ipv4Addr;
 use std::os::unix::prelude::PermissionsExt;
 use std::process::{Command, Output};
-use std::str::{from_utf8, FromStr};
+use std::str::from_utf8;
 use std::thread;
 use std::time::Duration;
 
 pub const NETWORK: &str = "doppler";
-pub const SUBNET: &str = "10.5.0.0/16";
 
 pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> Result<(), Error> {
     options.compose_path = Some(compose_path.to_owned());
@@ -241,7 +236,6 @@ fn write_visualizer_config_to_ini(config: &VisualizerConfig) -> Result<(), Error
         .open(path)?;
     conf.write_to(&mut file)?;
 
-
     let mut app_conf = Ini::new();
     app_conf
         .with_section(Some("logging".to_owned()))
@@ -307,13 +301,12 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
         script_content.push_str(&format!(
             r#"
 {name}() {{
-    {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} lncli --lnddir=/home/lnd/.lnd --network=regtest --macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon --rpcserver={ip}:10000 "$@"
+    {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} lncli --lnddir=/home/lnd/.lnd --network=regtest --macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon --rpcserver=localhost:10000 "$@"
 }}
 "#,
         docker_command= docker_command,
         container_name= lnd.get_container_name(),
-        name=name,
-        ip =lnd.get_ip()));
+        name=name));
         script_content.push('\n');
     });
     options.cln_nodes.iter().for_each(|lnd| {
@@ -377,25 +370,6 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
     debug!(options.global_logger(), "wrote aliases script");
 
     Ok(())
-}
-
-pub fn generate_ipv4_sequence_in_subnet(
-    logger: Logger,
-    subnet: &str,
-    current_ip: &Ipv4Addr,
-) -> Ipv4Addr {
-    let cidr = IpNetwork::from_str(subnet).unwrap();
-    let end_ip = match cidr {
-        IpNetwork::V4(cidr_v4) => cidr_v4.broadcast(),
-        _ => panic!("Only IPv4 is supported"),
-    };
-    let mut next_ip = *current_ip;
-
-    next_ip = Ipv4Addr::from(u32::from(next_ip) + 1);
-    if next_ip > end_ip {
-        error!(logger, "went over the last ip in ranges!")
-    }
-    next_ip
 }
 
 fn connect_l2_nodes(options: &Options) -> Result<(), Error> {

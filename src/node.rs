@@ -12,7 +12,6 @@ pub trait L2Node: Any {
     fn get_alias(&self) -> &str;
     fn get_server_url(&self) -> &str;
     fn get_container_name(&self) -> &str;
-    fn get_ip(&self) -> &str;
     fn get_cached_pubkey(&self) -> String;
     fn add_pubkey(&mut self, option: &Options);
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error>;
@@ -84,7 +83,6 @@ pub trait L1Node: Any {
     fn get_container_name(&self) -> String;
     fn get_data_dir(&self) -> String;
     fn get_miner_time(&self) -> &Option<MinerTime>;
-    fn get_ip(&self) -> String;
     fn get_zmqpubrawblock(&self) -> String;
     fn get_zmqpubhashblock(&self) -> String;
     fn get_zmqpubrawtx(&self) -> String;
