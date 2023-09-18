@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="%sveltekit.assets%/radar.svg" />
+		<meta name="viewport" content="width=device-width" />
+		<title>Doppler</title>
+		<meta name="description" content="Simplifying Bitcoin Lightning Development" />
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+	<script>
+		const theme = localStorage.getItem('theme');
+		if (theme === 'dark') {
+			document.documentElement.classList.add('dark');
+		} else if (theme === 'light') {
+			document.documentElement.classList.remove('dark');
+		} else {
+			// theme isn't set, use system preference
+			const darkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+			if (darkMode) {
+				document.documentElement.classList.add('dark');
+			}
+		}
+	</script>
+</html>
