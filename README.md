@@ -23,17 +23,6 @@ The DSL should empower developers to compose a concise script that configures an
 - [X] support multiple node implementations (supports LND, CoreLN, Eclair)
 - [x] add a cluster level UI to see how all the nodes connect (comes from https://github.com/litch/lightning-conformance/tree/master/operator)
 
-##### TODO:
-- [ ] create new ldk image for [ldk-node](https://github.com/lightningdevkit/ldk-node)
-- [ ] add a UI to each nodes to view in the browser (thunderhub, ride-the-lightning, etc.)
-- [ ] add ability to have mutliple types of images/version and even allow user to use their own custom that aline with these instructions: [out-of-band](https://github.com/jamaljsr/polar/tree/master/docker#out-of-band-image-updates)
-- [ ] make mining in the background optional after funding the lightning nodes
-- [ ] allow to set how many funds individual lightning nodes get at start up (make optional)
-- [ ] BUMP_FEE - need some way to identify the transaction created earlier in the script to bump
-- [ ] CLOSE_CHANNEL - come up with grammar allowing scripts to close a specific channel
-- [ ] BATCH_OPEN - build grammar for creating batch opening of channels
-- [ ] KEYSEND - add grammar for keysends
-
 ### Acknowledgments
 * Thank you [polar](https://github.com/jamaljsr/polar) for having such easy docker images to work with
 * Thank you litch for creating [lightning-conformance](https://github.com/litch/lightning-conformance) which helped inspire this project
