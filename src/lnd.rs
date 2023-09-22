@@ -193,14 +193,16 @@ fn build_and_save_config(options: &Options, name: &str, pair_name: &str) -> Resu
     }
 
     set_l1_values(&mut conf, bitcoind_node)?;
-    set_application_options_values(&mut conf, name)?;
+    let container_name = format!("doppler-lnd-{}", name);
+
+    set_application_options_values(&mut conf, name, &container_name)?;
 
     let _ = copy_file(&conf, &destination_dir.clone(), "lnd.conf")?;
     let full_path = get_absolute_path(destination_dir)?
         .to_str()
         .unwrap()
         .to_string();
-    let container_name = format!("doppler-lnd-{}", name);
+
     Ok(Lnd {
         name: name.to_owned(),
         alias: name.to_owned(),
@@ -342,14 +344,14 @@ fn set_l1_values(conf: &mut FileConf, bitcoind_node: &dyn L1Node) -> Result<(), 
     Ok(())
 }
 
-fn set_application_options_values(conf: &mut FileConf, name: &str) -> Result<(), Error> {
+fn set_application_options_values(conf: &mut FileConf, name: &str, container_name: &str) -> Result<(), Error> {
     if conf.sections.get("Application Options").is_none() {
         conf.sections
             .insert("Application Options".to_owned(), Section::new());
     }
     let application_options = conf.sections.get_mut("Application Options").unwrap();
     application_options.set_property("alias", name);
-    application_options.set_property("tlsextradomain", name);
+    application_options.set_property("tlsextradomain", container_name);
     application_options.set_property("restlisten", &format!("0.0.0.0:8080"));
     application_options.set_property("rpclisten", &format!("0.0.0.0:10000"));
     Ok(())
