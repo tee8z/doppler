@@ -18,6 +18,7 @@ pub trait L2Node: Any {
     fn open_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn connect(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
+    fn get_starting_wallet_balance(&self) -> i64;
     fn create_invoice(
         &self,
         options: &Options,
@@ -54,8 +55,9 @@ pub trait L2Node: Any {
     }
     fn fund_node(&self, options: &Options, miner: &Bitcoind) -> Result<(), Error> {
         let address = self.create_on_chain_address(options)?;
-        miner.clone().mine_to_address(options, 2, address)?;
-        Ok(())
+        miner
+            .clone()
+            .send_to_address(options, 1, self.get_starting_wallet_balance(), address)
     }
     fn get_property(&self, name: &str, output: Output) -> Option<String> {
         get_property(name, output)
@@ -95,6 +97,13 @@ pub trait L1Node: Any {
         self,
         options: &Options,
         num_blocks: i64,
+        address: String,
+    ) -> Result<(), Error>;
+    fn send_to_address(
+        self,
+        options: &Options,
+        num_blocks: i64,
+        amt: i64,
         address: String,
     ) -> Result<(), Error>;
 }

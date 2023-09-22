@@ -72,10 +72,10 @@ impl L1Node for Bitcoind {
         self.rpcport.clone()
     }
     fn mine_bitcoin_continously(&self, options: &Options) {
-        mine_bitcoin_continously(self, options)
+        mine_bitcoin_continously(self.clone(), options)
     }
     fn mine_bitcoin(&self, options: &Options, num_blocks: i64) -> Result<String, Error> {
-        mine_bitcoin(self, options, num_blocks)
+        mine_bitcoin(self.clone(), options, num_blocks)
     }
     fn create_wallet(&self, options: &Options) -> Result<(), Error> {
         create_wallet(self, options)
@@ -93,6 +93,15 @@ impl L1Node for Bitcoind {
         address: String,
     ) -> Result<(), Error> {
         mine_to_address(self, options, num_blocks, address)
+    }
+    fn send_to_address(
+        self,
+        options: &Options,
+        num_blocks: i64,
+        amt: i64,
+        address: String,
+    ) -> Result<(), Error> {
+        send_to_address(self, options, num_blocks, amt, address)
     }
 }
 
@@ -347,7 +356,7 @@ fn start_mining(node: &Bitcoind, options: &Options) -> Result<()> {
     Ok(())
 }
 
-fn mine_bitcoin_continously(node: &Bitcoind, option: &Options) {
+fn mine_bitcoin_continously(node: impl L1Node, option: &Options) {
     let miner_time = node.get_miner_time().as_ref().unwrap();
     let sleep_time = match miner_time.miner_interval_type {
         's' => Duration::from_secs(miner_time.miner_interval_amt),
@@ -359,7 +368,7 @@ fn mine_bitcoin_continously(node: &Bitcoind, option: &Options) {
         thread::sleep(sleep_time);
         let thread_logger = option.global_logger();
         if !option.main_thread_paused.val() {
-            match mine_bitcoin(node, option, 1) {
+            match node.mine_bitcoin(option, 1) {
                 Ok(_) => (),
                 Err(e) => error!(
                     thread_logger,
@@ -371,11 +380,10 @@ fn mine_bitcoin_continously(node: &Bitcoind, option: &Options) {
         }
     }
 }
-fn mine_bitcoin(node: &Bitcoind, options: &Options, num_blocks: i64) -> Result<String, Error> {
+fn mine_bitcoin(node: impl L1Node, options: &Options, num_blocks: i64) -> Result<String, Error> {
     let address = node.create_address(options)?;
 
-    node.clone()
-        .mine_to_address(options, num_blocks, address.to_owned())?;
+    node.mine_to_address(options, num_blocks, address.to_owned())?;
 
     Ok(address)
 }
@@ -463,6 +471,46 @@ fn create_address(node: &Bitcoind, options: &Options) -> Result<String, Error> {
     output.stdout.pop();
     let address = from_utf8(&output.stdout)?.to_owned();
     Ok(address)
+}
+
+fn send_to_address(
+    node: impl L1Node,
+    options: &Options,
+    num_blocks: i64,
+    amt: i64,
+    address: String,
+) -> Result<(), Error> {
+    if amt == 0 {
+        return Ok(());
+    }
+    let datadir_flag = &format!("--datadir={}", node.get_data_dir());
+    let container_name = node.get_container_name();
+    let compose_path = options.compose_path.clone().unwrap();
+    let amt_btc = ((amt as f64) / 100_000_000_f64).to_string();
+    let commands = vec![
+        "-f",
+        &compose_path,
+        "exec",
+        "--user",
+        "1000:1000",
+        &container_name,
+        "bitcoin-cli",
+        datadir_flag,
+        "sendtoaddress",
+        &address,
+        &amt_btc,
+    ];
+    let output = run_command(options, "getnewaddress".to_owned(), commands)?;
+    if !output.status.success() {
+        error!(
+            options.global_logger(),
+            "failed to mine to address: {} {}",
+            from_utf8(&output.stdout).unwrap().to_owned(),
+            from_utf8(&output.stderr).unwrap().to_owned()
+        );
+    }
+    mine_bitcoin(node, options, num_blocks)?;
+    Ok(())
 }
 
 fn mine_to_address(

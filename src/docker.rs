@@ -94,8 +94,8 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
 
     //TODO: make optional to be mining in the background
     start_miners(options)?;
-    setup_l2_nodes(options)?;
     mine_initial_blocks(options)?;
+    setup_l2_nodes(options)?;
     if !options.utility_services.is_empty() {
         provision_visualizer(options)?;
     }
@@ -158,11 +158,7 @@ fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
     options.get_l2_nodes().into_iter().for_each(|node| {
         let found_miner = miner.unwrap();
         match node.fund_node(&options.clone(), found_miner) {
-            Ok(_) => info!(
-                logger,
-                "container: {} funded",
-                node.get_container_name().clone()
-            ),
+            Ok(_) => info!(logger, "container: {} funded", node.get_container_name()),
             Err(e) => error!(logger, "failed to start/fund node: {}", e),
         }
     });
