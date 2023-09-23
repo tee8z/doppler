@@ -1,5 +1,6 @@
 use crate::{
-    copy_file, get_absolute_path, run_command, L1Node, L2Node, NodeCommand, Options, NETWORK,
+    copy_file, get_absolute_path, run_command, L1Node, L2Node, NodeCommand, NodePair, Options,
+    NETWORK,
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
@@ -17,6 +18,7 @@ const LND_IMAGE: &str = "polarlightning/lnd:0.16.2-beta";
 
 #[derive(Default, Debug, Clone)]
 pub struct Lnd {
+    pub wallet_starting_balance: i64,
     pub container_name: String,
     pub name: String,
     pub pubkey: Option<String>,
@@ -84,6 +86,9 @@ impl L2Node for Lnd {
     fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
     }
+    fn get_starting_wallet_balance(&self) -> i64 {
+        self.wallet_starting_balance
+    }
     fn add_pubkey(&mut self, option: &Options) {
         add_pubkey(self, option)
     }
@@ -127,8 +132,8 @@ impl L2Node for Lnd {
     }
 }
 
-pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<()> {
-    let mut lnd_conf = build_and_save_config(options, name, pair_name).unwrap();
+pub fn build_lnd(options: &mut Options, name: &str, pair: &NodePair) -> Result<()> {
+    let mut lnd_conf = build_and_save_config(options, name, pair).unwrap();
     debug!(
         options.global_logger(),
         "{} volume: {}", name, lnd_conf.path_vol
@@ -142,9 +147,9 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
         image: Some(LND_IMAGE.to_string()),
         container_name: Some(lnd_conf.container_name.clone()),
         ports: Ports::Short(vec![
-            format!("{}:{}", options.new_port(), lnd_conf.p2p_port.clone()),
-            format!("{}:{}", options.new_port(), lnd_conf.grpc_port.clone()),
-            format!("{}:{}", options.new_port(), lnd_conf.rest_port.clone()),
+            format!("{}:{}", options.new_port(), lnd_conf.p2p_port),
+            format!("{}:{}", options.new_port(), lnd_conf.grpc_port),
+            format!("{}:{}", options.new_port(), lnd_conf.rest_port),
         ]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         volumes: Volumes::Simple(vec![format!("{}:/home/lnd/.lnd:rw", lnd_conf.path_vol)]),
@@ -168,7 +173,7 @@ pub fn build_lnd(options: &mut Options, name: &str, pair_name: &str) -> Result<(
     Ok(())
 }
 
-fn build_and_save_config(options: &Options, name: &str, pair_name: &str) -> Result<Lnd, Error> {
+fn build_and_save_config(options: &Options, name: &str, pair: &NodePair) -> Result<Lnd, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
             "bitcoind nodes need to be defined before lnd nodes can be setup"
@@ -187,7 +192,7 @@ fn build_and_save_config(options: &Options, name: &str, pair_name: &str) -> Resu
     let found_node = options
         .bitcoinds
         .iter()
-        .find(|&bitcoind| bitcoind.get_name().eq_ignore_ascii_case(pair_name));
+        .find(|&bitcoind| bitcoind.get_name().eq_ignore_ascii_case(&pair.name));
     if let Some(node) = found_node {
         bitcoind_node = node;
     }
@@ -204,6 +209,7 @@ fn build_and_save_config(options: &Options, name: &str, pair_name: &str) -> Resu
         .to_string();
 
     Ok(Lnd {
+        wallet_starting_balance: pair.wallet_starting_balance,
         name: name.to_owned(),
         alias: name.to_owned(),
         container_name: container_name.to_owned(),
@@ -237,11 +243,7 @@ pub fn add_lnd_nodes(options: &mut Options) -> Result<(), Error> {
             {
                 bitcoind_service = layer_1_nodes[0].clone();
             }
-            load_config(
-                lnd_name,
-                container_name.to_owned(),
-                bitcoind_service.to_owned(),
-            )
+            load_config(lnd_name, container_name.to_owned(), bitcoind_service)
         })
         .filter_map(|res| res.ok())
         .collect();
@@ -279,6 +281,7 @@ fn add_pubkey(node: &mut Lnd, options: &Options) {
 fn load_config(name: &str, container_name: String, bitcoind_service: String) -> Result<Lnd, Error> {
     let full_path = &format!("data/{}/.lnd", name);
     Ok(Lnd {
+        wallet_starting_balance: 0,
         name: name.to_owned(),
         alias: name.to_owned(),
         container_name: container_name.clone(),
@@ -344,7 +347,11 @@ fn set_l1_values(conf: &mut FileConf, bitcoind_node: &dyn L1Node) -> Result<(), 
     Ok(())
 }
 
-fn set_application_options_values(conf: &mut FileConf, name: &str, container_name: &str) -> Result<(), Error> {
+fn set_application_options_values(
+    conf: &mut FileConf,
+    name: &str,
+    container_name: &str,
+) -> Result<(), Error> {
     if conf.sections.get("Application Options").is_none() {
         conf.sections
             .insert("Application Options".to_owned(), Section::new());
@@ -352,8 +359,8 @@ fn set_application_options_values(conf: &mut FileConf, name: &str, container_nam
     let application_options = conf.sections.get_mut("Application Options").unwrap();
     application_options.set_property("alias", name);
     application_options.set_property("tlsextradomain", container_name);
-    application_options.set_property("restlisten", &format!("0.0.0.0:8080"));
-    application_options.set_property("rpclisten", &format!("0.0.0.0:10000"));
+    application_options.set_property("restlisten", &String::from("0.0.0.0:8080"));
+    application_options.set_property("rpclisten", &String::from("0.0.0.0:10000"));
     Ok(())
 }
 

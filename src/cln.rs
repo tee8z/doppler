@@ -1,6 +1,6 @@
 use crate::{
-    copy_file, create_folder, get_absolute_path, run_command, L1Node, L2Node, NodeCommand, Options,
-    NETWORK,
+    copy_file, create_folder, get_absolute_path, run_command, L1Node, L2Node, NodeCommand,
+    NodePair, Options, NETWORK,
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
@@ -20,6 +20,7 @@ const CLN_IMAGE: &str = "elementsproject/lightningd:v23.05.1";
 
 #[derive(Default, Debug, Clone)]
 pub struct Cln {
+    pub wallet_starting_balance: i64,
     pub container_name: String,
     pub name: String,
     pub pubkey: Option<String>,
@@ -80,6 +81,9 @@ impl L2Node for Cln {
     fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
     }
+    fn get_starting_wallet_balance(&self) -> i64 {
+        self.wallet_starting_balance
+    }
     fn add_pubkey(&mut self, options: &Options) {
         add_pubkey(self, options)
     }
@@ -123,8 +127,8 @@ impl L2Node for Cln {
     }
 }
 
-pub fn build_cln(options: &mut Options, name: &str, pair_name: &str) -> Result<()> {
-    let cln_conf = build_and_save_config(options, name, pair_name).unwrap();
+pub fn build_cln(options: &mut Options, name: &str, pair: &NodePair) -> Result<()> {
+    let cln_conf = build_and_save_config(options, name, pair).unwrap();
     debug!(
         options.global_logger(),
         "{} volume: {}", name, cln_conf.path_vol
@@ -141,7 +145,7 @@ pub fn build_cln(options: &mut Options, name: &str, pair_name: &str) -> Result<(
         ports: Ports::Short(vec![format!(
             "{}:{}",
             options.new_port(),
-            cln_conf.p2p_port.clone()
+            cln_conf.p2p_port
         )]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         command: Some(command),
@@ -164,7 +168,7 @@ pub fn build_cln(options: &mut Options, name: &str, pair_name: &str) -> Result<(
 pub fn build_and_save_config(
     options: &mut Options,
     name: &str,
-    pair_name: &str,
+    pair: &NodePair,
 ) -> Result<Cln, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
@@ -184,7 +188,7 @@ pub fn build_and_save_config(
     let found_node = options
         .bitcoinds
         .iter()
-        .find(|&bitcoind| bitcoind.name.eq_ignore_ascii_case(pair_name));
+        .find(|&bitcoind| bitcoind.name.eq_ignore_ascii_case(&pair.name));
     if let Some(node) = found_node {
         bitcoind_node = node;
     }
@@ -205,6 +209,7 @@ pub fn build_and_save_config(
         .to_string();
 
     Ok(Cln {
+        wallet_starting_balance: pair.wallet_starting_balance,
         name: name.to_owned(),
         alias: name.to_owned(),
         container_name: container_name.clone(),
@@ -261,11 +266,7 @@ pub fn add_coreln_nodes(options: &mut Options) -> Result<()> {
             {
                 bitcoind_service = layer_1_nodes[0].clone();
             }
-            load_config(
-                node_name,
-                container_name.to_owned(),
-                bitcoind_service.to_owned(),
-            )
+            load_config(node_name, container_name.to_owned(), bitcoind_service)
         })
         .filter_map(|res| res.ok())
         .collect();
@@ -303,6 +304,7 @@ fn add_pubkey(node: &mut Cln, options: &Options) {
 fn load_config(name: &str, container_name: String, bitcoind_service: String) -> Result<Cln, Error> {
     let full_path = &format!("data/{}/.cln", name);
     Ok(Cln {
+        wallet_starting_balance: 0,
         name: name.to_owned(),
         alias: name.to_owned(),
         container_name: container_name.to_owned(),
@@ -355,7 +357,7 @@ fn get_node_pubkey(node: &Cln, options: &Options) -> Result<String, Error> {
     }
     if let Some(output) = output_found {
         if output.status.success() {
-            if let Some(pubkey) = node.get_property("id", output.clone()) {
+            if let Some(pubkey) = node.get_property("id", output) {
                 return Ok(pubkey);
             } else {
                 error!(options.global_logger(), "no pubkey found");
@@ -379,7 +381,7 @@ fn create_cln_address(node: &Cln, options: &Options) -> Result<String, Error> {
         "bech32",
     ];
     let output = run_command(options, "newaddr".to_owned(), commands)?;
-    let found_address: Option<String> = node.get_property("bech32", output.clone());
+    let found_address: Option<String> = node.get_property("bech32", output);
     if found_address.is_none() {
         error!(options.global_logger(), "no addess found");
         return Ok("".to_string());
@@ -488,7 +490,7 @@ fn create_invoice(
         &memo,
     ];
     let output = run_command(options, "invoice".to_owned(), commands)?;
-    let found_payment_request: Option<String> = node.get_property("bolt11", output.clone());
+    let found_payment_request: Option<String> = node.get_property("bolt11", output);
     if found_payment_request.is_none() {
         error!(options.global_logger(), "no payment requests found");
     }

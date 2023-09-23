@@ -13,7 +13,7 @@ node_kind = { "BITCOIND_MINER" | "BITCOIND" | "LND" | "CORELN" | "ECLAIR" | "VIS
 
 node_def = { node_kind ~ ident }
 
-node_pair = { node_kind ~ ident ~ "PAIR" ~ ident }
+node_pair = { node_kind ~ ident ~ "PAIR" ~ (ident ~ num | ident) }
 
 node_miner = { node_kind ~ ident ~ (num)* ~ time_digits }
 

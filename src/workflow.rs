@@ -253,7 +253,6 @@ fn run_loop(
                     "finished iterations, stopping loop: {}", loop_options.name
                 );
                 current_options
-                    .clone()
                     .loop_count
                     .as_ref()
                     .fetch_sub(1, Ordering::SeqCst);
@@ -362,11 +361,20 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 .expect("invalid node kind");
             let name = inner.next().expect("ident").as_str();
             let to_pair = inner.next().expect("invalid layer 1 node name").as_str();
+            let amount = match inner.peek().is_some() {
+                true => inner
+                    .next()
+                    .expect("invalid amount")
+                    .as_str()
+                    .parse()
+                    .unwrap(),
+                false => 10000000,
+            };
             handle_build_command(
                 options,
                 name,
                 kind,
-                BuildDetails::new_pair(to_pair.to_owned()),
+                BuildDetails::new_pair(to_pair.to_owned(), amount),
             )?;
         }
         _ => (),
@@ -377,20 +385,29 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
 
 #[derive(Debug, Default)]
 pub struct BuildDetails {
-    pub pair_name: Option<String>,
+    pub pair: Option<NodePair>,
     pub miner_time: Option<MinerTime>,
 }
 
+#[derive(Debug, Default)]
+pub struct NodePair {
+    pub name: String,
+    pub wallet_starting_balance: i64,
+}
+
 impl BuildDetails {
-    pub fn new_pair(pair: String) -> Option<BuildDetails> {
+    pub fn new_pair(pair: String, amount: i64) -> Option<BuildDetails> {
         Some(BuildDetails {
-            pair_name: Some(pair),
+            pair: Some(NodePair {
+                name: pair,
+                wallet_starting_balance: amount,
+            }),
             miner_time: None,
         })
     }
     pub fn new_miner_time(miner_time: MinerTime) -> Option<BuildDetails> {
         Some(BuildDetails {
-            pair_name: None,
+            pair: None,
             miner_time: Some(miner_time),
         })
     }
@@ -405,11 +422,9 @@ fn handle_build_command(
     match kind {
         NodeKind::Bitcoind => build_bitcoind(options, name, &None),
         NodeKind::BitcoindMiner => build_bitcoind(options, name, &details.unwrap().miner_time),
-        NodeKind::Lnd => build_lnd(options, name, details.unwrap().pair_name.unwrap().as_str()),
-        NodeKind::Eclair => {
-            build_eclair(options, name, details.unwrap().pair_name.unwrap().as_str())
-        }
-        NodeKind::Coreln => build_cln(options, name, details.unwrap().pair_name.unwrap().as_str()),
+        NodeKind::Lnd => build_lnd(options, name, &details.unwrap().pair.unwrap()),
+        NodeKind::Eclair => build_eclair(options, name, &details.unwrap().pair.unwrap()),
+        NodeKind::Coreln => build_cln(options, name, &details.unwrap().pair.unwrap()),
         NodeKind::Visualizer => build_visualizer(options, name),
     }
 }

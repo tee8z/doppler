@@ -13,13 +13,14 @@ use std::{
 
 use crate::{
     copy_file, create_folder, get_absolute_path, restart_service, run_command, L1Node, L2Node,
-    NodeCommand, Options, NETWORK,
+    NodeCommand, NodePair, Options, NETWORK,
 };
 
 const ECLAIR_IMAGE: &str = "polarlightning/eclair:0.9.0";
 
 #[derive(Default, Debug, Clone)]
 pub struct Eclair {
+    pub wallet_starting_balance: i64,
     pub container_name: String,
     pub name: String,
     pub pubkey: Option<String>,
@@ -74,6 +75,9 @@ impl L2Node for Eclair {
     fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
     }
+    fn get_starting_wallet_balance(&self) -> i64 {
+        self.wallet_starting_balance
+    }
     fn add_pubkey(&mut self, option: &Options) {
         add_pubkey(self, option)
     }
@@ -117,8 +121,8 @@ impl L2Node for Eclair {
     }
 }
 
-pub fn build_eclair(options: &mut Options, name: &str, pair_name: &str) -> Result<()> {
-    let mut eclair_conf = build_and_save_config(options, name, pair_name).unwrap();
+pub fn build_eclair(options: &mut Options, name: &str, pair: &NodePair) -> Result<()> {
+    let mut eclair_conf = build_and_save_config(options, name, pair).unwrap();
     debug!(
         options.global_logger(),
         "{} volume: {}", name, eclair_conf.path_vol
@@ -132,8 +136,8 @@ pub fn build_eclair(options: &mut Options, name: &str, pair_name: &str) -> Resul
         container_name: Some(eclair_conf.container_name.clone()),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         ports: Ports::Short(vec![
-            format!("{}:{}", options.new_port(), eclair_conf.p2p_port.clone()),
-            format!("{}:{}", options.new_port(), eclair_conf.rest_port.clone()),
+            format!("{}:{}", options.new_port(), eclair_conf.p2p_port),
+            format!("{}:{}", options.new_port(), eclair_conf.rest_port),
         ]),
         volumes: Volumes::Simple(vec![format!("{}:/home/eclair:rw", eclair_conf.path_vol)]),
         networks: Networks::Simple(vec![NETWORK.to_owned()]),
@@ -154,7 +158,7 @@ pub fn build_eclair(options: &mut Options, name: &str, pair_name: &str) -> Resul
     Ok(())
 }
 
-fn build_and_save_config(options: &Options, name: &str, pair_name: &str) -> Result<Eclair, Error> {
+fn build_and_save_config(options: &Options, name: &str, pair: &NodePair) -> Result<Eclair, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
             "bitcoind nodes need to be defined before eclair nodes can be setup"
@@ -173,7 +177,7 @@ fn build_and_save_config(options: &Options, name: &str, pair_name: &str) -> Resu
     let found_node = options
         .bitcoinds
         .iter()
-        .find(|&bitcoind| bitcoind.get_name().eq_ignore_ascii_case(pair_name));
+        .find(|&bitcoind| bitcoind.get_name().eq_ignore_ascii_case(&pair.name));
     if let Some(node) = found_node {
         bitcoind_node = node;
     }
@@ -196,6 +200,7 @@ fn build_and_save_config(options: &Options, name: &str, pair_name: &str) -> Resu
         .to_string();
     let container_name = format!("doppler-eclair-{}", name);
     Ok(Eclair {
+        wallet_starting_balance: pair.wallet_starting_balance,
         name: name.to_owned(),
         alias: name.to_owned(),
         container_name: container_name.clone(),
@@ -271,11 +276,7 @@ pub fn add_eclair_nodes(options: &mut Options) -> Result<(), Error> {
             {
                 bitcoind_service = layer_1_nodes[0].clone();
             }
-            load_config(
-                node_name,
-                container_name.to_owned(),
-                bitcoind_service.to_owned(),
-            )
+            load_config(node_name, container_name.to_owned(), bitcoind_service)
         })
         .filter_map(|res| res.ok())
         .collect();
@@ -300,6 +301,7 @@ fn load_config(
 ) -> Result<Eclair, Error> {
     let full_path = &format!("data/{}", name);
     Ok(Eclair {
+        wallet_starting_balance: 0,
         name: name.to_owned(),
         alias: name.to_owned(),
         container_name: container_name.to_owned(),
@@ -371,7 +373,7 @@ fn get_node_pubkey(node: &Eclair, options: &Options) -> Result<String, Error> {
     }
     if let Some(output) = output_found {
         if output.status.success() {
-            if let Some(pubkey) = node.get_property("nodeId", output.clone()) {
+            if let Some(pubkey) = node.get_property("nodeId", output) {
                 return Ok(pubkey);
             } else {
                 error!(options.global_logger(), "no pubkey found");
@@ -589,7 +591,7 @@ fn create_invoice(
         amt_command,
     ];
     let output = run_command(options, "createinvoice".to_owned(), commands)?;
-    let found_payment_request: Option<String> = node.get_property("serialized", output.clone());
+    let found_payment_request: Option<String> = node.get_property("serialized", output);
     if found_payment_request.is_none() {
         error!(options.global_logger(), "no payment requests found");
     }

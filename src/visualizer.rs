@@ -73,7 +73,7 @@ pub fn build_visualizer(options: &mut Options, _name: &str) -> Result<(), Error>
 
     options.utility_services.push(Visualizer {
         name: operator_name.to_owned(),
-        data_dir: data_dir,
+        data_dir,
         container_name: "doppler-visualizer".to_owned(),
     });
     Ok(())
