@@ -1,7 +1,7 @@
 use crate::{
     build_bitcoind, build_cln, build_eclair, build_lnd, build_visualizer,
-    load_options_from_compose, run_cluster, DopplerParser, L1Node, MinerTime, NodeCommand,
-    NodeKind, Options, Rule,
+    load_options_from_compose, run_cluster, DopplerParser, ImageInfo, L1Node, MinerTime,
+    NodeCommand, NodeKind, Options, Rule,
 };
 use anyhow::{Error, Result};
 use pest::{
@@ -107,6 +107,17 @@ struct LoopOptions {
     sleep_time_amt: Option<u64>,
 }
 
+impl Default for LoopOptions {
+    fn default() -> Self {
+        Self {
+            name: String::from(""),
+            iterations: None,
+            sleep_time_interval_type: None,
+            sleep_time_amt: None,
+        }
+    }
+}
+
 fn process_start_loop(line: Pair<Rule>) -> LoopOptions {
     let mut line_inner = line.into_inner();
 
@@ -126,18 +137,11 @@ fn process_start_loop(line: Pair<Rule>) -> LoopOptions {
 
 fn process_loop_iter(line_inner: Pairs<'_, Rule>, inner_pair: Pair<'_, Rule>) -> LoopOptions {
     let loop_options = if inner_pair.as_rule() == Rule::every {
-        Some(LoopOptions {
-            name: "".to_owned(),
-            iterations: None,
-            sleep_time_interval_type: None,
-            sleep_time_amt: None,
-        })
+        Some(LoopOptions::default())
     } else {
         Some(LoopOptions {
-            name: "".to_owned(),
             iterations: Some(inner_pair.as_str().parse::<i64>().expect("invalid num")),
-            sleep_time_interval_type: None,
-            sleep_time_amt: None,
+            ..Default::default()
         })
     };
 
@@ -158,12 +162,7 @@ fn process_loop_sleep(
         line_inner.next();
     }
     if loop_options.is_none() {
-        loop_options = Some(LoopOptions {
-            name: "".to_owned(),
-            iterations: None,
-            sleep_time_interval_type: None,
-            sleep_time_amt: None,
-        });
+        loop_options = Some(LoopOptions::default());
     }
 
     let (sleep_interval, sleep_time_type) = {
@@ -311,20 +310,50 @@ fn run_loop(
     Ok(())
 }
 
+fn get_image(options: &mut Options, node_kind: NodeKind, possible_name: &str) -> ImageInfo {
+    let image_info = if !possible_name.is_empty() {
+        if let Some(image) = options.get_image(possible_name) {
+            image
+        } else {
+            options.get_default_image(node_kind)
+        }
+    } else {
+        options.get_default_image(node_kind)
+    };
+    image_info
+}
+
 fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
     let mut line_inner = line.into_inner();
     let command = line_inner.next().expect("invalid command");
     let mut inner = command.clone().into_inner();
 
     match command.clone().as_rule() {
+        Rule::node_image => {
+            let kind: NodeKind = inner
+                .next()
+                .expect("node")
+                .try_into()
+                .expect("invalid node kind");
+            let image_name = inner.next().expect("image name").as_str();
+            let tag_or_path = inner.next().expect("image version").as_str();
+            handle_image_command(options, kind, image_name, tag_or_path)?;
+        }
         Rule::node_def => {
             let kind: NodeKind = inner
                 .next()
                 .expect("node")
                 .try_into()
                 .expect("invalid node kind");
-            let ident = inner.next().expect("ident").as_str();
-            handle_build_command(options, ident, kind, None)?;
+            if kind == NodeKind::Visualizer {
+                return Ok(())
+            }
+            let node_name = inner.next().expect("node name").as_str();
+            let image = match inner.next() {
+                Some(image) => get_image(options, kind.clone(), image.as_str()),
+                None => options.get_default_image(kind.clone())
+            };
+            handle_build_command(options, node_name, kind, &image, None)?;
         }
         Rule::node_miner => {
             let kind: NodeKind = inner
@@ -332,7 +361,8 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 .expect("node")
                 .try_into()
                 .expect("invalid node kind");
-            let name = inner.next().expect("invalid ident").as_str();
+            let name = inner.next().expect("invalid image name").as_str();
+            let image = get_image(options, kind.clone(), name);
             let time_num = inner
                 .next()
                 .expect("invalid time value")
@@ -350,16 +380,26 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 options,
                 name,
                 kind,
+                &image,
                 BuildDetails::new_miner_time(MinerTime::new(time_num, time_type)),
             )?;
         }
         Rule::node_pair => {
-            let kind = inner
+            let kind: NodeKind = inner
                 .next()
                 .expect("node")
                 .try_into()
                 .expect("invalid node kind");
             let name = inner.next().expect("ident").as_str();
+            let image = match inner.peek().unwrap().as_rule() {
+                Rule::image_name => {
+                    let image_name = inner.next().expect("image name").as_str();
+                    get_image(options, kind.clone(), image_name)
+                }
+                _  => {
+                    options.get_default_image(kind.clone())
+                }
+            };
             let to_pair = inner.next().expect("invalid layer 1 node name").as_str();
             let amount = match inner.peek().is_some() {
                 true => inner
@@ -374,6 +414,7 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 options,
                 name,
                 kind,
+                &image,
                 BuildDetails::new_pair(to_pair.to_owned(), amount),
             )?;
         }
@@ -413,18 +454,34 @@ impl BuildDetails {
     }
 }
 
+fn handle_image_command(
+    option: &mut Options,
+    kind: NodeKind,
+    name: &str,
+    tag_or_path: &str,
+) -> Result<()> {
+    let is_known_image = option.is_known_polar_image(kind.clone(), name, tag_or_path);
+
+    let image = ImageInfo::new(tag_or_path.to_owned(), name.to_owned(), !is_known_image, kind);
+    option.images.push(image);
+    Ok(())
+}
+
 fn handle_build_command(
     options: &mut Options,
     name: &str,
     kind: NodeKind,
+    image: &ImageInfo,
     details: Option<BuildDetails>,
 ) -> Result<()> {
     match kind {
-        NodeKind::Bitcoind => build_bitcoind(options, name, &None),
-        NodeKind::BitcoindMiner => build_bitcoind(options, name, &details.unwrap().miner_time),
-        NodeKind::Lnd => build_lnd(options, name, &details.unwrap().pair.unwrap()),
-        NodeKind::Eclair => build_eclair(options, name, &details.unwrap().pair.unwrap()),
-        NodeKind::Coreln => build_cln(options, name, &details.unwrap().pair.unwrap()),
+        NodeKind::Bitcoind => build_bitcoind(options, name, image, &None),
+        NodeKind::BitcoindMiner => {
+            build_bitcoind(options, name, image, &details.unwrap().miner_time)
+        }
+        NodeKind::Lnd => build_lnd(options, name, image, &details.unwrap().pair.unwrap()),
+        NodeKind::Eclair => build_eclair(options, name, image, &details.unwrap().pair.unwrap()),
+        NodeKind::Coreln => build_cln(options, name, image, &details.unwrap().pair.unwrap()),
         NodeKind::Visualizer => build_visualizer(options, name),
     }
 }

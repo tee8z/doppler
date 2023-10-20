@@ -1,6 +1,6 @@
 use crate::{
     copy_file, get_absolute_path, run_command, L1Node, L2Node, NodeCommand, NodePair, Options,
-    NETWORK,
+    NETWORK, ImageInfo,
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
@@ -13,8 +13,6 @@ use std::{
     thread,
     time::Duration,
 };
-
-const LND_IMAGE: &str = "polarlightning/lnd:0.16.2-beta";
 
 #[derive(Default, Debug, Clone)]
 pub struct Lnd {
@@ -132,8 +130,8 @@ impl L2Node for Lnd {
     }
 }
 
-pub fn build_lnd(options: &mut Options, name: &str, pair: &NodePair) -> Result<()> {
-    let mut lnd_conf = build_and_save_config(options, name, pair).unwrap();
+pub fn build_lnd(options: &mut Options, name: &str, image: &ImageInfo, pair: &NodePair) -> Result<()> {
+    let mut lnd_conf = build_and_save_config(options, name, image, pair).unwrap();
     debug!(
         options.global_logger(),
         "{} volume: {}", name, lnd_conf.path_vol
@@ -144,7 +142,7 @@ pub fn build_lnd(options: &mut Options, name: &str, pair: &NodePair) -> Result<(
     let bitcoind = vec![lnd_conf.bitcoind_node_container_name.clone()];
     let lnd = Service {
         depends_on: DependsOnOptions::Simple(bitcoind),
-        image: Some(LND_IMAGE.to_string()),
+        image: Some(image.get_image()),
         container_name: Some(lnd_conf.container_name.clone()),
         ports: Ports::Short(vec![
             format!("{}:{}", options.new_port(), lnd_conf.p2p_port),
@@ -173,7 +171,7 @@ pub fn build_lnd(options: &mut Options, name: &str, pair: &NodePair) -> Result<(
     Ok(())
 }
 
-fn build_and_save_config(options: &Options, name: &str, pair: &NodePair) -> Result<Lnd, Error> {
+fn build_and_save_config(options: &Options, name: &str, _image: &ImageInfo, pair: &NodePair) -> Result<Lnd, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
             "bitcoind nodes need to be defined before lnd nodes can be setup"

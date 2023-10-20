@@ -13,10 +13,8 @@ use std::{
 
 use crate::{
     copy_file, create_folder, get_absolute_path, restart_service, run_command, L1Node, L2Node,
-    NodeCommand, NodePair, Options, NETWORK,
+    NodeCommand, NodePair, Options, NETWORK, ImageInfo,
 };
-
-const ECLAIR_IMAGE: &str = "polarlightning/eclair:0.9.0";
 
 #[derive(Default, Debug, Clone)]
 pub struct Eclair {
@@ -121,7 +119,7 @@ impl L2Node for Eclair {
     }
 }
 
-pub fn build_eclair(options: &mut Options, name: &str, pair: &NodePair) -> Result<()> {
+pub fn build_eclair(options: &mut Options, name: &str, image: &ImageInfo, pair: &NodePair) -> Result<()> {
     let mut eclair_conf = build_and_save_config(options, name, pair).unwrap();
     debug!(
         options.global_logger(),
@@ -132,7 +130,7 @@ pub fn build_eclair(options: &mut Options, name: &str, pair: &NodePair) -> Resul
     let bitcoind = vec![eclair_conf.bitcoind_node_container_name.clone()];
     let eclair = Service {
         depends_on: DependsOnOptions::Simple(bitcoind),
-        image: Some(ECLAIR_IMAGE.to_string()),
+        image: Some(image.get_image()),
         container_name: Some(eclair_conf.container_name.clone()),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         ports: Ports::Short(vec![

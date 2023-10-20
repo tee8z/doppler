@@ -17,8 +17,9 @@ use std::{
 };
 
 use crate::{
-    add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_lnd_nodes, add_visualizer, Bitcoind,
-    Cln, Eclair, L1Node, L2Node, Lnd, Visualizer, NETWORK,
+    add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_lnd_nodes, add_visualizer,
+    get_latest_polar_images, get_polar_images, Bitcoind, Cln, CloneableHashMap, Eclair, ImageInfo,
+    L1Node, L2Node, Lnd, NodeKind, Visualizer, NETWORK,
 };
 
 #[derive(Subcommand)]
@@ -59,6 +60,9 @@ impl std::fmt::Display for ShellType {
 //TODO: make l2 nodes private
 #[derive(Clone)]
 pub struct Options {
+    default_images: CloneableHashMap<NodeKind, ImageInfo>,
+    known_polar_images: CloneableHashMap<NodeKind, Vec<ImageInfo>>,
+    pub images: Vec<ImageInfo>,
     pub bitcoinds: Vec<Bitcoind>,
     pub lnd_nodes: Vec<Lnd>,
     pub eclair_nodes: Vec<Eclair>,
@@ -119,7 +123,18 @@ impl Options {
         } else {
             "docker"
         };
+        let latest_polar_images = match get_latest_polar_images() {
+            Ok(images) => images,
+            Err(err) => panic!("error pulling down latest images: {}", err),
+        };
+        let all_polar_images = match get_polar_images() {
+            Ok(images) => images,
+            Err(err) => panic!("error pulling down images: {}", err),
+        };
         Self {
+            default_images: latest_polar_images,
+            known_polar_images: all_polar_images,
+            images: vec::Vec::new(),
             bitcoinds: vec::Vec::new(),
             lnd_nodes: vec::Vec::new(),
             eclair_nodes: vec::Vec::new(),
@@ -139,6 +154,19 @@ impl Options {
             read_end_of_doppler_file: Arc::new(AtomicBool::new(true)),
         }
     }
+    pub fn get_image(&self, name: &str) -> Option<ImageInfo> {
+        self.images
+            .iter()
+            .find(|image| image.is_image(name))
+            .map(|image| image.clone())
+    }
+    pub fn get_default_image(&self, node_kind: NodeKind) -> ImageInfo {
+        match self.default_images.get(node_kind) {
+            Some(image) => image,
+            None => panic!("error no default images found!"),
+        }
+        .clone()
+    }
     pub fn global_logger(&self) -> Logger {
         self.global_logger.clone()
     }
@@ -153,6 +181,15 @@ impl Options {
         let next_port = last_port + 1;
         self.ports.push(next_port);
         next_port
+    }
+    pub fn is_known_polar_image(&self, kind: NodeKind, name: &str, tag: &str) -> bool {
+        match self.known_polar_images.get(kind) {
+            Some(images) => images
+                .iter()
+                .find(|image| image.get_name() == name && image.get_tag() == tag)
+                .is_some(),
+            None => false,
+        }
     }
     pub fn save_compose(
         &mut self,
