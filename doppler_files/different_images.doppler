@@ -1,0 +1,22 @@
+BITCOIND IMAGE older polarlightning/bitcoind:22.0
+LND IMAGE 16 polarlightning/lnd:0.16.4-beta
+LND IMAGE 17 polarlightning/lnd:0.17.0-beta
+
+BITCOIND_MINER bd1 10s
+BITCOIND bd2 older
+BITCOIND bd3
+
+LND lnd2 16 PAIR bd1
+LND lnd1 PAIR bd1
+LND lnd3 17 PAIR bd3
+LND lnd4 PAIR bd2
+
+VISUALIZER view
+
+UP
+
+lnd1 OPEN_CHANNEL lnd2 AMT 500000
+lnd2 OPEN_CHANNEL lnd3 AMT 500000
+lnd3 OPEN_CHANNEL lnd1 AMT 500000
+lnd4 OPEN_CHANNEL lnd2 AMT 500000
+lnd3 OPEN_CHANNEL lnd4 AMT 500000

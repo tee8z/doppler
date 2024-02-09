@@ -87,3 +87,85 @@ lnd1 --help
 ### Config options for eclair nodes:
 
 https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf
+
+
+### How to create a custom image:
+We use the same docker images as polar, follow along with their instruction for lightning node implementations:
+[custom lightning node](https://github.com/jamaljsr/polar/blob/master/docs/custom-nodes.md)
+Here we create a custom docker file for bitcoind that should work with polar or doppler:
+1. `git clone `
+2. `cd bitcoind`
+3. Create a new `Dockerfile` at the root of the repo:
+```
+FROM debian:stable-slim
+
+ARG BITCOIN_VERSION
+ENV PATH=/opt/bitcoin-${BITCOIN_VERSION}/bin:$PATH
+
+RUN apt-get update -y \
+  && apt-get install -y curl gosu \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+RUN SYS_ARCH="$(uname -m)" \
+  && curl -SLO https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_VERSION}/bitcoin-${BITCOIN_VERSION}-${SYS_ARCH}-linux-gnu.tar.gz \
+  && tar -xzf *.tar.gz -C /opt \
+  && rm *.tar.gz
+
+RUN curl -SLO https://raw.githubusercontent.com/bitcoin/bitcoin/master/contrib/bitcoin-cli.bash-completion \
+  && mkdir /etc/bash_completion.d \
+  && mv bitcoin-cli.bash-completion /etc/bash_completion.d/ \
+  && curl -SLO https://raw.githubusercontent.com/scop/bash-completion/master/bash_completion \
+  && mv bash_completion /usr/share/bash-completion/
+
+COPY docker-entrypoint.sh /entrypoint.sh
+COPY bashrc /home/bitcoin/.bashrc
+
+RUN chmod a+x /entrypoint.sh
+
+VOLUME ["/home/bitcoin/.bitcoin"]
+
+EXPOSE 18443 18444 28334 28335
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["bitcoind"]
+```
+4. Create a new file named `docker-entrypoint.sh` with the following contents
+```
+#!/bin/sh
+set -e
+
+# containers on linux share file permissions with hosts.
+# assigning the same uid/gid from the host user
+# ensures that the files can be read/write from both sides
+if ! id bitcoin > /dev/null 2>&1; then
+  USERID=${USERID:-1000}
+  GROUPID=${GROUPID:-1000}
+
+  echo "adding user bitcoin ($USERID:$GROUPID)"
+  groupadd -f -g $GROUPID bitcoin
+  useradd -r -u $USERID -g $GROUPID bitcoin
+  chown -R $USERID:$GROUPID /home/bitcoin
+fi
+
+if [ $(echo "$1" | cut -c1) = "-" ]; then
+  echo "$0: assuming arguments for bitcoind"
+
+  set -- bitcoind "$@"
+fi
+
+if [ "$1" = "bitcoind" ] || [ "$1" = "bitcoin-cli" ] || [ "$1" = "bitcoin-tx" ]; then
+  echo "Running as bitcoin user: $@"
+  exec gosu bitcoin "$@"
+fi
+
+echo "$@"
+exec "$@"
+```
+5. 
+```
+docker build -t bitcoind-master .
+```
+Use this doppler file as an example for using a custom image:
+[example doppler](./doppler_files/different_images.doppler)

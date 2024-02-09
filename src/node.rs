@@ -1,4 +1,4 @@
-use crate::{Bitcoind, Options};
+use crate::{Bitcoind, NodeKind, Options};
 use anyhow::Error;
 use rand::Rng;
 use serde_yaml::{from_slice, Value};
@@ -106,6 +106,57 @@ pub trait L1Node: Any {
         amt: i64,
         address: String,
     ) -> Result<(), Error>;
+}
+
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct ImageInfo {
+    tag: String,
+    name: String,
+    is_custom: bool,
+    node_kind: NodeKind
+}
+
+impl ImageInfo {
+    pub fn new(tag: String, name: String, is_custom: bool, node_kind: NodeKind) -> ImageInfo {
+        ImageInfo {
+            tag,
+            name,
+            is_custom,
+            node_kind
+        }
+    }
+    pub fn get_image(&self) -> String {
+        if self.is_custom {
+            self.tag.clone()
+        } else {
+            match self.node_kind {
+                NodeKind::Lnd => {
+                    format!("polarlightning/lnd:{}", self.tag.clone())
+                },
+                NodeKind::Bitcoind | NodeKind::BitcoindMiner => {
+                    format!("polarlightning/bitcoind:{}", self.tag.clone())
+                },
+                NodeKind::Coreln => {
+                    format!("polarlightning/clightning:{}", self.tag.clone())
+                 },
+                NodeKind::Eclair => { 
+                    format!("polarlightning/eclair:{}", self.tag.clone())
+                },
+                NodeKind::Visualizer => {
+                    self.tag.clone()
+                }
+            }
+        }
+    }
+    pub fn is_image(&self, name: &str) -> bool {
+        self.name == name
+    }
+    pub fn get_name(&self) -> String {
+        self.name.clone()
+    }
+    pub fn get_tag(&self) -> String {
+        self.tag.clone()
+    }
 }
 
 #[derive(Default, Debug, Clone)]

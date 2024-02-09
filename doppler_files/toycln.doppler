@@ -1,5 +1,5 @@
 BITCOIND_MINER bd1 10m
-CLN cln1 PAIR bd1
+CORELN cln1 PAIR bd1
 LND lnd1 PAIR bd1
 LND lnd2 PAIR bd1
 UP

@@ -1,4 +1,3 @@
-// defined one bitcoind as a miner and find a block every 10s
 BITCOIND_MINER bd1 10s
 BITCOIND bd2
 BITCOIND bd3

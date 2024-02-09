@@ -9,7 +9,10 @@ mod node_kind;
 mod parser;
 mod visualizer;
 mod workflow;
+mod hash_map_wrapper;
+mod polar_default_images;
 
+pub use hash_map_wrapper::*;
 pub use bitcoind::*;
 pub use cln::*;
 pub use conf_handler::*;
@@ -20,5 +23,5 @@ pub use node::*;
 pub use node_kind::*;
 pub use parser::*;
 pub use visualizer::*;
-pub use visualizer::*;
 pub use workflow::*;
+pub use polar_default_images::*;

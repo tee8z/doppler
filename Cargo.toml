@@ -7,6 +7,7 @@ version = "0.1.0"
 
 [dependencies]
 anyhow = "1.0.71"
+reqwest = { version = "0.11.22",  features = ["blocking", "json"] }
 hex = "0.4.3"
 rust-ini = "0.19"
 log = "0.4.18"

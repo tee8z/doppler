@@ -4,10 +4,11 @@ use std::convert::TryFrom;
 
 use crate::Rule;
 
-#[derive(Debug)]
+#[derive(Debug,Default, Clone, PartialEq, Eq, Hash)]
 pub enum NodeKind {
     Bitcoind,
     BitcoindMiner,
+    #[default]
     Lnd,
     Coreln,
     Eclair,

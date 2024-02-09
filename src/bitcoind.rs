@@ -1,4 +1,4 @@
-use crate::{copy_file, get_absolute_path, run_command, L1Node, MinerTime, Options, NETWORK};
+use crate::{copy_file, get_absolute_path, run_command, L1Node, MinerTime, Options, NETWORK, ImageInfo};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
 use docker_compose_types::{EnvFile, Networks, Ports, Service, Volumes};
@@ -10,8 +10,6 @@ use std::{
     thread::spawn,
     time::Duration,
 };
-
-const BITCOIND_IMAGE: &str = "polarlightning/bitcoind:25.0";
 
 #[derive(Default, Debug, Clone)]
 pub struct Bitcoind {
@@ -35,6 +33,7 @@ pub enum L1Enum {
 }
 
 impl L1Node for Bitcoind {
+    
     fn start_mining(&self, options: &Options) -> Result<()> {
         start_mining(self, options)
     }
@@ -119,11 +118,12 @@ pub fn add_config(options: &Options, name: &str, container_name: &str) -> Result
 pub fn build_bitcoind(
     options: &mut Options,
     name: &str,
+    image: &ImageInfo,
     miner_time: &Option<MinerTime>,
 ) -> Result<()> {
     let bitcoind_conf = get_config(options, name, miner_time).unwrap();
     let bitcoind = Service {
-        image: Some(BITCOIND_IMAGE.to_string()),
+        image: Some(image.get_image()),
         container_name: Some(bitcoind_conf.container_name.clone()),
         ports: Ports::Short(vec![
             format!("{}:{}", options.new_port(), bitcoind_conf.p2pport),
@@ -562,7 +562,7 @@ fn pair_node(
         // -rpcport="3133" -rpcuser="alice" -rpcpassword="hello"
         let rpc_port = format!("-rpcport={}", current_node.get_rpc_port());
         let rpc_user = format!("-rpcuser={}", current_node.get_rpc_username());
-        let rpc_password = format!("-rpcuser={}", current_node.get_rpc_username());
+        let rpc_password = format!("-rpcpassword={}", current_node.get_rpc_password());
 
         let commands = vec![
             "-f",

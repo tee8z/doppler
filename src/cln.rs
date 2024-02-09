@@ -1,6 +1,6 @@
 use crate::{
     copy_file, create_folder, get_absolute_path, run_command, L1Node, L2Node, NodeCommand,
-    NodePair, Options, NETWORK,
+    NodePair, Options, NETWORK, ImageInfo,
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
@@ -15,8 +15,6 @@ use std::{
     time::Duration,
 };
 use uuid::Uuid;
-
-const CLN_IMAGE: &str = "elementsproject/lightningd:v23.05.1";
 
 #[derive(Default, Debug, Clone)]
 pub struct Cln {
@@ -127,7 +125,7 @@ impl L2Node for Cln {
     }
 }
 
-pub fn build_cln(options: &mut Options, name: &str, pair: &NodePair) -> Result<()> {
+pub fn build_cln(options: &mut Options, name: &str, image: &ImageInfo, pair: &NodePair) -> Result<()> {
     let cln_conf = build_and_save_config(options, name, pair).unwrap();
     debug!(
         options.global_logger(),
@@ -140,7 +138,7 @@ pub fn build_cln(options: &mut Options, name: &str, pair: &NodePair) -> Result<(
     let bitcoind = vec![cln_conf.bitcoind_node_container_name.clone()];
     let cln = Service {
         depends_on: DependsOnOptions::Simple(bitcoind),
-        image: Some(CLN_IMAGE.to_string()),
+        image: Some(image.get_image()),
         container_name: Some(cln_conf.container_name.clone()),
         ports: Ports::Short(vec![format!(
             "{}:{}",
