@@ -53,6 +53,7 @@ pub trait L2Node: Any {
         );
         Ok(())
     }
+    //TODO: change to be either miner or faucet
     fn fund_node(&self, options: &Options, miner: &Bitcoind) -> Result<(), Error> {
         let address = self.create_on_chain_address(options)?;
         miner

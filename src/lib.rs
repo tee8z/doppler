@@ -20,5 +20,4 @@ pub use node::*;
 pub use node_kind::*;
 pub use parser::*;
 pub use visualizer::*;
-pub use visualizer::*;
 pub use workflow::*;
