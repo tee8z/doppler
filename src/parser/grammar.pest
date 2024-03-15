@@ -9,6 +9,8 @@ num = @{ ASCII_DIGIT+ }
 
 time_digits = { "s" | "m" | "h" }
 
+network = { "REGTEST" | "MUTINYNET" }
+
 node_kind = { "BITCOIND_MINER" | "BITCOIND" | "LND" | "CORELN" | "ECLAIR" | "VISUALIZER" }
 
 node_def = { node_kind ~ ident }
@@ -18,7 +20,8 @@ node_pair = { node_kind ~ ident ~ "PAIR" ~ (ident ~ num | ident) }
 node_miner = { node_kind ~ ident ~ (num)* ~ time_digits }
 
 skip_conf = { "SKIP_CONF" }
-conf = { node_pair | node_miner | node_def }
+conf = { node_pair | node_miner | node_def | network }
+
 every = { "EVERY" }
 loop = { "LOOP" }
 start  = { ((loop ~ num ~ every ~ num ~ time_digits ) | (loop ~ num) | (loop ~ every ~ num ~ time_digits ))  }

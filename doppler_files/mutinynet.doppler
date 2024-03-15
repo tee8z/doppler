@@ -1,0 +1,26 @@
+// defined one bitcoind as a miner and find a block every 10s
+// bitcoind won't work with mutinynet for now
+// need a way to set connection info for the mutinynet nodes
+// communication when using mutinynet should use the rpc endpoints or rest instead of cli
+// should be able to get viewer working with the mutinynet nodes
+
+NETWORK MUTINYNET
+LND lnd1  
+LND lnd2
+LND lnd3
+
+// need to set connection strings to the nodes and the faucet instead of creating the regtest cluster
+UP
+
+lnd1 OPEN_CHANNEL lnd2 AMT 500000
+lnd2 OPEN_CHANNEL lnd3 AMT 8000000
+lnd3 OPEN_CHANNEL lnd1 AMT 900000
+lnd1 OPEN_CHANNEL lnd2 AMT 299999
+
+// send lightning funds in the same pattern every 50s to make activity
+
+// exchange activity
+LOOP EVERY 50s <TAG>
+  lnd2 SEND_LN lnd3 AMT 90 --amp
+  lnd2 SEND_LN lnd2 AMT 90
+END
