@@ -345,11 +345,11 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 .expect("node")
                 .try_into()
                 .expect("invalid node kind");
-            if kind == NodeKind::Visualizer {
-                return Ok(());
-            }
             let node_name = inner.next().expect("node name").as_str();
-            let image = match inner.next() {
+            if kind == NodeKind::Visualizer {
+                return build_visualizer(options, node_name)
+            }
+            let image: ImageInfo = match inner.next() {
                 Some(image) => get_image(options, kind.clone(), image.as_str()),
                 None => options.get_default_image(kind.clone()),
             };

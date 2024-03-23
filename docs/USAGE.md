@@ -41,6 +41,10 @@ docker logs doppler-<node name>
 ./scripts/reset.sh
 ```
 
+### How to use the visualizer tool
+1) Currently the visualizer requires at least one lnd node in the cluster, that is also the only node that it will be able to operate on, the other it will be able to view in the graph
+2) If it is created successfully, it will be hosted at http://localhost:5100/ , from there you should see all of your nodes and channels created
+
 ### How to test parse grammar
 
 ```
