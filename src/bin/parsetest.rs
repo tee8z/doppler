@@ -5,7 +5,7 @@ use pest::Parser;
 
 fn main() {
     let contents =
-        fs::read_to_string("./doppler_files/toycln.doppler").expect("file read error");
+        fs::read_to_string("./doppler_files/simple_start_stop.doppler").expect("file read error");
     print!("read file content");
     let parsed = DopplerParser::parse(Rule::page, &contents).expect("parse error");
     println!("{:#?}", parsed);

@@ -1,4 +1,4 @@
-use crate::{Bitcoind, NodeKind, Options};
+use crate::{run_command, Bitcoind, NodeKind, Options};
 use anyhow::Error;
 use rand::Rng;
 use serde_yaml::{from_slice, Value};
@@ -6,6 +6,28 @@ use slog::info;
 use std::{any::Any, process::Output};
 
 pub trait L2Node: Any {
+    fn stop(&self, options: &Options) -> Result<(), Error> {
+        let container_name = self.get_container_name();
+        let compose_path = options.compose_path.as_ref().unwrap();
+        let commands = vec![
+            "-f",
+            &compose_path,
+            "stop",
+            &container_name,
+        ];
+        run_command(options, String::from("stop"), commands).map(|_| ())
+    }
+    fn start(&self, options: &Options) -> Result<(), Error> {
+        let container_name = self.get_container_name();
+        let compose_path = options.compose_path.as_ref().unwrap();
+        let commands = vec![
+            "-f",
+            &compose_path,
+            "start",
+            &container_name,
+        ];
+        run_command(options, String::from("start"), commands).map(|_| ())
+    }
     fn get_connection_url(&self) -> String;
     fn get_p2p_port(&self) -> &str;
     fn get_name(&self) -> &str;
@@ -76,6 +98,28 @@ pub trait L2Node: Any {
 }
 
 pub trait L1Node: Any {
+    fn stop(&self, options: &Options) -> Result<(), Error> {
+        let container_name = self.get_container_name();
+        let compose_path = options.compose_path.as_ref().unwrap();
+        let commands = vec![
+            "-f",
+            &compose_path,
+            "stop",
+            &container_name,
+        ];
+        run_command(options, String::from("stop"), commands).map(|_| ())
+    }
+    fn start(&self, options: &Options) -> Result<(), Error> {
+        let container_name = self.get_container_name();
+        let compose_path = options.compose_path.as_ref().unwrap();
+        let commands = vec![
+            "-f",
+            &compose_path,
+            "start",
+            &container_name,
+        ];
+        run_command(options, String::from("start"), commands).map(|_| ())
+    }
     fn start_mining(&self, options: &Options) -> Result<(), Error>;
     fn mine_bitcoin_continously(&self, options: &Options);
     fn mine_bitcoin(&self, options: &Options, num_blocks: i64) -> Result<String, Error>;
@@ -113,7 +157,7 @@ pub struct ImageInfo {
     tag: String,
     name: String,
     is_custom: bool,
-    node_kind: NodeKind
+    node_kind: NodeKind,
 }
 
 impl ImageInfo {
@@ -122,7 +166,7 @@ impl ImageInfo {
             tag,
             name,
             is_custom,
-            node_kind
+            node_kind,
         }
     }
     pub fn get_image(&self) -> String {
@@ -132,19 +176,17 @@ impl ImageInfo {
             match self.node_kind {
                 NodeKind::Lnd => {
                     format!("polarlightning/lnd:{}", self.tag.clone())
-                },
+                }
                 NodeKind::Bitcoind | NodeKind::BitcoindMiner => {
                     format!("polarlightning/bitcoind:{}", self.tag.clone())
-                },
+                }
                 NodeKind::Coreln => {
                     format!("polarlightning/clightning:{}", self.tag.clone())
-                 },
-                NodeKind::Eclair => { 
-                    format!("polarlightning/eclair:{}", self.tag.clone())
-                },
-                NodeKind::Visualizer => {
-                    self.tag.clone()
                 }
+                NodeKind::Eclair => {
+                    format!("polarlightning/eclair:{}", self.tag.clone())
+                }
+                NodeKind::Visualizer => self.tag.clone(),
             }
         }
     }

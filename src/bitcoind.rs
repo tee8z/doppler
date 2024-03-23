@@ -33,7 +33,6 @@ pub enum L1Enum {
 }
 
 impl L1Node for Bitcoind {
-    
     fn start_mining(&self, options: &Options) -> Result<()> {
         start_mining(self, options)
     }

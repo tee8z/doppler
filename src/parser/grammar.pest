@@ -36,12 +36,11 @@ loop_content = {
 up = { "UP" }
 flag = { "--" }
 sub_command = { ( flag ~ ident | num )* }
+ln_node_action_type = { "OPEN_CHANNEL" | "SEND_LN" | "SEND_ON_CHAIN" | "CLOSE_CHANNEL" | "STOP_LN" | "START_LN" }
+ln_node_action = { (image_name ~ ln_node_action_type ~ image_name ~ "AMT" ~ (num ~ sub_command | num )) | (image_name ~ ln_node_action_type ~ ( image_name ~ sub_command | image_name)) | (image_name ~ ln_node_action_type) }
 
-ln_node_action_type = { "OPEN_CHANNEL" | "SEND_LN" | "SEND_ON_CHAIN" | "CLOSE_CHANNEL" }
-ln_node_action = { (image_name ~ ln_node_action_type ~ image_name ~ "AMT" ~ (num ~ sub_command | num )) | (image_name ~ ln_node_action_type ~ ( image_name ~ sub_command | image_name)) }
-
-btc_node_action_type = { "MINE_BLOCKS" }
-btc_node_action = { (image_name ~ btc_node_action_type ~ ( num ~ sub_command | num)) }
+btc_node_action_type = { "MINE_BLOCKS" | "STOP_BTC" | "START_BTC" }
+btc_node_action = { (image_name ~ btc_node_action_type ~ ( num ~ sub_command | num)) | (image_name ~ btc_node_action_type) }
 
 page = { SOI ~ ( EMPTY_LINE | COMMENT |  ( (EMPTY_LINE | (skip_conf ~ NEWLINE) | (EMPTY_LINE | conf ~ NEWLINE)* ~ (up ~ NEWLINE) )  ~ ( EMPTY_LINE | (loop_content* ~ NEWLINE ) | (ln_node_action ~ NEWLINE ) | (btc_node_action ~ NEWLINE ) )*) ) ~ EOI }
 

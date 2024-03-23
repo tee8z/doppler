@@ -346,12 +346,12 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 .try_into()
                 .expect("invalid node kind");
             if kind == NodeKind::Visualizer {
-                return Ok(())
+                return Ok(());
             }
             let node_name = inner.next().expect("node name").as_str();
             let image = match inner.next() {
                 Some(image) => get_image(options, kind.clone(), image.as_str()),
-                None => options.get_default_image(kind.clone())
+                None => options.get_default_image(kind.clone()),
             };
             handle_build_command(options, node_name, kind, &image, None)?;
         }
@@ -396,9 +396,7 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                     let image_name = inner.next().expect("image name").as_str();
                     get_image(options, kind.clone(), image_name)
                 }
-                _  => {
-                    options.get_default_image(kind.clone())
-                }
+                _ => options.get_default_image(kind.clone()),
             };
             let to_pair = inner.next().expect("invalid layer 1 node name").as_str();
             let amount = match inner.peek().is_some() {
@@ -462,7 +460,12 @@ fn handle_image_command(
 ) -> Result<()> {
     let is_known_image = option.is_known_polar_image(kind.clone(), name, tag_or_path);
 
-    let image = ImageInfo::new(tag_or_path.to_owned(), name.to_owned(), !is_known_image, kind);
+    let image = ImageInfo::new(
+        tag_or_path.to_owned(),
+        name.to_owned(),
+        !is_known_image,
+        kind,
+    );
     option.images.push(image);
     Ok(())
 }
@@ -517,6 +520,8 @@ fn handle_ln_action(options: &Options, line: Pair<Rule>) -> Result<()> {
         "SEND_LN" => send_ln(options, &command),
         "SEND_ON_CHAIN" => send_on_chain(options, &command),
         "CLOSE_CHANNEL" => close_channel(options, &command),
+        "STOP_LN" => stop_l2_node(options, &command),
+        "START_LN" => start_l2_node(options, &command),
         _ => {
             error!(
                 options.global_logger(),
@@ -530,11 +535,21 @@ fn handle_ln_action(options: &Options, line: Pair<Rule>) -> Result<()> {
 fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
     let mut line_inner = line.into_inner();
     let (from_node, command_name, to_node, amt) = {
-        let mut next = || line_inner.next().expect("invalid input");
-        let from_node = next().as_str();
-        let command_name = next().as_str();
-        let to_node = next().as_str();
-        let amount_raw = next().as_str();
+        let mut line_inner = line_inner.clone().peekable();
+        let from_node = line_inner.next().expect("invalid input").as_str();
+        let command_name = line_inner.next().expect("invalid input").as_str();
+        if let None = line_inner.peek() {
+            return NodeCommand {
+                name: command_name.to_owned(),
+                from: from_node.to_owned(),
+                to: String::from(""),
+                amt: None,
+                subcommand: None,
+            };
+        }
+
+        let to_node = line_inner.next().expect("invalid input").as_str();
+        let amount_raw = line_inner.next().expect("invalid input").as_str();
         let mut amount = None;
         if !amount_raw.is_empty() {
             amount = Some(amount_raw.parse::<i64>().expect("invalid num"))
@@ -557,6 +572,8 @@ fn handle_btc_action(options: &Options, line: Pair<Rule>) -> Result<()> {
     let command = process_btc_action(line);
     match command.name.as_str() {
         "MINE_BLOCKS" => node_mine_bitcoin(options, command.to.to_owned(), command.amt.unwrap()),
+        "STOP_BTC" => stop_l1_node(options, &command),
+        "START_BTC" => start_l1_node(options, &command),
         _ => {
             error!(
                 options.global_logger(),
@@ -570,11 +587,24 @@ fn handle_btc_action(options: &Options, line: Pair<Rule>) -> Result<()> {
 fn process_btc_action(line: Pair<Rule>) -> NodeCommand {
     let mut line_inner = line.into_inner();
     let (btc_node, command_name, number) = {
-        let mut next = || line_inner.next().expect("invalid input");
+        let mut line_inner = line_inner.clone().peekable();
+        let btc_node = line_inner.next().expect("invalid input").as_str();
+        let command_name = line_inner.next().expect("invalid input").as_str();
+        if let None = line_inner.peek() {
+            return NodeCommand {
+                name: command_name.to_owned(),
+                from: btc_node.to_owned(),
+                to: String::from(""),
+                amt: None,
+                subcommand: None,
+            };
+        }
+
+        let number = line_inner.next().expect("invliad input").as_str().parse::<i64>().expect("invalid num");
         (
-            next().as_str(),
-            next().as_str(),
-            next().as_str().parse::<i64>().expect("invalid num"),
+            btc_node,
+            command_name,
+            number,
         )
     };
 
@@ -604,6 +634,18 @@ fn node_mine_bitcoin(options: &Options, miner_name: String, amt: i64) -> Result<
     Ok(())
 }
 
+fn stop_l1_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
+    let _ = bitcoind.stop(options);
+    Ok(())
+}
+
+fn start_l1_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
+    let _ = bitcoind.start(options);
+    Ok(())
+}
+
 fn open_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     let from = option.get_l2_by_name(node_command.from.as_str())?;
     from.open_channel(option, node_command)
@@ -622,4 +664,14 @@ fn send_on_chain(option: &Options, node_command: &NodeCommand) -> Result<(), Err
 fn close_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     let from = option.get_l2_by_name(node_command.from.as_str())?;
     from.close_channel(option, node_command)
+}
+
+fn stop_l2_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let ln_node = options.get_l2_by_name(&node_command.from)?;
+    ln_node.stop(options)
+}
+
+fn start_l2_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let ln_node = options.get_l2_by_name(&node_command.from)?;
+    ln_node.start(options)
 }
