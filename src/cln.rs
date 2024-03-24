@@ -97,6 +97,9 @@ impl L2Node for Cln {
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         close_channel(self, options, node_command)
     }
+    fn force_close_channel(&self, options: &Options, node_command: &NodeCommand) -> std::result::Result<(), Error> {
+        force_close_channel(self, options, node_command)
+    }
     fn create_invoice(
         &self,
         options: &Options,
@@ -328,7 +331,7 @@ fn get_node_pubkey(node: &Cln, options: &Options) -> Result<String, Error> {
         "--network=regtest",
         "getinfo",
     ];
-    let mut retries = 4;
+    let mut retries = 8;
     let mut output_found = None;
     while retries > 0 {
         let output = run_command(options, "pubkey".to_owned(), commands.clone())?;
@@ -584,6 +587,51 @@ fn close_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> R
         "--network=regtest",
         "close",
         &to_node_channel_id,
+    ];
+    let output = run_command(options, "close channel".to_owned(), commands)?;
+    if output.status.success() {
+        info!(
+            options.global_logger(),
+            "successfully closed channel from {} to {}",
+            node.get_name(),
+            to_node.get_name()
+        );
+    } else {
+        error!(
+            options.global_logger(),
+            "failed to close channel from {} to {}",
+            node.get_name(),
+            to_node.get_name()
+        );
+    }
+    Ok(())
+}
+
+fn force_close_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let compose_path = options.compose_path.as_ref().unwrap();
+    //TODO: find a way to specify which channel to close, right now we just grab a random one for this peer
+    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+    let to_node_channel_id = node.get_peers_short_channel_id(options, node_command)?;
+    if to_node_channel_id.is_empty() {
+        info!(
+            options.global_logger(),
+            "no channels to closed from {} to {}",
+            node.get_name(),
+            to_node.get_name()
+        );
+        return Ok(());
+    }
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        node.get_container_name(),
+        "lightning-cli",
+        "--lightning-dir=/home/clightning",
+        "--network=regtest",
+        "close",
+        &to_node_channel_id,
+        "1"
     ];
     let output = run_command(options, "close channel".to_owned(), commands)?;
     if output.status.success() {

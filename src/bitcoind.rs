@@ -1,4 +1,6 @@
-use crate::{copy_file, get_absolute_path, run_command, L1Node, MinerTime, Options, NETWORK, ImageInfo};
+use crate::{
+    copy_file, get_absolute_path, run_command, ImageInfo, L1Node, MinerTime, Options, NETWORK, NodeCommand,
+};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
 use docker_compose_types::{EnvFile, Networks, Ports, Service, Volumes};
@@ -91,6 +93,14 @@ impl L1Node for Bitcoind {
         address: String,
     ) -> Result<(), Error> {
         mine_to_address(self, options, num_blocks, address)
+    }
+    fn send_to_l2(self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+        let to = options.get_l2_by_name(&node_command.to)?;
+        let address = to.create_on_chain_address(options)?;
+    
+        //default to sending 100,000 sats
+        self.send_to_address(options, 1, node_command.amt.unwrap_or(100000), address)?;
+        Ok(())
     }
     fn send_to_address(
         self,

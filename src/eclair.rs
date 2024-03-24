@@ -91,6 +91,9 @@ impl L2Node for Eclair {
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         close_channel(self, options, node_command)
     }
+    fn force_close_channel(&self, options: &Options, node_command: &NodeCommand) -> std::result::Result<(), Error> {
+        force_close_channel(self, options, node_command)
+    }
     fn create_invoice(
         &self,
         options: &Options,
@@ -483,6 +486,52 @@ fn close_channel(
     }
     Ok(())
 }
+
+fn force_close_channel(
+    node: &Eclair,
+    options: &Options,
+    node_command: &NodeCommand,
+) -> Result<(), Error> {
+    let compose_path = options.compose_path.as_ref().unwrap();
+    //TODO: find a way to specify which channel to close, right now we just grab a random one for this peer
+    let peer_channel_id = format!(
+        "--channelId={}",
+        node.get_peers_channel_id(options, node_command)?
+    );
+    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        "--user",
+        "1000:1000",
+        &node.container_name,
+        "eclair-cli",
+        "-p",
+        &node.api_password,
+        "forceclose",
+        &peer_channel_id,
+    ];
+    let output = run_command(options, "close channel".to_owned(), commands)?;
+    if output.status.success() {
+        info!(
+            options.global_logger(),
+            "successfully closed channel from {} to {}",
+            node.get_name(),
+            to_node.get_name()
+        );
+    } else {
+        error!(
+            options.global_logger(),
+            "failed to close channel from {} to {}",
+            node.get_name(),
+            to_node.get_name()
+        );
+    }
+    Ok(())
+}
+
 fn get_peers_channel_id(
     node: &Eclair,
     options: &Options,

@@ -40,6 +40,7 @@ pub trait L2Node: Any {
     fn open_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn connect(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
+    fn force_close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn get_starting_wallet_balance(&self) -> i64;
     fn create_invoice(
         &self,
@@ -150,6 +151,7 @@ pub trait L1Node: Any {
         amt: i64,
         address: String,
     ) -> Result<(), Error>;
+    fn send_to_l2(self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]

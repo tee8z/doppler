@@ -102,6 +102,9 @@ impl L2Node for Lnd {
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         close_channel(self, options, node_command)
     }
+    fn force_close_channel(&self, options: &Options, node_command: &NodeCommand) -> std::result::Result<(), Error> {
+        force_close_channel(self, options, node_command)
+    }
     fn create_invoice(
         &self,
         options: &Options,
@@ -567,6 +570,50 @@ fn close_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> R
         error!(
             options.global_logger(),
             "failed to close channel from {} to {}",
+            node.get_name(),
+            to_node.get_name()
+        );
+    }
+    Ok(())
+}
+
+fn force_close_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<(), Error> { 
+    //TODO: add a user defined tag to channels to specify which channel to close, right now we just grab a random one for this peer
+    let peer_channel_point = node.get_peers_channel_point(options, node_command)?;
+    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
+    let compose_path = options.compose_path.as_ref().unwrap();
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        "--user",
+        "1000:1000",
+        node.get_container_name(),
+        "lncli",
+        "--lnddir=/home/lnd/.lnd",
+        "--network=regtest",
+        macaroon_path,
+        &rpc_command,
+        "closechannel",
+        "--force",
+        "--chan_point",
+        peer_channel_point.as_ref(),
+    ];
+    let output = run_command(options, "forceclosechannel".to_owned(), commands)?;
+
+    if output.status.success() {
+        info!(
+            options.global_logger(),
+            "successfully force closed channel from {} to {}",
+            node.get_name(),
+            to_node.get_name()
+        );
+    } else {
+        error!(
+            options.global_logger(),
+            "failed to force close channel from {} to {}",
             node.get_name(),
             to_node.get_name()
         );

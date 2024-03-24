@@ -347,7 +347,7 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 .expect("invalid node kind");
             let node_name = inner.next().expect("node name").as_str();
             if kind == NodeKind::Visualizer {
-                return build_visualizer(options, node_name)
+                return build_visualizer(options, node_name);
             }
             let image: ImageInfo = match inner.next() {
                 Some(image) => get_image(options, kind.clone(), image.as_str()),
@@ -520,6 +520,7 @@ fn handle_ln_action(options: &Options, line: Pair<Rule>) -> Result<()> {
         "SEND_LN" => send_ln(options, &command),
         "SEND_ON_CHAIN" => send_on_chain(options, &command),
         "CLOSE_CHANNEL" => close_channel(options, &command),
+        "FORCE_CLOSE_CHANNEL" => force_close_channel(options, &command),
         "STOP_LN" => stop_l2_node(options, &command),
         "START_LN" => start_l2_node(options, &command),
         _ => {
@@ -574,6 +575,7 @@ fn handle_btc_action(options: &Options, line: Pair<Rule>) -> Result<()> {
         "MINE_BLOCKS" => node_mine_bitcoin(options, command.to.to_owned(), command.amt.unwrap()),
         "STOP_BTC" => stop_l1_node(options, &command),
         "START_BTC" => start_l1_node(options, &command),
+        "SEND_COINS" => send_to_l2(options, &command),
         _ => {
             error!(
                 options.global_logger(),
@@ -585,37 +587,41 @@ fn handle_btc_action(options: &Options, line: Pair<Rule>) -> Result<()> {
 }
 
 fn process_btc_action(line: Pair<Rule>) -> NodeCommand {
-    let mut line_inner = line.into_inner();
-    let (btc_node, command_name, number) = {
-        let mut line_inner = line_inner.clone().peekable();
-        let btc_node = line_inner.next().expect("invalid input").as_str();
-        let command_name = line_inner.next().expect("invalid input").as_str();
-        if let None = line_inner.peek() {
-            return NodeCommand {
-                name: command_name.to_owned(),
-                from: btc_node.to_owned(),
-                to: String::from(""),
-                amt: None,
-                subcommand: None,
-            };
+    let line_inner = line.into_inner();
+    let mut line_inner = line_inner.clone().peekable();
+    let btc_node = line_inner.next().expect("invalid input").as_str();
+    let command_name = line_inner.next().expect("invalid input").as_str();
+    if let None = line_inner.peek() {
+        return NodeCommand {
+            name: command_name.to_owned(),
+            from: btc_node.to_owned(),
+            to: String::from(""),
+            amt: None,
+            subcommand: None,
+        };
+    }
+    let val = line_inner.next().expect("invalid input");
+    if val.as_rule() == Rule::image_name {
+        let to = val.as_str();
+        let number = line_inner.next().expect("invalid input").as_str().parse::<i64>().expect("invalid num");
+        let subcommand = line_inner.next().map(|pair| pair.to_string());
+        NodeCommand {
+            name: command_name.to_owned(),
+            from: btc_node.to_owned(),
+            to: to.to_owned(),
+            amt: Some(number),
+            subcommand,
         }
-
-        let number = line_inner.next().expect("invliad input").as_str().parse::<i64>().expect("invalid num");
-        (
-            btc_node,
-            command_name,
-            number,
-        )
-    };
-
-    //TODO: add bitcoind commands that need subcommand options
-    let subcommand = line_inner.next().map(|pair| pair.to_string());
-    NodeCommand {
-        name: command_name.to_owned(),
-        from: "".to_owned(),
-        to: btc_node.to_owned(),
-        amt: Some(number),
-        subcommand,
+    } else {
+        let number = val.as_str().parse::<i64>().expect("invalid num");
+        let subcommand = line_inner.next().map(|pair| pair.to_string());
+        NodeCommand {
+            name: command_name.to_owned(),
+            from: "".to_owned(),
+            to: btc_node.to_owned(),
+            amt: Some(number),
+            subcommand,
+        }
     }
 }
 
@@ -645,6 +651,11 @@ fn start_l1_node(options: &Options, node_command: &NodeCommand) -> Result<(), Er
     let _ = bitcoind.start(options);
     Ok(())
 }
+fn send_to_l2(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
+    let _ = bitcoind.clone().send_to_l2(options, node_command);
+    Ok(())
+}
 
 fn open_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     let from = option.get_l2_by_name(node_command.from.as_str())?;
@@ -664,6 +675,11 @@ fn send_on_chain(option: &Options, node_command: &NodeCommand) -> Result<(), Err
 fn close_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     let from = option.get_l2_by_name(node_command.from.as_str())?;
     from.close_channel(option, node_command)
+}
+
+fn force_close_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let from = option.get_l2_by_name(node_command.from.as_str())?;
+    from.force_close_channel(option, node_command)
 }
 
 fn stop_l2_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
