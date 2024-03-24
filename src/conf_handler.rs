@@ -80,6 +80,13 @@ pub struct Options {
     pub docker_command: String,
     pub loop_count: Arc<AtomicI64>,
     pub read_end_of_doppler_file: Arc<AtomicBool>,
+    pub tags: Vec<Tag>,
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct Tag {
+    pub name: String, //channel/payment_request
+    pub val: String,  //pubkey / payment_request string
 }
 
 #[derive(Default, Debug, Clone)]
@@ -152,6 +159,7 @@ impl Options {
             docker_command: docker_command.to_owned(),
             loop_count: Arc::new(AtomicI64::new(0)),
             read_end_of_doppler_file: Arc::new(AtomicBool::new(true)),
+            tags: vec::Vec::new(),
         }
     }
     pub fn get_image(&self, name: &str) -> Option<ImageInfo> {

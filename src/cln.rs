@@ -1,6 +1,6 @@
 use crate::{
-    copy_file, create_folder, get_absolute_path, run_command, L1Node, L2Node, NodeCommand,
-    NodePair, Options, NETWORK, ImageInfo,
+    copy_file, create_folder, get_absolute_path, run_command, ImageInfo, L1Node, L2Node,
+    NodeCommand, NodePair, Options, NETWORK,
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
@@ -97,7 +97,11 @@ impl L2Node for Cln {
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         close_channel(self, options, node_command)
     }
-    fn force_close_channel(&self, options: &Options, node_command: &NodeCommand) -> std::result::Result<(), Error> {
+    fn force_close_channel(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+    ) -> std::result::Result<(), Error> {
         force_close_channel(self, options, node_command)
     }
     fn create_invoice(
@@ -126,9 +130,33 @@ impl L2Node for Cln {
     ) -> Result<String, Error> {
         pay_address(self, options, node_command, address)
     }
+    fn create_hold_invoice(
+        &self,
+        _option: &Options,
+        _node_command: &NodeCommand,
+        _rhash: String,
+    ) -> Result<String, Error> {
+        // Not implemented yet, needs some more research into their api
+        unimplemented!();
+    }
+    fn settle_hold_invoice(&self, _options: &Options, _preimage: String) -> Result<(), Error> {
+        // Not implemented yet, needs some more research into their api
+        unimplemented!();
+    }
+    fn get_rhash(&self, option: &Options) -> Result<String, Error> {
+        get_rhash(self, option)
+    }
+    fn get_preimage(&self, _option: &Options, _rhash: String) -> Result<String, Error> {
+        unimplemented!();
+    }
 }
 
-pub fn build_cln(options: &mut Options, name: &str, image: &ImageInfo, pair: &NodePair) -> Result<()> {
+pub fn build_cln(
+    options: &mut Options,
+    name: &str,
+    image: &ImageInfo,
+    pair: &NodePair,
+) -> Result<()> {
     let cln_conf = build_and_save_config(options, name, pair).unwrap();
     debug!(
         options.global_logger(),
@@ -607,7 +635,11 @@ fn close_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> R
     Ok(())
 }
 
-fn force_close_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+fn force_close_channel(
+    node: &Cln,
+    options: &Options,
+    node_command: &NodeCommand,
+) -> Result<(), Error> {
     let compose_path = options.compose_path.as_ref().unwrap();
     //TODO: find a way to specify which channel to close, right now we just grab a random one for this peer
     let to_node = options.get_l2_by_name(node_command.to.as_str())?;
@@ -631,7 +663,7 @@ fn force_close_channel(node: &Cln, options: &Options, node_command: &NodeCommand
         "--network=regtest",
         "close",
         &to_node_channel_id,
-        "1"
+        "1",
     ];
     let output = run_command(options, "close channel".to_owned(), commands)?;
     if output.status.success() {
@@ -695,4 +727,32 @@ fn get_peers_short_channel_id(
         }
     }
     Ok(String::from(""))
+}
+
+fn get_rhash(node: &Cln, options: &Options) -> Result<String, Error> {
+    let amt = "any";
+    let memo = node.generate_memo();
+    let compose_path = options.compose_path.as_ref().unwrap();
+    let uuid = Uuid::new_v4();
+    let random_label = uuid.to_string();
+
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        node.get_container_name(),
+        "lightning-cli",
+        "--lightning-dir=/home/clightning",
+        "--network=regtest",
+        "invoice",
+        &amt,
+        &random_label,
+        &memo,
+    ];
+    let output = run_command(options, "invoice".to_owned(), commands)?;
+    let found_rhash: Option<String> = node.get_property("payment_hash", output);
+    if found_rhash.is_none() {
+        error!(options.global_logger(), "no r_hash found");
+    }
+    Ok(found_rhash.unwrap())
 }

@@ -48,7 +48,7 @@ docker logs doppler-<node name>
 ### How to test parse grammar
 
 ```
-RUST_LOG=TRACE cargo run --bin parsetest
+RUST_LOG=TRACE cargo run --bin parsetest -- -f "<path>/<to>/<file.doppler>"
 ```
 
 ### Permissions

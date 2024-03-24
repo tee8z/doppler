@@ -9,23 +9,13 @@ pub trait L2Node: Any {
     fn stop(&self, options: &Options) -> Result<(), Error> {
         let container_name = self.get_container_name();
         let compose_path = options.compose_path.as_ref().unwrap();
-        let commands = vec![
-            "-f",
-            &compose_path,
-            "stop",
-            &container_name,
-        ];
+        let commands = vec!["-f", &compose_path, "stop", &container_name];
         run_command(options, String::from("stop"), commands).map(|_| ())
     }
     fn start(&self, options: &Options) -> Result<(), Error> {
         let container_name = self.get_container_name();
         let compose_path = options.compose_path.as_ref().unwrap();
-        let commands = vec![
-            "-f",
-            &compose_path,
-            "start",
-            &container_name,
-        ];
+        let commands = vec!["-f", &compose_path, "start", &container_name];
         run_command(options, String::from("start"), commands).map(|_| ())
     }
     fn get_connection_url(&self) -> String;
@@ -40,7 +30,13 @@ pub trait L2Node: Any {
     fn open_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn connect(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
-    fn force_close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
+    fn get_rhash(&self, option: &Options) -> Result<String, Error>;
+    fn get_preimage(&self, option: &Options, rhash: String) -> Result<String, Error>;
+    fn force_close_channel(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+    ) -> Result<(), Error>;
     fn get_starting_wallet_balance(&self) -> i64;
     fn create_invoice(
         &self,
@@ -66,6 +62,13 @@ pub trait L2Node: Any {
         self.pay_invoice(options, node_command, invoice)?;
         Ok(())
     }
+    fn create_hold_invoice(
+        &self,
+        option: &Options,
+        node_command: &NodeCommand,
+        rhash: String,
+    ) -> Result<String, Error>;
+    fn settle_hold_invoice(&self, options: &Options, preimage: String) -> Result<(), Error>;
     fn send_on_chain(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         let to_node = options.get_l2_by_name(&node_command.to)?;
         let on_chain_address_from = to_node.create_on_chain_address(options)?;
@@ -102,23 +105,13 @@ pub trait L1Node: Any {
     fn stop(&self, options: &Options) -> Result<(), Error> {
         let container_name = self.get_container_name();
         let compose_path = options.compose_path.as_ref().unwrap();
-        let commands = vec![
-            "-f",
-            &compose_path,
-            "stop",
-            &container_name,
-        ];
+        let commands = vec!["-f", &compose_path, "stop", &container_name];
         run_command(options, String::from("stop"), commands).map(|_| ())
     }
     fn start(&self, options: &Options) -> Result<(), Error> {
         let container_name = self.get_container_name();
         let compose_path = options.compose_path.as_ref().unwrap();
-        let commands = vec![
-            "-f",
-            &compose_path,
-            "start",
-            &container_name,
-        ];
+        let commands = vec!["-f", &compose_path, "start", &container_name];
         run_command(options, String::from("start"), commands).map(|_| ())
     }
     fn start_mining(&self, options: &Options) -> Result<(), Error>;
@@ -210,6 +203,10 @@ pub struct NodeCommand {
     pub to: String,
     pub amt: Option<i64>,
     pub subcommand: Option<String>,
+    // used to coordinate channel or hold invoice
+    pub tag: Option<String>,
+    // timeout in seconds
+    pub timeout: Option<u64>,
 }
 
 #[derive(Debug, Default, Clone)]

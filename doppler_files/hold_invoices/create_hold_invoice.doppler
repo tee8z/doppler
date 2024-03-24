@@ -1,0 +1,2 @@
+SKIP_CONF
+customer SEND_HOLD_LN merchant AMT 4500 TIMEOUT 30s TAG customer_payment

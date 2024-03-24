@@ -65,7 +65,8 @@ fn setup_logger(cli: &Cli) -> Logger {
     log
 }
 
-fn get_doppler_file_path(cli: &Cli) -> Result<String, Error> {
+
+pub fn get_doppler_file_path(cli: &Cli) -> Result<String, Error> {
     let file_path = cli.file.to_string_lossy();
     let full_path = get_absolute_path(&file_path).unwrap();
     Ok(full_path.to_string_lossy().to_string())

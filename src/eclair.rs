@@ -120,6 +120,24 @@ impl L2Node for Eclair {
     ) -> Result<String, Error> {
         pay_address(self, options, node_command, address)
     }
+    fn get_rhash(&self, option: &Options) -> Result<String, Error> {
+        get_rhash(self, option)
+    }
+    fn get_preimage(&self, _option: &Options, _rhash: String) -> Result<String, Error> {
+        unimplemented!();
+    }
+    fn create_hold_invoice(&self, _option: &Options, _node_command: &NodeCommand, _rhash: String) -> Result<String, Error>{
+        // Not implemented yet, needs some more research into their api
+        unimplemented!();
+    }
+    fn settle_hold_invoice(
+        &self,
+        _options: &Options,
+        _preimage: String,
+    ) -> Result<(), Error>{
+        // Not implemented yet, needs some more research into their api
+        unimplemented!();
+    }
 }
 
 pub fn build_eclair(options: &mut Options, name: &str, image: &ImageInfo, pair: &NodePair) -> Result<()> {
@@ -716,4 +734,35 @@ fn pay_address(
     let found_tx_id = from_utf8(&output.stdout)?.trim();
 
     Ok(found_tx_id.to_owned())
+}
+
+fn get_rhash(
+    node: &Eclair,
+    options: &Options,
+) -> Result<String, Error> {
+    let compose_path = options.compose_path.as_ref().unwrap();
+
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        "--user",
+        "1000:1000",
+        &node.container_name,
+        "eclair-cli",
+        "-p",
+        &node.api_password,
+        "createinvoice",
+    ];
+    let output = run_command(options, "get_rhash".to_owned(), commands)?;
+    if !output.status.success() {
+        error!(options.global_logger(), "failed to get rhash");
+        return Ok("".to_owned());
+    }
+    let found_rhash = node.get_property("paymentHash", output);
+    if found_rhash.is_none() {
+        error!(options.global_logger(), "no r_hash found");
+        return Ok("".to_owned());
+    }
+    Ok(found_rhash.unwrap())
 }
