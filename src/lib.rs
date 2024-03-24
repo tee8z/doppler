@@ -11,6 +11,7 @@ mod visualizer;
 mod workflow;
 mod hash_map_wrapper;
 mod polar_default_images;
+mod simple_storage;
 
 pub use hash_map_wrapper::*;
 pub use bitcoind::*;
@@ -25,3 +26,4 @@ pub use parser::*;
 pub use visualizer::*;
 pub use workflow::*;
 pub use polar_default_images::*;
+pub use simple_storage::*;

@@ -1,13 +1,21 @@
 BITCOIND_MINER bd1 10m
-BITCOIND bd2
-BITCOIND bd3
-LND customer PAIR bd1
+
 LND router1 PAIR bd1
-LND router2 PAIR bd1
-LND courier PAIR bd2
-LND router3 PAIR bd3
-LND merchant PAIR bd3
+LND courier PAIR bd1
+LND customer PAIR bd1
+LND merchant PAIR bd1
 VISUALIZER view
 UP
+bd1 SEND_COINS router1 AMT 25000000
+bd1 SEND_COINS customer AMT 5000000
+bd1 MINE_BLOCKS 12
 
+customer OPEN_CHANNEL router1 AMT 500000
+router1 OPEN_CHANNEL merchant AMT 500000
+bd1 MINE_BLOCKS 6
+router1 OPEN_CHANNEL customer AMT 500000
+merchant OPEN_CHANNEL router1 AMT 500000
+bd1 MINE_BLOCKS 10
+courier OPEN_CHANNEL router1 AMT 500000
+router1 OPEN_CHANNEL courier AMT 500000
 bd1 MINE_BLOCKS 10

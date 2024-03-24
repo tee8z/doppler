@@ -553,7 +553,11 @@ fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
                     node_command.to = pair.as_str().to_owned();
                 }
             }
+            Rule::ln_node_action_type => {
+                node_command.name = pair.as_str().to_owned();
+            }
             Rule::ln_amount => {
+                let pair = pair.into_inner();
                 node_command.amt = Some(pair.as_str().parse::<i64>().expect("invalid num"));
             }
             Rule::ln_timeout => {
@@ -730,10 +734,10 @@ fn send_hold_invoice(options: &mut Options, node_command: &NodeCommand) -> Resul
 
     //This will only work with 2 LND node types at the moment
     let payment_request = ln_to_node.create_hold_invoice(options, node_command, rhash.clone())?;
-    options.tags.push(Tag {
+    options.tags.save(Tag {
         name: node_command.tag.clone().unwrap(),
         val: rhash,
-    });
+    })?;
     ln_node.pay_invoice(options, node_command, payment_request)
 }
 
@@ -741,11 +745,7 @@ fn settle_hold_invoice(options: &Options, node_command: &NodeCommand) -> Result<
     let ln_node = options.get_l2_by_name(&node_command.from)?;
     let ln_to_node = options.get_l2_by_name(&node_command.to)?;
     let tag_name = node_command.tag.clone().unwrap();
-    let tag = options
-        .tags
-        .iter()
-        .find(|tag| tag.name == tag_name)
-        .unwrap();
+    let tag = options.tags.get_by_name(tag_name);
     let preimage = ln_to_node.get_preimage(options, tag.val.clone())?;
     //This will only work with 2 LND node types at the moment
     ln_node.settle_hold_invoice(options, preimage)

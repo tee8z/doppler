@@ -3,6 +3,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use conf_parser::processer::FileConf;
 use docker_compose_types::{Compose, ComposeNetworks, MapOrEmpty, Service, Services};
 use indexmap::map::IndexMap;
+use rusqlite::Connection;
 use slog::{debug, error, Logger};
 use std::{
     fs::{create_dir_all, OpenOptions},
@@ -19,7 +20,7 @@ use std::{
 use crate::{
     add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_lnd_nodes, add_visualizer,
     get_latest_polar_images, get_polar_images, Bitcoind, Cln, CloneableHashMap, Eclair, ImageInfo,
-    L1Node, L2Node, Lnd, NodeKind, Visualizer, NETWORK,
+    L1Node, L2Node, Lnd, NodeKind, Visualizer, NETWORK, Tags, new,
 };
 
 #[derive(Subcommand)]
@@ -80,13 +81,7 @@ pub struct Options {
     pub docker_command: String,
     pub loop_count: Arc<AtomicI64>,
     pub read_end_of_doppler_file: Arc<AtomicBool>,
-    pub tags: Vec<Tag>,
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct Tag {
-    pub name: String, //channel/payment_request
-    pub val: String,  //pubkey / payment_request string
+    pub tags: Tags,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -114,6 +109,7 @@ impl Options {
         logger: Logger,
         docker_dash: bool,
         app_sub_commands: Option<AppSubCommands>,
+        connection: Connection
     ) -> Self {
         let starting_port = vec![9089];
         let (aliases, shell_type) = if app_sub_commands.is_some() {
@@ -159,7 +155,7 @@ impl Options {
             docker_command: docker_command.to_owned(),
             loop_count: Arc::new(AtomicI64::new(0)),
             read_end_of_doppler_file: Arc::new(AtomicBool::new(true)),
-            tags: vec::Vec::new(),
+            tags: new(connection)
         }
     }
     pub fn get_image(&self, name: &str) -> Option<ImageInfo> {

@@ -1,3 +1,4 @@
 *
 !Dockerfile.visualizer
 !data/
+doppler.db
