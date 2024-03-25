@@ -1,7 +1,7 @@
 use crate::{
     build_bitcoind, build_cln, build_eclair, build_lnd, build_visualizer,
     load_options_from_compose, run_cluster, DopplerParser, ImageInfo, L1Node, MinerTime,
-    NodeCommand, NodeKind, Options, Rule,
+    NodeCommand, NodeKind, Options, Rule, Tag,
 };
 use anyhow::{Error, Result};
 use pest::{
@@ -345,13 +345,13 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 .expect("node")
                 .try_into()
                 .expect("invalid node kind");
-            if kind == NodeKind::Visualizer {
-                return Ok(())
-            }
             let node_name = inner.next().expect("node name").as_str();
-            let image = match inner.next() {
+            if kind == NodeKind::Visualizer {
+                return build_visualizer(options, node_name);
+            }
+            let image: ImageInfo = match inner.next() {
                 Some(image) => get_image(options, kind.clone(), image.as_str()),
-                None => options.get_default_image(kind.clone())
+                None => options.get_default_image(kind.clone()),
             };
             handle_build_command(options, node_name, kind, &image, None)?;
         }
@@ -396,9 +396,7 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                     let image_name = inner.next().expect("image name").as_str();
                     get_image(options, kind.clone(), image_name)
                 }
-                _  => {
-                    options.get_default_image(kind.clone())
-                }
+                _ => options.get_default_image(kind.clone()),
             };
             let to_pair = inner.next().expect("invalid layer 1 node name").as_str();
             let amount = match inner.peek().is_some() {
@@ -462,7 +460,12 @@ fn handle_image_command(
 ) -> Result<()> {
     let is_known_image = option.is_known_polar_image(kind.clone(), name, tag_or_path);
 
-    let image = ImageInfo::new(tag_or_path.to_owned(), name.to_owned(), !is_known_image, kind);
+    let image = ImageInfo::new(
+        tag_or_path.to_owned(),
+        name.to_owned(),
+        !is_known_image,
+        kind,
+    );
     option.images.push(image);
     Ok(())
 }
@@ -510,13 +513,18 @@ fn handle_up(options: &mut Options) -> Result<(), Error> {
     Ok(())
 }
 
-fn handle_ln_action(options: &Options, line: Pair<Rule>) -> Result<()> {
+fn handle_ln_action(options: &mut Options, line: Pair<Rule>) -> Result<()> {
     let command = process_ln_action(line);
     match command.name.as_str() {
         "OPEN_CHANNEL" => open_channel(options, &command),
         "SEND_LN" => send_ln(options, &command),
         "SEND_ON_CHAIN" => send_on_chain(options, &command),
         "CLOSE_CHANNEL" => close_channel(options, &command),
+        "FORCE_CLOSE_CHANNEL" => force_close_channel(options, &command),
+        "STOP_LN" => stop_l2_node(options, &command),
+        "START_LN" => start_l2_node(options, &command),
+        "SEND_HOLD_LN" => send_hold_invoice(options, &command),
+        "SETTLE_HOLD_LN" => settle_hold_invoice(options, &command),
         _ => {
             error!(
                 options.global_logger(),
@@ -528,35 +536,71 @@ fn handle_ln_action(options: &Options, line: Pair<Rule>) -> Result<()> {
 }
 
 fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
-    let mut line_inner = line.into_inner();
-    let (from_node, command_name, to_node, amt) = {
-        let mut next = || line_inner.next().expect("invalid input");
-        let from_node = next().as_str();
-        let command_name = next().as_str();
-        let to_node = next().as_str();
-        let amount_raw = next().as_str();
-        let mut amount = None;
-        if !amount_raw.is_empty() {
-            amount = Some(amount_raw.parse::<i64>().expect("invalid num"))
-        }
-        (from_node, command_name, to_node, amount)
+    let line_inner = line.into_inner();
+    let mut node_command = NodeCommand {
+        ..Default::default()
     };
+    for pair in line_inner {
+        match pair.as_rule() {
+            Rule::tag => {
+                let inner = pair.into_inner();
+                node_command.tag = Some(inner.as_str().to_owned());
+            }
+            Rule::image_name => {
+                if node_command.from.is_empty() {
+                    node_command.from = pair.as_str().to_owned();
+                } else {
+                    node_command.to = pair.as_str().to_owned();
+                }
+            }
+            Rule::ln_node_action_type => {
+                node_command.name = pair.as_str().to_owned();
+            }
+            Rule::ln_amount => {
+                let pair = pair.into_inner();
+                node_command.amt = Some(pair.as_str().parse::<i64>().expect("invalid num"));
+            }
+            Rule::ln_timeout => {
+                let mut inner = pair.into_inner();
+                let mut time_num = inner
+                    .next()
+                    .expect("invalid time value")
+                    .as_str()
+                    .parse::<u64>()
+                    .expect("invalid time");
+                let time_type = inner
+                    .next()
+                    .expect("invalid time type")
+                    .as_str()
+                    .chars()
+                    .next()
+                    .unwrap_or('\0');
 
-    let subcommand = line_inner.next().map(|pair| pair.to_string());
-
-    NodeCommand {
-        name: command_name.to_owned(),
-        from: from_node.to_owned(),
-        to: to_node.to_owned(),
-        amt,
-        subcommand,
+                // convert to seconds
+                match time_type {
+                    'h' => time_num = time_num * 60 * 60,
+                    'm' => time_num = time_num * 60,
+                    _ => (),
+                }
+                node_command.timeout = Some(time_num)
+            }
+            Rule::sub_command => {
+                node_command.subcommand = Some(pair.as_str().to_owned());
+            }
+            //Ignore any other rules found at this level
+            _ => (),
+        }
     }
+    node_command
 }
 
 fn handle_btc_action(options: &Options, line: Pair<Rule>) -> Result<()> {
     let command = process_btc_action(line);
     match command.name.as_str() {
         "MINE_BLOCKS" => node_mine_bitcoin(options, command.to.to_owned(), command.amt.unwrap()),
+        "STOP_BTC" => stop_l1_node(options, &command),
+        "START_BTC" => start_l1_node(options, &command),
+        "SEND_COINS" => send_to_l2(options, &command),
         _ => {
             error!(
                 options.global_logger(),
@@ -568,24 +612,47 @@ fn handle_btc_action(options: &Options, line: Pair<Rule>) -> Result<()> {
 }
 
 fn process_btc_action(line: Pair<Rule>) -> NodeCommand {
-    let mut line_inner = line.into_inner();
-    let (btc_node, command_name, number) = {
-        let mut next = || line_inner.next().expect("invalid input");
-        (
-            next().as_str(),
-            next().as_str(),
-            next().as_str().parse::<i64>().expect("invalid num"),
-        )
-    };
-
-    //TODO: add bitcoind commands that need subcommand options
-    let subcommand = line_inner.next().map(|pair| pair.to_string());
-    NodeCommand {
-        name: command_name.to_owned(),
-        from: "".to_owned(),
-        to: btc_node.to_owned(),
-        amt: Some(number),
-        subcommand,
+    let line_inner = line.into_inner();
+    let mut line_inner = line_inner.clone().peekable();
+    let btc_node = line_inner.next().expect("invalid input").as_str();
+    let command_name = line_inner.next().expect("invalid input").as_str();
+    if let None = line_inner.peek() {
+        return NodeCommand {
+            name: command_name.to_owned(),
+            from: btc_node.to_owned(),
+            to: String::from(""),
+            ..Default::default()
+        };
+    }
+    let val = line_inner.next().expect("invalid input");
+    if val.as_rule() == Rule::image_name {
+        let to = val.as_str();
+        let number = line_inner
+            .next()
+            .expect("invalid input")
+            .as_str()
+            .parse::<i64>()
+            .expect("invalid num");
+        let subcommand = line_inner.next().map(|pair| pair.to_string());
+        NodeCommand {
+            name: command_name.to_owned(),
+            from: btc_node.to_owned(),
+            to: to.to_owned(),
+            amt: Some(number),
+            subcommand,
+            ..Default::default()
+        }
+    } else {
+        let number = val.as_str().parse::<i64>().expect("invalid num");
+        let subcommand = line_inner.next().map(|pair| pair.to_string());
+        NodeCommand {
+            name: command_name.to_owned(),
+            from: "".to_owned(),
+            to: btc_node.to_owned(),
+            amt: Some(number),
+            subcommand,
+            ..Default::default()
+        }
     }
 }
 
@@ -599,27 +666,87 @@ fn handle_skip_conf(options: &mut Options) -> Result<(), Error> {
 }
 
 fn node_mine_bitcoin(options: &Options, miner_name: String, amt: i64) -> Result<(), Error> {
-    let bitcoind = options.get_bitcoind_by_name(miner_name.as_str())?;
+    let bitcoind = options.get_bitcoind_by_name(&miner_name)?;
     let _ = bitcoind.mine_bitcoin(options, amt);
     Ok(())
 }
 
+fn stop_l1_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
+    let _ = bitcoind.stop(options);
+    Ok(())
+}
+
+fn start_l1_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
+    let _ = bitcoind.start(options);
+    Ok(())
+}
+fn send_to_l2(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
+    let _ = bitcoind.clone().send_to_l2(options, node_command);
+    Ok(())
+}
+
 fn open_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let from = option.get_l2_by_name(node_command.from.as_str())?;
+    let from = option.get_l2_by_name(&node_command.from)?;
     from.open_channel(option, node_command)
 }
 
 fn send_ln(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let from = option.get_l2_by_name(node_command.from.as_str())?;
+    let from = option.get_l2_by_name(&node_command.from)?;
     from.send_ln(option, node_command)
 }
 
 fn send_on_chain(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let from = option.get_l2_by_name(node_command.from.as_str())?;
+    let from = option.get_l2_by_name(&node_command.from)?;
     from.send_on_chain(option, node_command)
 }
 
 fn close_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let from = option.get_l2_by_name(node_command.from.as_str())?;
+    let from = option.get_l2_by_name(&node_command.from)?;
     from.close_channel(option, node_command)
+}
+
+fn force_close_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let from = option.get_l2_by_name(&node_command.from)?;
+    from.force_close_channel(option, node_command)
+}
+
+fn stop_l2_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let ln_node = options.get_l2_by_name(&node_command.from)?;
+    ln_node.stop(options)
+}
+
+fn start_l2_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let ln_node = options.get_l2_by_name(&node_command.from)?;
+    ln_node.start(options)
+}
+
+fn send_hold_invoice(options: &mut Options, node_command: &NodeCommand) -> Result<(), Error> {
+    // 1) get an rHash from node that will pay the hold invoice, that allows them to have the secret (preimage)
+    // which can be handed to the other node to settle the hold invoice
+    // 2) create a hold invoice that has the rhash provided so it doesn't generate a new preimage
+    // 3) done, hold invoice has been created and is inflight
+    let ln_node = options.get_l2_by_name(&node_command.from)?;
+    let ln_to_node = options.get_l2_by_name(&node_command.to)?;
+    let rhash = ln_node.get_rhash(options)?;
+
+    //This will only work with 2 LND node types at the moment
+    let payment_request = ln_to_node.create_hold_invoice(options, node_command, rhash.clone())?;
+    options.tags.save(Tag {
+        name: node_command.tag.clone().unwrap(),
+        val: rhash,
+    })?;
+    ln_node.pay_invoice(options, node_command, payment_request)
+}
+
+fn settle_hold_invoice(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let ln_node = options.get_l2_by_name(&node_command.from)?;
+    let ln_to_node = options.get_l2_by_name(&node_command.to)?;
+    let tag_name = node_command.tag.clone().unwrap();
+    let tag = options.tags.get_by_name(tag_name);
+    let preimage = ln_to_node.get_preimage(options, tag.val.clone())?;
+    //This will only work with 2 LND node types at the moment
+    ln_node.settle_hold_invoice(options, preimage)
 }

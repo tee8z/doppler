@@ -3,7 +3,7 @@ EMPTY_LINE = _{"" ~ NEWLINE | (" ")* ~ NEWLINE}
 
 COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE }
 
-ident = @{ ASCII_ALPHANUMERIC+ }
+ident = @{ (ASCII_ALPHANUMERIC | "_" )+ }
 
 num = @{ ASCII_DIGIT+ }
 
@@ -26,6 +26,8 @@ skip_conf = { "SKIP_CONF" }
 conf = { node_pair | node_image  | node_miner | node_def  }
 every = { "EVERY" }
 loop = { "LOOP" }
+tag = { "TAG" ~ ident }
+
 start  = { ((loop ~ num ~ every ~ num ~ time_digits ) | (loop ~ num) | (loop ~ every ~ num ~ time_digits ))  }
 end = { "END" }
 
@@ -36,12 +38,14 @@ loop_content = {
 up = { "UP" }
 flag = { "--" }
 sub_command = { ( flag ~ ident | num )* }
+ln_timeout = { "TIMEOUT" ~ (num)* ~ time_digits }
+ln_amount = {"AMT" ~ num }
 
-ln_node_action_type = { "OPEN_CHANNEL" | "SEND_LN" | "SEND_ON_CHAIN" | "CLOSE_CHANNEL" }
-ln_node_action = { (image_name ~ ln_node_action_type ~ image_name ~ "AMT" ~ (num ~ sub_command | num )) | (image_name ~ ln_node_action_type ~ ( image_name ~ sub_command | image_name)) }
+ln_node_action_type = { "OPEN_CHANNEL"  | "SEND_LN" | "SEND_HOLD_LN" | "SETTLE_HOLD_LN" | "SEND_ON_CHAIN" | "CLOSE_CHANNEL" | "FORCE_CLOSE_CHANNEL" | "STOP_LN" | "START_LN" }
+ln_node_action = { (image_name ~ ln_node_action_type ~ tag) | (image_name ~ ln_node_action_type ~ image_name ~ (ln_amount ~ (tag | ln_timeout ~ tag | sub_command)) | ln_amount ) | (image_name ~ ln_node_action_type ~ ( image_name ~ tag | image_name ~ sub_command | image_name)) | (image_name ~ ln_node_action_type) }
 
-btc_node_action_type = { "MINE_BLOCKS" }
-btc_node_action = { (image_name ~ btc_node_action_type ~ ( num ~ sub_command | num)) }
+btc_node_action_type = { "MINE_BLOCKS" | "STOP_BTC" | "START_BTC" | "SEND_COINS" }
+btc_node_action = { (image_name ~ btc_node_action_type ~ image_name ~ "AMT" ~ (num ~ sub_command | num )) | (image_name ~ btc_node_action_type ~ ( num ~ sub_command | num)) | (image_name ~ btc_node_action_type) }
 
 page = { SOI ~ ( EMPTY_LINE | COMMENT |  ( (EMPTY_LINE | (skip_conf ~ NEWLINE) | (EMPTY_LINE | conf ~ NEWLINE)* ~ (up ~ NEWLINE) )  ~ ( EMPTY_LINE | (loop_content* ~ NEWLINE ) | (ln_node_action ~ NEWLINE ) | (btc_node_action ~ NEWLINE ) )*) ) ~ EOI }
 

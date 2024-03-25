@@ -22,6 +22,20 @@ The DSL should empower developers to compose a concise script that configures an
 - [x] CLOSE_CHANNEL
 - [X] support multiple node implementations (supports LND, CoreLN, Eclair)
 - [x] add a cluster level UI to see how all the nodes connect (comes from https://github.com/litch/lightning-conformance/tree/master/operator)
+- [x] SETTLE_HOLD_LN -- only works for LND nodes 
+- [x] SEND_HOLD_LN -- only works for LND nodes
+- [x] SEND_COINS --  to send from a btc miner to any of the L2 node types (helpful in making sure there are enough funds for channels to open)
+- [x] FORCE_CLOSE_CHANNEL - forces an L2 node to close a give channel
+- [x] TAG - allows for hodl invoices payment hashes to be stored between doppler files being run, enable a shared state between files (these will be used in the future to enable closing a specific channel with another node instead of just picking one at random)
+- [x] STOP_BTC - stops a BTC container
+- [x] START_BTC - starts a BTC container
+- [x] STOP_LN - stops a LN container
+- [x] START_LN - starts a LN container
+
+### Interesting Simulations
+- Chain of force closures due to an inflight htlc: [force_closures](./doppler_files/force_close/README.md)
+- Executing a successful hodl invoice in lnd nodes: [hodl_invoice](./doppler_files/hold_invoices/README.md)
+- Running with multiple versions of lightning implementations: [different_versions](./doppler_files/different_images/different_images.doppler)
 
 ### Acknowledgments
 * Thank you [polar](https://github.com/jamaljsr/polar) for having such easy docker images to work with

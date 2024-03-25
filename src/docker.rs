@@ -388,8 +388,7 @@ fn connect_l2_nodes(options: &Options) -> Result<(), Error> {
             name: "connect".to_owned(),
             from: from_node.get_name().to_owned(),
             to: to_node.get_name().to_owned(),
-            amt: None,
-            subcommand: None,
+            ..Default::default()
         };
         from_node.connect(options, node_command).unwrap_or_default();
     });

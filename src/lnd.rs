@@ -1,6 +1,6 @@
 use crate::{
-    copy_file, get_absolute_path, run_command, L1Node, L2Node, NodeCommand, NodePair, Options,
-    NETWORK, ImageInfo,
+    copy_file, get_absolute_path, run_command, ImageInfo, L1Node, L2Node, NodeCommand, NodePair,
+    Options, NETWORK,
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
@@ -102,6 +102,13 @@ impl L2Node for Lnd {
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         close_channel(self, options, node_command)
     }
+    fn force_close_channel(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+    ) -> std::result::Result<(), Error> {
+        force_close_channel(self, options, node_command)
+    }
     fn create_invoice(
         &self,
         options: &Options,
@@ -128,9 +135,35 @@ impl L2Node for Lnd {
     ) -> Result<String, Error> {
         pay_address(self, options, node_command, address)
     }
+    fn get_rhash(&self, option: &Options) -> Result<String, Error> {
+        get_rhash(self, option)
+    }
+    fn get_preimage(&self, option: &Options, rhash: String) -> Result<String, Error> {
+        get_preimage(self, option, rhash)
+    }
+    fn create_hold_invoice(
+        &self,
+        option: &Options,
+        node_command: &NodeCommand,
+        rhash: String,
+    ) -> Result<String, Error> {
+        create_hold_invoice(self, option, node_command, rhash)
+    }
+    fn settle_hold_invoice(
+        &self,
+        options: &Options,
+        preimage: String,
+    ) -> Result<(), Error> {
+        settle_hold_invoice(self, options, &preimage)
+    }
 }
 
-pub fn build_lnd(options: &mut Options, name: &str, image: &ImageInfo, pair: &NodePair) -> Result<()> {
+pub fn build_lnd(
+    options: &mut Options,
+    name: &str,
+    image: &ImageInfo,
+    pair: &NodePair,
+) -> Result<()> {
     let mut lnd_conf = build_and_save_config(options, name, image, pair).unwrap();
     debug!(
         options.global_logger(),
@@ -171,7 +204,12 @@ pub fn build_lnd(options: &mut Options, name: &str, image: &ImageInfo, pair: &No
     Ok(())
 }
 
-fn build_and_save_config(options: &Options, name: &str, _image: &ImageInfo, pair: &NodePair) -> Result<Lnd, Error> {
+fn build_and_save_config(
+    options: &Options,
+    name: &str,
+    _image: &ImageInfo,
+    pair: &NodePair,
+) -> Result<Lnd, Error> {
     if options.bitcoinds.is_empty() {
         return Err(anyhow!(
             "bitcoind nodes need to be defined before lnd nodes can be setup"
@@ -532,7 +570,7 @@ fn connect(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<
 }
 
 fn close_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    //TODO: find a way to specify which channel to close, right now we just grab a random one for this peer
+    //TODO: add a user defined tag to channels to specify which channel to close, right now we just grab a random one for this peer
     let peer_channel_point = node.get_peers_channel_point(options, node_command)?;
     let to_node = options.get_l2_by_name(node_command.to.as_str())?;
     let rpc_command = node.get_rpc_server_command();
@@ -567,6 +605,54 @@ fn close_channel(node: &Lnd, options: &Options, node_command: &NodeCommand) -> R
         error!(
             options.global_logger(),
             "failed to close channel from {} to {}",
+            node.get_name(),
+            to_node.get_name()
+        );
+    }
+    Ok(())
+}
+
+fn force_close_channel(
+    node: &Lnd,
+    options: &Options,
+    node_command: &NodeCommand,
+) -> Result<(), Error> {
+    //TODO: add a user defined tag to channels to specify which channel to close, right now we just grab a random one for this peer
+    let peer_channel_point = node.get_peers_channel_point(options, node_command)?;
+    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
+    let compose_path = options.compose_path.as_ref().unwrap();
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        "--user",
+        "1000:1000",
+        node.get_container_name(),
+        "lncli",
+        "--lnddir=/home/lnd/.lnd",
+        "--network=regtest",
+        macaroon_path,
+        &rpc_command,
+        "closechannel",
+        "--force",
+        "--chan_point",
+        peer_channel_point.as_ref(),
+    ];
+    let output = run_command(options, "forceclosechannel".to_owned(), commands)?;
+
+    if output.status.success() {
+        info!(
+            options.global_logger(),
+            "successfully force closed channel from {} to {}",
+            node.get_name(),
+            to_node.get_name()
+        );
+    } else {
+        error!(
+            options.global_logger(),
+            "failed to force close channel from {} to {}",
             node.get_name(),
             to_node.get_name()
         );
@@ -655,7 +741,7 @@ fn pay_invoice(
     let macaroon_path = node.get_macaroon_path();
     let compose_path = options.compose_path.as_ref().unwrap();
 
-    let commands = vec![
+    let mut commands = vec![
         "-f",
         compose_path,
         "exec",
@@ -668,9 +754,20 @@ fn pay_invoice(
         macaroon_path,
         &rpc_command,
         "payinvoice",
-        "-f",
+        "--pay_req",
         &payment_request,
+        "-f",
     ];
+
+    //This is an odd trick to get around lifetime issues
+    let mut time_strings = Vec::new();
+    if let Some(timeout) = node_command.timeout {
+        commands.push("--timeout");
+        let time_str = format!("{}s", timeout.clone());
+        time_strings.push(time_str);
+        let time_ref = time_strings.last().unwrap();
+        commands.push(time_ref);
+    }
     let output = run_command(options, "payinvoice".to_owned(), commands)?;
     if !output.status.success() {
         error!(
@@ -735,4 +832,137 @@ fn get_admin_macaroon(node: &Lnd) -> Result<String, Error> {
     file.read_to_end(&mut buffer)?;
     let mac_as_hex = hex::encode(buffer);
     Ok(mac_as_hex)
+}
+
+fn get_rhash(node: &Lnd, options: &Options) -> Result<String, Error> {
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
+    let compose_path = options.compose_path.as_ref().unwrap();
+
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        "--user",
+        "1000:1000",
+        node.get_container_name(),
+        "lncli",
+        "--lnddir=/home/lnd/.lnd",
+        "--network=regtest",
+        macaroon_path,
+        &rpc_command,
+        "addinvoice",
+    ];
+    let output = run_command(options, "rhash".to_owned(), commands)?;
+    let found_rhash: Option<String> = node.get_property("r_hash", output);
+    if found_rhash.is_none() {
+        error!(options.global_logger(), "no r_hash found");
+        return Ok("".to_owned());
+    }
+    Ok(found_rhash.unwrap())
+}
+
+fn get_preimage(node: &Lnd, options: &Options, rhash: String) -> Result<String, Error> {
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
+    let compose_path = options.compose_path.as_ref().unwrap();
+
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        "--user",
+        "1000:1000",
+        node.get_container_name(),
+        "lncli",
+        "--lnddir=/home/lnd/.lnd",
+        "--network=regtest",
+        macaroon_path,
+        &rpc_command,
+        "lookupinvoice",
+        &rhash
+    ];
+    let output = run_command(options, "rpreimage".to_owned(), commands)?;
+    let found_preimage: Option<String> = node.get_property("r_preimage", output);
+    if found_preimage.is_none() {
+        error!(options.global_logger(), "no preimage found");
+        return Ok("".to_owned());
+    }
+    Ok(found_preimage.unwrap())
+}
+
+fn create_hold_invoice(
+    node: &Lnd,
+    options: &Options,
+    node_command: &NodeCommand,
+    rhash: String,
+) -> Result<String, Error> {
+    let amt = node_command.amt.unwrap_or(1000).to_string();
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
+    let compose_path = options.compose_path.as_ref().unwrap();
+
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        "--user",
+        "1000:1000",
+        node.get_container_name(),
+        "lncli",
+        "--lnddir=/home/lnd/.lnd",
+        "--network=regtest",
+        macaroon_path,
+        &rpc_command,
+        "addholdinvoice",
+        &rhash,
+        &amt,
+    ];
+    let output = run_command(options, "addholdinvoice".to_owned(), commands)?;
+    let found_payment_request: Option<String> = node.get_property("payment_request", output);
+    if found_payment_request.is_none() {
+        error!(options.global_logger(), "no payment_request found");
+        return Ok("".to_owned());
+    }
+    Ok(found_payment_request.unwrap())
+}
+
+fn settle_hold_invoice(
+    node: &Lnd,
+    options: &Options,
+    preimage: &String
+) -> Result<(), Error> {
+
+    let rpc_command = node.get_rpc_server_command();
+    let macaroon_path = node.get_macaroon_path();
+    let compose_path = options.compose_path.as_ref().unwrap();
+
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        "--user",
+        "1000:1000",
+        node.get_container_name(),
+        "lncli",
+        "--lnddir=/home/lnd/.lnd",
+        "--network=regtest",
+        macaroon_path,
+        &rpc_command,
+        "settleinvoice",
+        preimage
+    ];
+    let output = run_command(options, "settleinvoice".to_owned(), commands)?;
+    if output.status.success() {
+        info!(
+            options.global_logger(),
+            "successfully settled invoice"
+        );
+    } else {
+        error!(
+            options.global_logger(),
+            "failed to settle invoice",
+        );
+    }
+    Ok(())
 }

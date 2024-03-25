@@ -1,4 +1,4 @@
-use crate::{Bitcoind, NodeKind, Options};
+use crate::{run_command, Bitcoind, NodeKind, Options};
 use anyhow::Error;
 use rand::Rng;
 use serde_yaml::{from_slice, Value};
@@ -6,6 +6,18 @@ use slog::info;
 use std::{any::Any, process::Output};
 
 pub trait L2Node: Any {
+    fn stop(&self, options: &Options) -> Result<(), Error> {
+        let container_name = self.get_container_name();
+        let compose_path = options.compose_path.as_ref().unwrap();
+        let commands = vec!["-f", &compose_path, "stop", &container_name];
+        run_command(options, String::from("stop"), commands).map(|_| ())
+    }
+    fn start(&self, options: &Options) -> Result<(), Error> {
+        let container_name = self.get_container_name();
+        let compose_path = options.compose_path.as_ref().unwrap();
+        let commands = vec!["-f", &compose_path, "start", &container_name];
+        run_command(options, String::from("start"), commands).map(|_| ())
+    }
     fn get_connection_url(&self) -> String;
     fn get_p2p_port(&self) -> &str;
     fn get_name(&self) -> &str;
@@ -18,6 +30,13 @@ pub trait L2Node: Any {
     fn open_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn connect(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
+    fn get_rhash(&self, option: &Options) -> Result<String, Error>;
+    fn get_preimage(&self, option: &Options, rhash: String) -> Result<String, Error>;
+    fn force_close_channel(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+    ) -> Result<(), Error>;
     fn get_starting_wallet_balance(&self) -> i64;
     fn create_invoice(
         &self,
@@ -43,6 +62,13 @@ pub trait L2Node: Any {
         self.pay_invoice(options, node_command, invoice)?;
         Ok(())
     }
+    fn create_hold_invoice(
+        &self,
+        option: &Options,
+        node_command: &NodeCommand,
+        rhash: String,
+    ) -> Result<String, Error>;
+    fn settle_hold_invoice(&self, options: &Options, preimage: String) -> Result<(), Error>;
     fn send_on_chain(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         let to_node = options.get_l2_by_name(&node_command.to)?;
         let on_chain_address_from = to_node.create_on_chain_address(options)?;
@@ -76,6 +102,18 @@ pub trait L2Node: Any {
 }
 
 pub trait L1Node: Any {
+    fn stop(&self, options: &Options) -> Result<(), Error> {
+        let container_name = self.get_container_name();
+        let compose_path = options.compose_path.as_ref().unwrap();
+        let commands = vec!["-f", &compose_path, "stop", &container_name];
+        run_command(options, String::from("stop"), commands).map(|_| ())
+    }
+    fn start(&self, options: &Options) -> Result<(), Error> {
+        let container_name = self.get_container_name();
+        let compose_path = options.compose_path.as_ref().unwrap();
+        let commands = vec!["-f", &compose_path, "start", &container_name];
+        run_command(options, String::from("start"), commands).map(|_| ())
+    }
     fn start_mining(&self, options: &Options) -> Result<(), Error>;
     fn mine_bitcoin_continously(&self, options: &Options);
     fn mine_bitcoin(&self, options: &Options, num_blocks: i64) -> Result<String, Error>;
@@ -106,6 +144,7 @@ pub trait L1Node: Any {
         amt: i64,
         address: String,
     ) -> Result<(), Error>;
+    fn send_to_l2(self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]
@@ -113,7 +152,7 @@ pub struct ImageInfo {
     tag: String,
     name: String,
     is_custom: bool,
-    node_kind: NodeKind
+    node_kind: NodeKind,
 }
 
 impl ImageInfo {
@@ -122,7 +161,7 @@ impl ImageInfo {
             tag,
             name,
             is_custom,
-            node_kind
+            node_kind,
         }
     }
     pub fn get_image(&self) -> String {
@@ -132,19 +171,17 @@ impl ImageInfo {
             match self.node_kind {
                 NodeKind::Lnd => {
                     format!("polarlightning/lnd:{}", self.tag.clone())
-                },
+                }
                 NodeKind::Bitcoind | NodeKind::BitcoindMiner => {
                     format!("polarlightning/bitcoind:{}", self.tag.clone())
-                },
+                }
                 NodeKind::Coreln => {
                     format!("polarlightning/clightning:{}", self.tag.clone())
-                 },
-                NodeKind::Eclair => { 
-                    format!("polarlightning/eclair:{}", self.tag.clone())
-                },
-                NodeKind::Visualizer => {
-                    self.tag.clone()
                 }
+                NodeKind::Eclair => {
+                    format!("polarlightning/eclair:{}", self.tag.clone())
+                }
+                NodeKind::Visualizer => self.tag.clone(),
             }
         }
     }
@@ -166,6 +203,10 @@ pub struct NodeCommand {
     pub to: String,
     pub amt: Option<i64>,
     pub subcommand: Option<String>,
+    // used to coordinate channel or hold invoice
+    pub tag: Option<String>,
+    // timeout in seconds
+    pub timeout: Option<u64>,
 }
 
 #[derive(Debug, Default, Clone)]
