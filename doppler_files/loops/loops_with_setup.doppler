@@ -6,6 +6,10 @@ LND lnd1 PAIR bd1
 LND lnd2 PAIR bd1
 LND lnd3 PAIR bd1
 UP
+bd1 SEND_COINS lnd1 AMT 50000000
+bd1 SEND_COINS lnd2 AMT 50000000
+bd1 SEND_COINS lnd3 AMT 50000000
+bd1 MINE_BLOCKS 12
 
 // burst open 4 channels 2 times with 20s wait between runs
 LOOP 2 EVERY 20s

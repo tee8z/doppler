@@ -1,6 +1,0 @@
-SKIP_CONF
-// This will cause a force close channel from lnd1 to lnd2 due to inflight htlc
-lnd1 SEND_LN_HOLD lnd3 AMT 10
-lnd3 STOP_LN
-lnd2 FORCE_CLOSE_CHANNEL lnd3
-bd1 MINE_BLOCKS 1
