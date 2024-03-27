@@ -18,9 +18,7 @@ use std::{
 };
 
 use crate::{
-    add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_lnd_nodes, add_visualizer,
-    get_latest_polar_images, get_polar_images, Bitcoind, Cln, CloneableHashMap, Eclair, ImageInfo,
-    L1Node, L2Node, Lnd, NodeKind, Visualizer, NETWORK, Tags, new,
+    add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_lnd_nodes, add_visualizer, get_latest_polar_images, get_polar_images, new, Bitcoind, Cln, CloneableHashMap, Eclair, ImageInfo, L1Node, L2Node, Lnd, NodeKind, Tags, Visualizer, NETWORK
 };
 
 #[derive(Subcommand)]
