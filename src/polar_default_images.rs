@@ -106,7 +106,12 @@ pub fn get_polar_images() -> Result<CloneableHashMap<NodeKind, Vec<ImageInfo>>, 
             .iter()
             .enumerate()
             .map(|(index, version)| {
-                ImageInfo::new(version.to_owned(), format!("*_lnd-{}", index), false, NodeKind::Lnd)
+                ImageInfo::new(
+                    version.to_owned(),
+                    format!("*_lnd-{}", index),
+                    false,
+                    NodeKind::Lnd,
+                )
             })
             .collect();
         hash_map.insert(NodeKind::Lnd, lnd_versions);
@@ -118,7 +123,12 @@ pub fn get_polar_images() -> Result<CloneableHashMap<NodeKind, Vec<ImageInfo>>, 
             .iter()
             .enumerate()
             .map(|(index, version)| {
-                ImageInfo::new(version.to_owned(), format!("*_clightning-{}", index), false, NodeKind::Coreln)
+                ImageInfo::new(
+                    version.to_owned(),
+                    format!("*_clightning-{}", index),
+                    false,
+                    NodeKind::Coreln,
+                )
             })
             .collect();
         hash_map.insert(NodeKind::Coreln, c_lightning_versions);
@@ -130,7 +140,12 @@ pub fn get_polar_images() -> Result<CloneableHashMap<NodeKind, Vec<ImageInfo>>, 
             .iter()
             .enumerate()
             .map(|(index, version)| {
-                ImageInfo::new(version.to_owned(), format!("*_eclair-{}", index), false, NodeKind::Eclair)
+                ImageInfo::new(
+                    version.to_owned(),
+                    format!("*_eclair-{}", index),
+                    false,
+                    NodeKind::Eclair,
+                )
             })
             .collect();
 
@@ -142,7 +157,12 @@ pub fn get_polar_images() -> Result<CloneableHashMap<NodeKind, Vec<ImageInfo>>, 
             .iter()
             .enumerate()
             .map(|(index, version)| {
-                ImageInfo::new(version.to_owned(), format!("*_bitcoind-{}", index), false, NodeKind::Bitcoind)
+                ImageInfo::new(
+                    version.to_owned(),
+                    format!("*_bitcoind-{}", index),
+                    false,
+                    NodeKind::Bitcoind,
+                )
             })
             .collect();
 

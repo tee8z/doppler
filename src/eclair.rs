@@ -12,8 +12,8 @@ use std::{
 };
 
 use crate::{
-    copy_file, create_folder, get_absolute_path, restart_service, run_command, L1Node, L2Node,
-    NodeCommand, NodePair, Options, NETWORK, ImageInfo,
+    copy_file, create_folder, get_absolute_path, restart_service, run_command, ImageInfo, L1Node,
+    L2Node, NodeCommand, NodePair, Options, NETWORK,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -91,7 +91,11 @@ impl L2Node for Eclair {
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         close_channel(self, options, node_command)
     }
-    fn force_close_channel(&self, options: &Options, node_command: &NodeCommand) -> std::result::Result<(), Error> {
+    fn force_close_channel(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+    ) -> std::result::Result<(), Error> {
         force_close_channel(self, options, node_command)
     }
     fn create_invoice(
@@ -126,21 +130,27 @@ impl L2Node for Eclair {
     fn get_preimage(&self, _option: &Options, _rhash: String) -> Result<String, Error> {
         unimplemented!();
     }
-    fn create_hold_invoice(&self, _option: &Options, _node_command: &NodeCommand, _rhash: String) -> Result<String, Error>{
+    fn create_hold_invoice(
+        &self,
+        _option: &Options,
+        _node_command: &NodeCommand,
+        _rhash: String,
+    ) -> Result<String, Error> {
         // Not implemented yet, needs some more research into their api
         unimplemented!();
     }
-    fn settle_hold_invoice(
-        &self,
-        _options: &Options,
-        _preimage: String,
-    ) -> Result<(), Error>{
+    fn settle_hold_invoice(&self, _options: &Options, _preimage: String) -> Result<(), Error> {
         // Not implemented yet, needs some more research into their api
         unimplemented!();
     }
 }
 
-pub fn build_eclair(options: &mut Options, name: &str, image: &ImageInfo, pair: &NodePair) -> Result<()> {
+pub fn build_eclair(
+    options: &mut Options,
+    name: &str,
+    image: &ImageInfo,
+    pair: &NodePair,
+) -> Result<()> {
     let mut eclair_conf = build_and_save_config(options, name, pair).unwrap();
     debug!(
         options.global_logger(),
@@ -736,10 +746,7 @@ fn pay_address(
     Ok(found_tx_id.to_owned())
 }
 
-fn get_rhash(
-    node: &Eclair,
-    options: &Options,
-) -> Result<String, Error> {
+fn get_rhash(node: &Eclair, options: &Options) -> Result<String, Error> {
     let compose_path = options.compose_path.as_ref().unwrap();
 
     let commands = vec![
