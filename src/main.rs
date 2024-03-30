@@ -1,5 +1,5 @@
 use clap::{arg, command, Parser};
-use doppler::{get_absolute_path, run_workflow_until_stop, AppSubCommands, Options, create_db};
+use doppler::{create_db, get_absolute_path, run_workflow_until_stop, AppSubCommands, Options};
 use slog::{debug, info, o, Drain, Level, Logger};
 use std::{env, fs, io::Error, path::PathBuf};
 
@@ -18,8 +18,12 @@ pub struct Cli {
     docker_dash: bool,
 
     // Path to doppler.db, stores tags
-    #[arg(short,long, default_value="./doppler.db")]
+    #[arg(short, long, default_value = "./doppler.db")]
     storage_path: String,
+
+    /// Set communication with LND to be REST instead of CLI
+    #[arg(short, long)]
+    rest: bool,
 
     #[command(subcommand)]
     app_sub_commands: Option<AppSubCommands>,
@@ -34,7 +38,13 @@ fn main() -> Result<(), Error> {
     let contents = fs::read_to_string(doppler_file_path).expect("file read error");
     debug!(logger, "doppler.db location: {}", cli.storage_path);
     let conn = create_db(cli.storage_path).expect("failed to create doppler.db file");
-    let mut options = Options::new(logger.clone(), cli.docker_dash, cli.app_sub_commands, conn);
+    let mut options = Options::new(
+        logger.clone(),
+        cli.docker_dash,
+        cli.app_sub_commands,
+        conn,
+        cli.rest,
+    );
     run_workflow_until_stop(&mut options, contents)?;
     info!(logger, "successfully cleaned up processes, shutting down");
     Ok(())
@@ -70,7 +80,6 @@ fn setup_logger(cli: &Cli) -> Logger {
     let log = slog::Logger::root(drain, o!("version" => "0.5"));
     log
 }
-
 
 pub fn get_doppler_file_path(cli: &Cli) -> Result<String, Error> {
     let file_path = cli.file.to_string_lossy();
