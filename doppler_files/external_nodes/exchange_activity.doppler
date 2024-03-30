@@ -1,0 +1,9 @@
+SKIP_CONF
+
+LOOP EVERY 30m
+    exchange SEND_LN customer AMT 10
+END
+
+LOOP EVERY 20s
+    exchange SEND_LN merchant AMT 100
+END

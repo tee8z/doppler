@@ -18,9 +18,10 @@ use std::{
 };
 
 use crate::{
-    add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_lnd_nodes, add_visualizer,
-    get_latest_polar_images, get_polar_images, new, Bitcoind, Cln, CloneableHashMap, Eclair,
-    ImageInfo, L1Node, L2Node, Lnd, NodeKind, Tags, Visualizer, NETWORK,
+    add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_external_lnd_nodes, add_lnd_nodes,
+    add_visualizer, get_latest_polar_images, get_polar_images, new, update_bash_alias_external,
+    Bitcoind, Cln, CloneableHashMap, Eclair, ImageInfo, L1Node, L2Node, Lnd, NodeKind, Tag, Tags,
+    Visualizer, NETWORK,
 };
 
 #[derive(Subcommand)]
@@ -58,7 +59,6 @@ impl std::fmt::Display for ShellType {
     }
 }
 
-//TODO: make l2 nodes private
 #[derive(Clone)]
 pub struct Options {
     default_images: CloneableHashMap<NodeKind, ImageInfo>,
@@ -81,8 +81,19 @@ pub struct Options {
     pub docker_command: String,
     pub loop_count: Arc<AtomicI64>,
     pub read_end_of_doppler_file: Arc<AtomicBool>,
-    pub tags: Tags,
+    pub tags: Arc<Mutex<Tags>>,
     pub rest: bool,
+    pub external_nodes_path: Option<String>,
+    pub external_nodes: Option<Vec<ExternalNode>>,
+}
+
+#[derive(Clone)]
+pub struct ExternalNode {
+    pub node_alias: String,
+    pub macaroon_path: String,
+    pub api_endpoint: String,
+    pub tls_cert_path: String,
+    pub network: String,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -111,7 +122,8 @@ impl Options {
         docker_dash: bool,
         app_sub_commands: Option<AppSubCommands>,
         connection: Connection,
-        rest: bool,
+        mut rest: bool,
+        external_nodes_path: Option<String>,
     ) -> Self {
         let starting_port = vec![9089];
         let (aliases, shell_type) = if app_sub_commands.is_some() {
@@ -137,6 +149,9 @@ impl Options {
             Ok(images) => images,
             Err(err) => panic!("error pulling down images: {}", err),
         };
+        if external_nodes_path.is_some() {
+            rest = true;
+        }
         Self {
             default_images: latest_polar_images,
             known_polar_images: all_polar_images,
@@ -158,8 +173,10 @@ impl Options {
             docker_command: docker_command.to_owned(),
             loop_count: Arc::new(AtomicI64::new(0)),
             read_end_of_doppler_file: Arc::new(AtomicBool::new(true)),
-            tags: new(connection),
+            tags: Arc::new(Mutex::new(new(connection))),
             rest: rest,
+            external_nodes_path: external_nodes_path,
+            external_nodes: None,
         }
     }
     pub fn get_image(&self, name: &str) -> Option<ImageInfo> {
@@ -276,6 +293,41 @@ impl Options {
         self.services = inner_index_map;
         Ok(())
     }
+
+    pub fn load_external_nodes(&mut self, external_nodes_file: &str) -> Result<(), Error> {
+        let target_file = std::path::Path::new(external_nodes_file);
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(target_file)
+            .map_err(|e| {
+                error!(
+                    self.global_logger(),
+                    "Failed to open external nodes file.: {}", e
+                );
+                io::Error::new(ErrorKind::NotFound, e)
+            })?;
+        let mut external_nodes: Vec<ExternalNode> = vec![];
+        let conf = conf_parser::processer::read_to_file_conf_mut(&file)?;
+        for node in conf.sections.clone() {
+            if node.0 == "*placeholder*" {
+                continue;
+            }
+            external_nodes.push(ExternalNode {
+                node_alias: node.0,
+                macaroon_path: node.1.get_property("ADMIN_MACAROON_PATH"),
+                api_endpoint: node.1.get_property("API_ENDPOINT"),
+                tls_cert_path: node.1.get_property("TLS_CERT_PATH"),
+                network: node.1.get_property("NETWORK"),
+            })
+        }
+        self.external_nodes = Some(external_nodes);
+        if self.aliases {
+            update_bash_alias_external(self)?;
+        }
+        Ok(())
+    }
+
     pub fn get_l2_by_name(&self, name: &str) -> Result<Box<dyn L2Node>, Error> {
         let lnd = self.lnd_nodes.iter().find(|node| node.get_name() == name);
         if lnd.is_none() {
@@ -339,7 +391,11 @@ impl Options {
         Ok(())
     }
     pub fn load_lnds(&mut self) -> Result<(), Error> {
-        add_lnd_nodes(self)
+        if let Some(_) = self.external_nodes.clone() {
+            add_external_lnd_nodes(self)
+        } else {
+            add_lnd_nodes(self)
+        }
     }
     pub fn load_eclairs(&mut self) -> Result<(), Error> {
         add_eclair_nodes(self)
@@ -350,6 +406,16 @@ impl Options {
     pub fn load_visualizer(&mut self) -> Result<(), Error> {
         add_visualizer(self)?;
         Ok(())
+    }
+    pub fn save_tag(&self, tag: &Tag) -> Result<(), Error> {
+        self.tags
+            .lock()
+            .unwrap()
+            .save(tag.clone())
+            .map_err(|e| e.into())
+    }
+    pub fn get_tag_by_name(&self, name: String) -> Tag {
+        self.tags.lock().unwrap().get_by_name(name)
     }
 }
 

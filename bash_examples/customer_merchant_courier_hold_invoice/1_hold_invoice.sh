@@ -1,4 +1,4 @@
-source ./scripts/container_aliases.sh
+source ./scripts/aliases.sh
 
 customer_hash=$(customer addinvoice | jq -r '.r_hash')
 echo $customer_hash

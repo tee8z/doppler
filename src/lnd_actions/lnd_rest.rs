@@ -460,7 +460,10 @@ impl LndRest {
             if error.is_string() && !error.as_str().unwrap().is_empty() {
                 error!(
                     options.global_logger(),
-                    "failed to make payment from {} to {}: {}", node_command.from, node_command.to, result_text
+                    "failed to make payment from {} to {}: {}",
+                    node_command.from,
+                    node_command.to,
+                    result_text
                 )
             }
         }
@@ -623,6 +626,29 @@ impl LndRest {
             error!(options.global_logger(), "failed to settle invoice",);
         }
         Ok(())
+    }
+    pub fn get_current_block(&self, options: &Options) -> Result<i64, Error> {
+        let url = self.build_url("/v2/chainkit/bestblock");
+        let result = self.send_request(
+            options,
+            "getbestblock".to_owned(),
+            Method::GET,
+            url,
+            None,
+            None,
+        )?;
+        if !result.status().is_success() {
+            error!(
+                options.global_logger(),
+                "failed to get getbestblock: {}",
+                result.text()?
+            );
+            return Ok(0);
+        }
+        let response_payload: Value = result.json()?;
+        let found_block_height: Option<i64> =
+            response_payload.get("block_height").and_then(Value::as_i64);
+        Ok(found_block_height.unwrap())
     }
 }
 

@@ -1,0 +1,8 @@
+SKIP_CONF
+customer OPEN_CHANNEL merchant AMT 50000
+merchant OPEN_CHANNEL customer AMT 50000
+merchant OPEN_CHANNEL exchange AMT 50000
+exchange WAIT BLOCKS 3
+
+exchange OPEN_CHANNEL merchant AMT 50000
+exchange WAIT BLOCKS 6

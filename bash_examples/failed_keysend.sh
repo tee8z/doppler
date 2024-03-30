@@ -8,7 +8,7 @@
 # result: 
 # carol fails the payment with failure reason FAILURE_REASON_INCORRECT_PAYMENT_DETAILS 
 # and failure code 1 (INCORRECT_OR_UNKNOWN_PAYMENT_DETAILS)
-source ./scripts/container_aliases.sh
+source ./scripts/aliases.sh
 
 alice_pk=$(alice getinfo | jq '.identity_pubkey' -r)
 carol_pk=$(carol getinfo | jq '.identity_pubkey' -r)

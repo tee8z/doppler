@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source ./scripts/container_aliases.sh
+source ./scripts/aliases.sh
 
 alice pendingchannels
 

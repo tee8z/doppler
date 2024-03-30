@@ -40,9 +40,10 @@ flag = { "--" }
 sub_command = { ( flag ~ ident | num )* }
 ln_timeout = { "TIMEOUT" ~ (num)* ~ time_digits }
 ln_amount = {"AMT" ~ num }
+ln_blocks = {"BLOCKS" ~ num }
 
-ln_node_action_type = { "OPEN_CHANNEL"  | "SEND_LN" | "SEND_HOLD_LN" | "SETTLE_HOLD_LN" | "SEND_ON_CHAIN" | "CLOSE_CHANNEL" | "FORCE_CLOSE_CHANNEL" | "STOP_LN" | "START_LN" }
-ln_node_action = { (image_name ~ ln_node_action_type ~ tag) | (image_name ~ ln_node_action_type ~ image_name ~ (ln_amount ~ (tag | ln_timeout ~ tag | sub_command)) | ln_amount ) | (image_name ~ ln_node_action_type ~ ( image_name ~ tag | image_name ~ sub_command | image_name)) | (image_name ~ ln_node_action_type) }
+ln_node_action_type = { "OPEN_CHANNEL"  | "SEND_LN" | "SEND_HOLD_LN" | "SETTLE_HOLD_LN" | "SEND_ON_CHAIN" | "CLOSE_CHANNEL" | "FORCE_CLOSE_CHANNEL" | "STOP_LN" | "START_LN" | "WAIT" }
+ln_node_action = { (image_name ~ ln_node_action_type ~ ln_blocks) | (image_name ~ ln_node_action_type ~ tag) | (image_name ~ ln_node_action_type ~ image_name ~ (ln_amount ~ (tag | ln_timeout ~ tag | sub_command)) | ln_amount ) | (image_name ~ ln_node_action_type ~ ( image_name ~ tag | image_name ~ sub_command | image_name)) | (image_name ~ ln_node_action_type) }
 
 btc_node_action_type = { "MINE_BLOCKS" | "STOP_BTC" | "START_BTC" | "SEND_COINS" }
 btc_node_action = { (image_name ~ btc_node_action_type ~ image_name ~ "AMT" ~ (num ~ sub_command | num )) | (image_name ~ btc_node_action_type ~ ( num ~ sub_command | num)) | (image_name ~ btc_node_action_type) }

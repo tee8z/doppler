@@ -99,6 +99,7 @@ pub trait L2Node: Any {
     fn generate_memo(&self) -> String {
         generate_memo()
     }
+    fn wait_for_block(&self, options: &Options, num_of_blocks: i64) -> Result<(), Error>;
 }
 
 pub trait L1Node: Any {

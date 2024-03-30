@@ -1,0 +1,16 @@
+BITCOIND_MINER bd1 30s
+
+LND exchange PAIR bd1
+LND customer PAIR bd1
+LND merchant PAIR bd1
+
+VISUALIZER view
+UP
+bd1 SEND_COINS merchant AMT 5000000
+bd1 SEND_COINS exchange AMT 5000000
+bd1 SEND_COINS customer AMT 5000000
+bd1 MINE_BLOCKS 50
+
+LOOP EVERY 30s
+    bd1 MINE_BLOCKS 1
+END

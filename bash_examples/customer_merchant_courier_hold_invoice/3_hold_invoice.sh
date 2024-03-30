@@ -1,4 +1,4 @@
-source ./scripts/container_aliases.sh
+source ./scripts/aliases.sh
 
 customer_list=$(customer listpayments --include_incomplete | jq -r '.payments |sort_by(-(.creation_time_ns | tonumber))' )
 customer_payment_hash=$(echo $customer_list  | jq -r ' .[0].payment_hash')
