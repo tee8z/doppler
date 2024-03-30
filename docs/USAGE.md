@@ -7,6 +7,9 @@ cargo run --bin doppler -- -f "doppler_files/only_setup_network.doppler" -d
 - add a new .doppler file to create the cluster how you want
 - examples of the possible valid grammar for the doppler files can be found in [doppler_files](../doppler_files/)
 
+### Example on how to hook up to remote LND nodes
+- [remote_nodes](../doppler_files/external_nodes/README.md)
+
 ### Start Blockly editor UI
 
 ```
@@ -79,7 +82,7 @@ cargo run --bin doppler -- -f "doppler_files/only_setup_network.doppler" -l "deb
 once the cluster as gotten past the `up` command, you'll see a new file which contains the aliases and can be run like below
 
 ```
-source ./scripts/container_aliases.sh
+source ./scripts/aliases.sh
 ```
 
 this allows you to call the containers like this from your current command prompt session:

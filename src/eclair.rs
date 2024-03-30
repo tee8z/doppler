@@ -128,7 +128,7 @@ impl L2Node for Eclair {
         get_rhash(self, option)
     }
     fn get_preimage(&self, _option: &Options, _rhash: String) -> Result<String, Error> {
-        unimplemented!();
+        unimplemented!("only implemented for LND nodes at the moment");
     }
     fn create_hold_invoice(
         &self,
@@ -137,11 +137,14 @@ impl L2Node for Eclair {
         _rhash: String,
     ) -> Result<String, Error> {
         // Not implemented yet, needs some more research into their api
-        unimplemented!();
+        unimplemented!("only implemented for LND nodes at the moment");
     }
     fn settle_hold_invoice(&self, _options: &Options, _preimage: String) -> Result<(), Error> {
         // Not implemented yet, needs some more research into their api
-        unimplemented!();
+        unimplemented!("only implemented for LND nodes at the moment");
+    }
+    fn wait_for_block(&self, _options: &Options, _num_of_blocks: i64) -> Result<(), Error> {
+        unimplemented!("only implemented for LND nodes at the moment");
     }
 }
 

@@ -1,0 +1,14 @@
+SKIP_CONF
+
+LOOP EVERY 20s
+    merchant WAIT BLOCKS 10
+    merchant SEND_LN exchange AMT 100
+END
+
+LOOP EVERY 30m
+    customer SEND_LN exchange AMT 10
+    customer SEND_HOLD_LN merchant AMT 350 TAG customer_payment
+    merchant WAIT BLOCKS 10
+    merchant SETTLE_HOLD_LN customer TAG customer_payment
+END
+

@@ -2,5 +2,7 @@
 /data
 /.vscode
 doppler-cluster.yaml
-/scripts/container_aliases.sh
+/scripts/aliases.sh
 doppler.db
+external_nodes/info.conf
+external_nodes/*/*

@@ -25,6 +25,11 @@ pub struct Cli {
     #[arg(short, long)]
     rest: bool,
 
+    /// Path to override file for external LND nodes
+    /// Doppler scripts can only use these nodes matching aliases when set
+    #[arg(short, long)]
+    external_nodes: Option<String>,
+
     #[command(subcommand)]
     app_sub_commands: Option<AppSubCommands>,
 }
@@ -44,6 +49,7 @@ fn main() -> Result<(), Error> {
         cli.app_sub_commands,
         conn,
         cli.rest,
+        cli.external_nodes,
     );
     run_workflow_until_stop(&mut options, contents)?;
     info!(logger, "successfully cleaned up processes, shutting down");

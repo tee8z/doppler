@@ -2,3 +2,4 @@
 !Dockerfile.visualizer
 !data/
 doppler.db
+!external_nodes/

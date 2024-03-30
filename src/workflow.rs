@@ -1,7 +1,7 @@
 use crate::{
     build_bitcoind, build_cln, build_eclair, build_lnd, build_visualizer,
-    load_options_from_compose, run_cluster, DopplerParser, ImageInfo, L1Node, MinerTime,
-    NodeCommand, NodeKind, Options, Rule, Tag,
+    load_options_from_compose, load_options_from_external_nodes, run_cluster, DopplerParser,
+    ImageInfo, L1Node, MinerTime, NodeCommand, NodeKind, Options, Rule, Tag,
 };
 use anyhow::{Error, Result};
 use pest::{
@@ -281,6 +281,14 @@ fn run_loop(
                     "SEND_LN" => send_ln(&current_options.clone(), &command),
                     "SEND_ON_CHAIN" => send_on_chain(&current_options.clone(), &command),
                     "CLOSE_CHANNEL" => close_channel(&current_options.clone(), &command),
+                    "FORCE_CLOSE_CHANNEL" => {
+                        force_close_channel(&current_options.clone(), &command)
+                    }
+                    "STOP_LN" => stop_l2_node(&current_options.clone(), &command),
+                    "START_LN" => start_l2_node(&current_options.clone(), &command),
+                    "SEND_HOLD_LN" => send_hold_invoice(&current_options.clone(), &command),
+                    "SETTLE_HOLD_LN" => settle_hold_invoice(&current_options.clone(), &command),
+                    "WAIT" => wait_number_of_blocks(&current_options.clone(), &command),
                     _ => unreachable!(),
                 };
                 match action {
@@ -335,6 +343,9 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 .expect("node")
                 .try_into()
                 .expect("invalid node kind");
+            if options.external_nodes.is_some() && kind != NodeKind::Lnd {
+                unimplemented!("can only support LND nodes at the moment for remote nodes");
+            }
             let image_name = inner.next().expect("image name").as_str();
             let tag_or_path = inner.next().expect("image version").as_str();
             handle_image_command(options, kind, image_name, tag_or_path)?;
@@ -345,6 +356,9 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 .expect("node")
                 .try_into()
                 .expect("invalid node kind");
+            if options.external_nodes.is_some() && kind != NodeKind::Lnd {
+                unimplemented!("can only support LND nodes at the moment for remote nodes");
+            }
             let node_name = inner.next().expect("node name").as_str();
             if kind == NodeKind::Visualizer {
                 return build_visualizer(options, node_name);
@@ -361,6 +375,9 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 .expect("node")
                 .try_into()
                 .expect("invalid node kind");
+            if options.external_nodes.is_some() && kind != NodeKind::Lnd {
+                unimplemented!("can only support LND nodes at the moment for remote nodes");
+            }
             let name = inner.next().expect("invalid image name").as_str();
             let image = get_image(options, kind.clone(), name);
             let time_num = inner
@@ -390,6 +407,9 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 .expect("node")
                 .try_into()
                 .expect("invalid node kind");
+            if options.external_nodes.is_some() && kind != NodeKind::Lnd {
+                unimplemented!("can only support LND nodes at the moment for remote nodes");
+            }
             let name = inner.next().expect("ident").as_str();
             let image = match inner.peek().unwrap().as_rule() {
                 Rule::image_name => {
@@ -525,6 +545,7 @@ fn handle_ln_action(options: &mut Options, line: Pair<Rule>) -> Result<()> {
         "START_LN" => start_l2_node(options, &command),
         "SEND_HOLD_LN" => send_hold_invoice(options, &command),
         "SETTLE_HOLD_LN" => settle_hold_invoice(options, &command),
+        "WAIT" => wait_number_of_blocks(options, &command),
         _ => {
             error!(
                 options.global_logger(),
@@ -552,6 +573,10 @@ fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
                 } else {
                     node_command.to = pair.as_str().to_owned();
                 }
+            }
+            Rule::ln_blocks => {
+                let pair = pair.into_inner();
+                node_command.amt = Some(pair.as_str().parse::<i64>().expect("invalid num"));
             }
             Rule::ln_node_action_type => {
                 node_command.name = pair.as_str().to_owned();
@@ -657,32 +682,53 @@ fn process_btc_action(line: Pair<Rule>) -> NodeCommand {
 }
 
 fn handle_skip_conf(options: &mut Options) -> Result<(), Error> {
-    load_options_from_compose(options, COMPOSE_PATH)?;
-    info!(
-        options.global_logger(),
-        "doppler cluster has been found and loaded, continuing with script"
-    );
+    if let Some(external_nodes_path) = options.external_nodes_path.clone() {
+        //TODO: add reading from external nodes config and build nodes from there
+        load_options_from_external_nodes(options, &external_nodes_path)?;
+        info!(
+            options.global_logger(),
+            "external nodes have been found and loaded, continuing with script"
+        );
+    } else {
+        load_options_from_compose(options, COMPOSE_PATH)?;
+        info!(
+            options.global_logger(),
+            "doppler cluster has been found and loaded, continuing with script"
+        );
+    }
     Ok(())
 }
 
 fn node_mine_bitcoin(options: &Options, miner_name: String, amt: i64) -> Result<(), Error> {
+    if options.external_nodes.is_some() {
+        unimplemented!("command can only be used in a local docker compose network");
+    }
     let bitcoind = options.get_bitcoind_by_name(&miner_name)?;
     let _ = bitcoind.mine_bitcoin(options, amt);
     Ok(())
 }
 
 fn stop_l1_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    if options.external_nodes.is_some() {
+        unimplemented!("command can only be used in a local docker compose network");
+    }
     let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
     let _ = bitcoind.stop(options);
     Ok(())
 }
 
 fn start_l1_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    if options.external_nodes.is_some() {
+        unimplemented!("command can only be used in a local docker compose network");
+    }
     let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
     let _ = bitcoind.start(options);
     Ok(())
 }
 fn send_to_l2(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    if options.external_nodes.is_some() {
+        unimplemented!("command can only be used in a local docker compose network");
+    }
     let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
     let _ = bitcoind.clone().send_to_l2(options, node_command);
     Ok(())
@@ -714,16 +760,22 @@ fn force_close_channel(option: &Options, node_command: &NodeCommand) -> Result<(
 }
 
 fn stop_l2_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    if options.external_nodes.is_some() {
+        unimplemented!("command can only be used in a local docker compose network");
+    }
     let ln_node = options.get_l2_by_name(&node_command.from)?;
     ln_node.stop(options)
 }
 
 fn start_l2_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    if options.external_nodes.is_some() {
+        unimplemented!("command can only be used in a local docker compose network");
+    }
     let ln_node = options.get_l2_by_name(&node_command.from)?;
     ln_node.start(options)
 }
 
-fn send_hold_invoice(options: &mut Options, node_command: &NodeCommand) -> Result<(), Error> {
+fn send_hold_invoice(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     // 1) get an rHash from node that will pay the hold invoice, that allows them to have the secret (preimage)
     // which can be handed to the other node to settle the hold invoice
     // 2) create a hold invoice that has the rhash provided so it doesn't generate a new preimage
@@ -734,7 +786,7 @@ fn send_hold_invoice(options: &mut Options, node_command: &NodeCommand) -> Resul
 
     //This will only work with 2 LND node types at the moment
     let payment_request = ln_to_node.create_hold_invoice(options, node_command, rhash.clone())?;
-    options.tags.save(Tag {
+    options.save_tag(&Tag {
         name: node_command.tag.clone().unwrap(),
         val: rhash,
     })?;
@@ -745,8 +797,14 @@ fn settle_hold_invoice(options: &Options, node_command: &NodeCommand) -> Result<
     let ln_node = options.get_l2_by_name(&node_command.from)?;
     let ln_to_node = options.get_l2_by_name(&node_command.to)?;
     let tag_name = node_command.tag.clone().unwrap();
-    let tag = options.tags.get_by_name(tag_name);
+    let tag = options.get_tag_by_name(tag_name);
     let preimage = ln_to_node.get_preimage(options, tag.val.clone())?;
     //This will only work with 2 LND node types at the moment
     ln_node.settle_hold_invoice(options, preimage)
+}
+
+fn wait_number_of_blocks(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    let ln_node = options.get_l2_by_name(&node_command.from)?;
+    let num_of_blocks = node_command.amt.unwrap();
+    ln_node.wait_for_block(options, num_of_blocks)
 }

@@ -595,4 +595,40 @@ impl LndCli {
         }
         Ok(())
     }
+
+    pub fn get_current_block(&self, node: &Lnd, options: &Options) -> Result<i64, Error> {
+        let rpc_command = node.get_rpc_server_command();
+        let macaroon_path = node.get_macaroon_path();
+        let compose_path = options.compose_path.as_ref().unwrap();
+
+        let commands = vec![
+            "-f",
+            compose_path,
+            "exec",
+            "--user",
+            "1000:1000",
+            node.get_container_name(),
+            "lncli",
+            "--lnddir=/home/lnd/.lnd",
+            "--network=regtest",
+            macaroon_path,
+            &rpc_command,
+            "chain",
+            "getbestblock",
+        ];
+        let output = run_command(options, "getbestblock".to_owned(), commands)?;
+        if output.status.success() {
+            info!(options.global_logger(), "successfully got getbestblock");
+        } else {
+            error!(options.global_logger(), "failed to got getbestblock");
+        }
+        let found_block_height: Option<i64> = node
+            .get_property("block_height", output)
+            .map(|s| s.parse::<i64>().unwrap());
+        if found_block_height.is_none() {
+            error!(options.global_logger(), "failed to get getbestblock");
+            return Ok(0);
+        }
+        Ok(found_block_height.unwrap())
+    }
 }

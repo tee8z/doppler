@@ -14,6 +14,24 @@ use std::time::Duration;
 
 pub const NETWORK: &str = "doppler";
 
+pub fn load_options_from_external_nodes(
+    options: &mut Options,
+    external_nodes_folder_path: &str,
+) -> Result<(), Error> {
+    //Skips any docker setup/calls, using external nodes instead
+    options.load_external_nodes(external_nodes_folder_path)?;
+    debug!(
+        options.global_logger(),
+        "loaded {} file", external_nodes_folder_path
+    );
+    options.load_lnds()?;
+    debug!(options.global_logger(), "loaded lnds");
+    //TODO: figure out best way to run the visualizer when using external nodes
+    //options.load_visualizer_external_nodes()?;
+    //debug!(options.global_logger(), "loaded visualizer");
+    Ok(())
+}
+
 pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> Result<(), Error> {
     options.compose_path = Some(compose_path.to_owned());
     options.load_compose()?;
@@ -99,9 +117,10 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     if !options.utility_services.is_empty() {
         provision_visualizer(options)?;
     }
-    if options.aliases {
+    if options.aliases && options.external_nodes.is_none() {
         update_bash_alias(options)?;
     }
+
     Ok(())
 }
 
@@ -346,7 +365,42 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
         ));
         script_content.push('\n');
     });
-    let script_path = "scripts/container_aliases.sh";
+    let script_path = "scripts/aliases.sh";
+    let full_path = get_absolute_path(script_path)?;
+    let mut file: File = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .truncate(true)
+        .create(true)
+        .open(full_path.clone())?;
+    file.write_all(script_content.as_bytes())?;
+    debug!(
+        options.global_logger(),
+        "wrote aliases script @ {}",
+        full_path.display()
+    );
+    let mut permissions = file.metadata()?.permissions();
+    permissions.set_mode(0o755);
+    file.set_permissions(permissions)?;
+    debug!(options.global_logger(), "wrote aliases script");
+
+    Ok(())
+}
+
+pub fn update_bash_alias_external(options: &Options) -> Result<(), Error> {
+    let mut script_content = String::new();
+    script_content.push_str(&format!("{}", options.shell_type.unwrap_or_default()));
+    options.external_nodes.clone().unwrap().iter().for_each(|lnd| {
+        script_content.push_str(&format!(
+            r#"
+{name}() {{
+     lncli --network={network} --macaroonpath={macaroon_path} --rpcserver={rpcserver} --tlscertpath="" "$@"
+}}
+"#, 
+        name=lnd.node_alias, network=lnd.network, macaroon_path=lnd.macaroon_path, rpcserver=lnd.api_endpoint));
+        script_content.push('\n');
+    });
+    let script_path = "scripts/aliases.sh";
     let full_path = get_absolute_path(script_path)?;
     let mut file: File = OpenOptions::new()
         .read(true)

@@ -1,13 +1,16 @@
 use crate::{
-    add_rest_client, copy_file, get_absolute_path, ImageInfo, L1Node, L2Node, LndCli, LndRest,
-    NodeCommand, NodePair, Options, NETWORK,
+    add_rest_client, copy_file, get_absolute_path, ExternalNode, ImageInfo, L1Node, L2Node, LndCli,
+    LndRest, NodeCommand, NodePair, Options, NETWORK,
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
 use slog::{debug, error, info};
-use std::fs::{File, OpenOptions};
-
+use std::{
+    fs::{File, OpenOptions},
+    thread::sleep,
+    time::Duration,
+};
 #[derive(Default, Debug, Clone)]
 pub struct Lnd {
     pub wallet_starting_balance: i64,
@@ -26,6 +29,7 @@ pub struct Lnd {
     pub bitcoind_node_container_name: String,
     pub lnd_cli: LndCli,
     pub lnd_rest: Option<LndRest>, // If we are using rest, we assume this is a mutinynet node hosted remotely
+    pub network: String,
 }
 
 impl Lnd {
@@ -231,6 +235,52 @@ impl L2Node for Lnd {
             self.lnd_cli.settle_hold_invoice(self, options, &preimage)
         }
     }
+
+    fn wait_for_block(&self, options: &Options, num_of_blocks: i64) -> Result<(), Error> {
+        let mut current_height = if let Some(rest) = self.lnd_rest.clone() {
+            rest.get_current_block(options)
+        } else {
+            self.lnd_cli.get_current_block(self, options)
+        }?;
+        let ending_height = current_height + num_of_blocks;
+
+        // Making 30s as that's what mutinynet uses, but this could be made configurable in the future
+        let sleep_time = Duration::from_secs(30);
+        while current_height < ending_height {
+            if let Some(rest) = self.lnd_rest.clone() {
+                current_height = match rest.get_current_block(&options) {
+                    Err(e) => {
+                        error!(
+                            options.global_logger(),
+                            "failed to get block height, will try again in {}s: {}", e, 30
+                        );
+                        current_height
+                    }
+                    Ok(height) => height,
+                }
+            } else {
+                current_height = match self.lnd_cli.get_current_block(&self, &options) {
+                    Err(e) => {
+                        error!(
+                            options.global_logger(),
+                            "failed to get block height, will try again in {}s: {}", e, 30
+                        );
+                        current_height
+                    }
+                    Ok(height) => height,
+                }
+            }
+            if current_height < ending_height {
+                sleep(sleep_time);
+            }
+        }
+        info!(
+            options.global_logger(),
+            "reached block height {} current height {}", ending_height, current_height
+        );
+
+        Ok(())
+    }
 }
 
 pub fn build_lnd(
@@ -351,6 +401,7 @@ fn build_and_save_config(
         bitcoind_node_container_name: bitcoind_node.container_name.clone(),
         lnd_cli: LndCli,
         lnd_rest: None, //we set this later in the process when the forwarding ports are determined
+        network: String::from("regtest"),
     })
 }
 
@@ -398,6 +449,36 @@ pub fn load_config(
         bitcoind_node_container_name: bitcoind_service,
         lnd_cli: LndCli,
         lnd_rest: lnd_rest,
+        network: String::from("regtest"),
+    })
+}
+
+pub fn load_external_node_config(external_node: &ExternalNode) -> Result<Lnd, Error> {
+    let server_url = format!("https://{}:8080", external_node.api_endpoint);
+    let lnd_rest = Some(LndRest::new(
+        &server_url,
+        external_node.macaroon_path.clone(),
+        external_node.tls_cert_path.clone(),
+    )?);
+
+    Ok(Lnd {
+        wallet_starting_balance: 0,
+        name: external_node.node_alias.to_owned(),
+        alias: external_node.node_alias.to_owned(),
+        container_name: external_node.node_alias.clone(),
+        pubkey: None,
+        rpc_server: format!("{}:10000", external_node.api_endpoint),
+        server_url: server_url.clone(),
+        certificate_path: external_node.tls_cert_path.clone(),
+        macaroon_path: external_node.macaroon_path.clone(),
+        path_vol: String::from(""),
+        grpc_port: "10000".to_owned(),
+        rest_port: "8080".to_owned(),
+        p2p_port: "9735".to_owned(),
+        bitcoind_node_container_name: String::from(""),
+        lnd_cli: LndCli,
+        lnd_rest: lnd_rest,
+        network: external_node.network.clone(),
     })
 }
 
@@ -509,5 +590,27 @@ pub fn add_lnd_nodes(options: &mut Options) -> Result<(), Error> {
 
     options.lnd_nodes = nodes;
 
+    Ok(())
+}
+
+pub fn add_external_lnd_nodes(options: &mut Options) -> Result<(), Error> {
+    let mut node_l2: Vec<_> = options
+        .external_nodes
+        .clone()
+        .unwrap()
+        .iter()
+        .map(|external_node| load_external_node_config(external_node))
+        .filter_map(|res| res.ok())
+        .collect();
+
+    let nodes: Vec<_> = node_l2
+        .iter_mut()
+        .map(|node| {
+            node.add_pubkey(options);
+            node.clone()
+        })
+        .collect();
+
+    options.lnd_nodes = nodes;
     Ok(())
 }
