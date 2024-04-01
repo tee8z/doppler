@@ -5,7 +5,6 @@ LND sender PAIR bd1
 LND innocent PAIR bd1
 LND problem PAIR bd1
 
-VISUALIZER view
 UP
 bd1 SEND_COINS router AMT 5000000
 bd1 SEND_COINS innocent AMT 5000000

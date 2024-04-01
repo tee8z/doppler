@@ -4,6 +4,7 @@
 	import type { WorkspaceSvg } from 'blockly';
 	import Icon from '../components/Icon/Icon.svelte';
 	import Button from '../components/Button.svelte';
+	import Visualizer from '../components/Visualizer.svelte';
 	import { onMount } from 'svelte';
 	import { initBlocks } from '$lib/blocks';
 	import { initGenerators } from '$lib/generators';
@@ -49,17 +50,21 @@
 
 <main class="flex flex-col h-screen">
 	<section class="flex flex-col justify-between items-center m-4 md:flex-row">
-		<div class="flex gap-2">
+		<div class="flex items-center gap-2">
 			<h1>Doppler</h1>
-			<Icon name="radar" />
+			<Icon name="radar" class="h-6 w-6" />
 		</div>
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
-		<div class="flex gap-2">
-			<a href="https://github.com/tee8z/doppler"><Icon name="octocat" /></a>
-			<span class="cursor-pointer" on:click={toggleDarkMode}><Icon name={$themeIcon} /></span>
+		<div class="flex items-center gap-2">
+			<a href="https://github.com/tee8z/doppler" class="h-6 w-6"><Icon name="octocat" /></a>
+			<span class="cursor-pointer h-6 w-6" on:click={toggleDarkMode}><Icon name={$themeIcon} /></span>
 		</div>
 	</section>
+	<section class="flex flex-1">
+		<Visualizer></Visualizer>
+	</section>
+	<!--
 	<section class="flex h-full gap-2">
 		<div id="blockly" class="w-2/3" />
 		<div class="flex flex-col gap-2 flex-1">
@@ -85,4 +90,5 @@
 			>
 		</div>
 	</section>
+-->
 </main>

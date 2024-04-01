@@ -1,4 +1,4 @@
-### How to run
+### How to run teh daemon
 
 ```
 cargo run --bin doppler -- -f "doppler_files/only_setup_network.doppler" -d
@@ -7,10 +7,9 @@ cargo run --bin doppler -- -f "doppler_files/only_setup_network.doppler" -d
 - add a new .doppler file to create the cluster how you want
 - examples of the possible valid grammar for the doppler files can be found in [doppler_files](../doppler_files/)
 
-### Example on how to hook up to remote LND nodes
-- [remote_nodes](../doppler_files/external_nodes/README.md)
-
-### Start Blockly editor UI
+### How to use the UI (Script builder and node visualizer)
+1) Currently the visualizer requires at least one lnd node in the cluster, that is also the only node that it will be able to operate on, the other it will be able to view in the graph
+2) Then run the following to start the UI, requires yarn installed on your machine:
 
 ```
 cd ui
@@ -19,6 +18,10 @@ yarn dev
 ```
 
 App will be running on `localhost:5173`
+
+
+### Example on how to hook up to remote LND nodes
+- [remote_nodes](../doppler_files/external_nodes/README.md)
 
 ### How to view logs of container
 
@@ -44,9 +47,6 @@ docker logs doppler-<node name>
 ./scripts/reset.sh
 ```
 
-### How to use the visualizer tool
-1) Currently the visualizer requires at least one lnd node in the cluster, that is also the only node that it will be able to operate on, the other it will be able to view in the graph
-2) If it is created successfully, it will be hosted at http://localhost:5100/ , from there you should see all of your nodes and channels created
 
 ### How to test parse grammar
 

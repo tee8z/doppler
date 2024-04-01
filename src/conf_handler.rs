@@ -20,9 +20,8 @@ use std::{
 
 use crate::{
     add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_external_lnd_nodes, add_lnd_nodes,
-    add_visualizer, get_latest_polar_images, get_polar_images, new, update_bash_alias_external,
-    Bitcoind, Cln, CloneableHashMap, Eclair, ImageInfo, L1Node, L2Node, Lnd, NodeKind, Tag, Tags,
-    Visualizer, NETWORK,
+    get_latest_polar_images, get_polar_images, new, update_bash_alias_external, Bitcoind, Cln,
+    CloneableHashMap, Eclair, ImageInfo, L1Node, L2Node, Lnd, NodeKind, Tag, Tags, NETWORK,
 };
 
 #[derive(Subcommand)]
@@ -69,7 +68,6 @@ pub struct Options {
     pub lnd_nodes: Vec<Lnd>,
     pub eclair_nodes: Vec<Eclair>,
     pub cln_nodes: Vec<Cln>,
-    pub utility_services: Vec<Visualizer>,
     ports: Vec<i64>,
     pub compose_path: Option<String>,
     pub services: IndexMap<String, Option<Service>>,
@@ -151,7 +149,6 @@ impl Options {
             Err(err) => panic!("error pulling down images: {}", err),
         };
         if external_nodes_path.is_some() {
-            info!("here");
             rest = true;
         }
         Self {
@@ -162,7 +159,6 @@ impl Options {
             lnd_nodes: vec::Vec::new(),
             eclair_nodes: vec::Vec::new(),
             cln_nodes: vec::Vec::new(),
-            utility_services: vec::Vec::new(),
             ports: starting_port,
             compose_path: None,
             services: indexmap::IndexMap::new(),
@@ -404,10 +400,6 @@ impl Options {
     }
     pub fn load_coreln(&mut self) -> Result<(), Error> {
         add_coreln_nodes(self)
-    }
-    pub fn load_visualizer(&mut self) -> Result<(), Error> {
-        add_visualizer(self)?;
-        Ok(())
     }
     pub fn save_tag(&self, tag: &Tag) -> Result<(), Error> {
         self.tags

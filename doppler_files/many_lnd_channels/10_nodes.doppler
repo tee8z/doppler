@@ -10,7 +10,7 @@ LND lnd7 PAIR bd1
 LND lnd8 PAIR bd1
 LND lnd9 PAIR bd1
 LND lnd10 PAIR bd1
-VISUALIZER view
+
 UP
 
 lnd1 OPEN_CHANNEL lnd2 AMT 500000

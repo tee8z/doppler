@@ -4,7 +4,7 @@ LND router1 PAIR bd1
 LND courier PAIR bd1
 LND customer PAIR bd1
 LND merchant PAIR bd1
-VISUALIZER view
+
 UP
 bd1 SEND_COINS router1 AMT 25000000
 bd1 SEND_COINS customer AMT 5000000

@@ -11,8 +11,6 @@ LND lnd1 PAIR bd1
 LND lnd3 17 PAIR bd3
 LND lnd4 PAIR bd2
 
-VISUALIZER view
-
 UP
 
 lnd1 OPEN_CHANNEL lnd2 AMT 500000
