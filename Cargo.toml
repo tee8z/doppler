@@ -27,5 +27,5 @@ signal-hook = "0.3.17"
 slog = "2.7.0"
 slog-term = "2.9.0"
 slog-async = "2.7.0"
-rusqlite = "0.31.0"
+rusqlite = { version = "0.29.0", features = ["bundled"] }
 clap = { version = "4.3.23", features = ["derive", "env"] }

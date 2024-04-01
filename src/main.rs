@@ -43,6 +43,7 @@ fn main() -> Result<(), Error> {
     let contents = fs::read_to_string(doppler_file_path).expect("file read error");
     debug!(logger, "doppler.db location: {}", cli.storage_path);
     let conn = create_db(cli.storage_path).expect("failed to create doppler.db file");
+    info!(logger, "rest {}", cli.rest);
     let mut options = Options::new(
         logger.clone(),
         cli.docker_dash,
