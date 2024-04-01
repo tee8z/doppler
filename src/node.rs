@@ -115,15 +115,12 @@ pub trait L1Node: Any {
         let commands = vec!["-f", &compose_path, "start", &container_name];
         run_command(options, String::from("start"), commands).map(|_| ())
     }
-    fn start_mining(&self, options: &Options) -> Result<(), Error>;
-    fn mine_bitcoin_continously(&self, options: &Options);
     fn mine_bitcoin(&self, options: &Options, num_blocks: i64) -> Result<String, Error>;
     fn create_wallet(&self, options: &Options) -> Result<(), Error>;
     fn load_wallet(&self, options: &Options) -> Result<(), Error>;
     fn get_name(&self) -> String;
     fn get_container_name(&self) -> String;
     fn get_data_dir(&self) -> String;
-    fn get_miner_time(&self) -> &Option<MinerTime>;
     fn get_zmqpubrawblock(&self) -> String;
     fn get_zmqpubhashblock(&self) -> String;
     fn get_zmqpubrawtx(&self) -> String;

@@ -1,4 +1,4 @@
-BITCOIND_MINER bd1 5s
+BITCOIND_MINER bd1
 
 LND router PAIR bd1
 LND sender PAIR bd1

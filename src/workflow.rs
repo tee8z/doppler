@@ -369,38 +369,6 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
             };
             handle_build_command(options, node_name, kind, &image, None)?;
         }
-        Rule::node_miner => {
-            let kind: NodeKind = inner
-                .next()
-                .expect("node")
-                .try_into()
-                .expect("invalid node kind");
-            if options.external_nodes.is_some() && kind != NodeKind::Lnd {
-                unimplemented!("can only support LND nodes at the moment for remote nodes");
-            }
-            let name = inner.next().expect("invalid image name").as_str();
-            let image = get_image(options, kind.clone(), name);
-            let time_num = inner
-                .next()
-                .expect("invalid time value")
-                .as_str()
-                .parse::<u64>()
-                .expect("invalid time");
-            let time_type = inner
-                .next()
-                .expect("invalid time type")
-                .as_str()
-                .chars()
-                .next()
-                .unwrap_or('\0');
-            handle_build_command(
-                options,
-                name,
-                kind,
-                &image,
-                BuildDetails::new_miner_time(MinerTime::new(time_num, time_type)),
-            )?;
-        }
         Rule::node_pair => {
             let kind: NodeKind = inner
                 .next()
@@ -498,10 +466,8 @@ fn handle_build_command(
     details: Option<BuildDetails>,
 ) -> Result<()> {
     match kind {
-        NodeKind::Bitcoind => build_bitcoind(options, name, image, &None),
-        NodeKind::BitcoindMiner => {
-            build_bitcoind(options, name, image, &details.unwrap().miner_time)
-        }
+        NodeKind::Bitcoind => build_bitcoind(options, name, image, false),
+        NodeKind::BitcoindMiner => build_bitcoind(options, name, image, true),
         NodeKind::Lnd => build_lnd(options, name, image, &details.unwrap().pair.unwrap()),
         NodeKind::Eclair => build_eclair(options, name, image, &details.unwrap().pair.unwrap()),
         NodeKind::Coreln => build_cln(options, name, image, &details.unwrap().pair.unwrap()),

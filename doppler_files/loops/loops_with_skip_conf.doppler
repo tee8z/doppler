@@ -1,5 +1,10 @@
 SKIP_CONF
 
+// mine block every 30s 
+LOOP EVERY 30s
+    bd1 MINE_BLOCKS 1
+END
+
 // burst open 4 channels 2 times with 20s wait between runs
 LOOP 2 EVERY 20s
   lnd1 OPEN_CHANNEL lnd2 AMT 500000

@@ -1,6 +1,5 @@
 use crate::{
-    copy_file, get_absolute_path, run_command, ImageInfo, L1Node, MinerTime, NodeCommand, Options,
-    NETWORK,
+    copy_file, get_absolute_path, run_command, ImageInfo, L1Node, NodeCommand, Options, NETWORK,
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
@@ -9,9 +8,6 @@ use slog::{error, Logger};
 use std::{
     fs::{File, OpenOptions},
     str::from_utf8,
-    thread,
-    thread::spawn,
-    time::Duration,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -28,7 +24,6 @@ pub struct Bitcoind {
     pub zmqpubhashblock: String,
     pub zmqpubrawtx: String,
     pub path_vol: String,
-    pub miner_time: Option<MinerTime>,
 }
 
 pub enum L1Enum {
@@ -36,9 +31,6 @@ pub enum L1Enum {
 }
 
 impl L1Node for Bitcoind {
-    fn start_mining(&self, options: &Options) -> Result<()> {
-        start_mining(self, options)
-    }
     fn get_name(&self) -> String {
         self.name.clone()
     }
@@ -47,9 +39,6 @@ impl L1Node for Bitcoind {
     }
     fn get_data_dir(&self) -> String {
         self.data_dir.clone()
-    }
-    fn get_miner_time(&self) -> &Option<MinerTime> {
-        &self.miner_time
     }
     fn get_p2p_port(&self) -> String {
         self.p2pport.clone()
@@ -71,9 +60,6 @@ impl L1Node for Bitcoind {
     }
     fn get_rpc_port(&self) -> String {
         self.rpcport.clone()
-    }
-    fn mine_bitcoin_continously(&self, options: &Options) {
-        mine_bitcoin_continously(self.clone(), options)
     }
     fn mine_bitcoin(&self, options: &Options, num_blocks: i64) -> Result<String, Error> {
         mine_bitcoin(self.clone(), options, num_blocks)
@@ -114,12 +100,8 @@ impl L1Node for Bitcoind {
     }
 }
 
-pub fn get_config(
-    options: &mut Options,
-    name: &str,
-    miner_time: &Option<MinerTime>,
-) -> Result<Bitcoind, Error> {
-    get_bitcoind_config(options, name, miner_time)
+pub fn get_config(options: &mut Options, name: &str, is_miner: bool) -> Result<Bitcoind, Error> {
+    get_bitcoind_config(options, name, is_miner)
 }
 pub fn add_config(options: &Options, name: &str, container_name: &str) -> Result<Bitcoind, Error> {
     load_config(name, container_name, options.global_logger())
@@ -129,9 +111,9 @@ pub fn build_bitcoind(
     options: &mut Options,
     name: &str,
     image: &ImageInfo,
-    miner_time: &Option<MinerTime>,
+    is_miner: bool,
 ) -> Result<()> {
-    let bitcoind_conf = get_config(options, name, miner_time).unwrap();
+    let bitcoind_conf = get_config(options, name, is_miner).unwrap();
     let bitcoind = Service {
         image: Some(image.get_image()),
         container_name: Some(bitcoind_conf.container_name.clone()),
@@ -197,7 +179,6 @@ fn load_config(name: &str, container_name: &str, logger: Logger) -> Result<Bitco
         conf: conf.to_owned(),
         name: name.to_owned(),
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
-        miner_time: None,
         container_name: container_name.to_owned(),
         path_vol: full_path,
         user: regtest_section.get_property("rpcuser"),
@@ -228,7 +209,7 @@ fn load_config(name: &str, container_name: &str, logger: Logger) -> Result<Bitco
 fn get_bitcoind_config(
     options: &mut Options,
     name: &str,
-    miner_time: &Option<MinerTime>,
+    is_miner: bool,
 ) -> Result<Bitcoind, Error> {
     let original = get_absolute_path("config/bitcoin.conf")?;
     let source: File = File::open(original)?;
@@ -242,7 +223,7 @@ fn get_bitcoind_config(
         .to_str()
         .unwrap()
         .to_string();
-    let container_name = match miner_time.is_some() {
+    let container_name = match is_miner {
         true => format!("doppler-bitcoind-miner-{}", name),
         false => format!("doppler-bitcoind-{}", name),
     };
@@ -250,7 +231,6 @@ fn get_bitcoind_config(
         conf: conf.to_owned(),
         name: name.to_owned(),
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
-        miner_time: miner_time.to_owned(),
         container_name,
         path_vol: full_path,
         user: regtest_section.get_property("rpcuser"),
@@ -325,7 +305,15 @@ pub fn pair_bitcoinds(options: &Options) -> Result<(), Error> {
             let current_bitcoind = options_clone
                 .get_bitcoind_by_name(name.split('-').last().unwrap())
                 .expect("unable to find L1 node by name");
-
+            match current_bitcoind.create_wallet(&options.clone()) {
+                Ok(_) => (),
+                Err(e) => error!(
+                    options.global_logger(),
+                    "container {} failed to create wallet: {}",
+                    current_bitcoind.get_container_name(),
+                    e
+                ),
+            }
             options
                 .bitcoinds
                 .iter()
@@ -344,52 +332,6 @@ pub fn pair_bitcoinds(options: &Options) -> Result<(), Error> {
     Ok(())
 }
 
-fn start_mining(node: &Bitcoind, options: &Options) -> Result<()> {
-    let logger = options.clone().global_logger();
-    let cloned_options = options.clone();
-    let cloned_node = node.clone();
-    match node.create_wallet(&options.clone()) {
-        Ok(_) => (),
-        Err(e) => error!(
-            logger,
-            "container {} failed to create wallet: {}",
-            node.get_container_name(),
-            e
-        ),
-    }
-
-    spawn(move || {
-        cloned_node.mine_bitcoin_continously(&cloned_options);
-        let thread_handle = thread::current();
-        cloned_options.add_thread(thread_handle);
-    });
-    Ok(())
-}
-
-fn mine_bitcoin_continously(node: impl L1Node, option: &Options) {
-    let miner_time = node.get_miner_time().as_ref().unwrap();
-    let sleep_time = match miner_time.miner_interval_type {
-        's' => Duration::from_secs(miner_time.miner_interval_amt),
-        'm' => Duration::from_secs(miner_time.miner_interval_amt * 60),
-        'h' => Duration::from_secs(miner_time.miner_interval_amt * 60 * 60),
-        _ => unimplemented!(),
-    };
-    while option.main_thread_active.val() {
-        thread::sleep(sleep_time);
-        let thread_logger = option.global_logger();
-        if !option.main_thread_paused.val() {
-            match node.mine_bitcoin(option, 1) {
-                Ok(_) => (),
-                Err(e) => error!(
-                    thread_logger,
-                    "container {} failed to mine blocks: {}",
-                    node.get_container_name().clone(),
-                    e
-                ),
-            }
-        }
-    }
-}
 fn mine_bitcoin(node: impl L1Node, options: &Options, num_blocks: i64) -> Result<String, Error> {
     let address = node.create_address(options)?;
 

@@ -1,5 +1,5 @@
-// defined one bitcoind as a miner and find a block every 10s
-BITCOIND_MINER bd1 10s
+// defined one bitcoind as a miner
+BITCOIND_MINER bd1
 BITCOIND bd2
 BITCOIND bd3
 LND lnd1 PAIR bd1
@@ -10,6 +10,11 @@ bd1 SEND_COINS lnd1 AMT 50000000
 bd1 SEND_COINS lnd2 AMT 50000000
 bd1 SEND_COINS lnd3 AMT 50000000
 bd1 MINE_BLOCKS 12
+
+// mine block every 30s 
+LOOP EVERY 30s
+    bd1 MINE_BLOCKS 1
+END
 
 // burst open 4 channels 2 times with 20s wait between runs
 LOOP 2 EVERY 20s

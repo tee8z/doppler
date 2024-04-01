@@ -1,4 +1,4 @@
-BITCOIND_MINER bd1 10m
+BITCOIND_MINER bd1
 
 LND router1 PAIR bd1
 LND courier PAIR bd1

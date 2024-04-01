@@ -1,4 +1,4 @@
-BITCOIND_MINER bd1 30s
+BITCOIND_MINER bd1
 
 LND exchange PAIR bd1
 LND customer PAIR bd1
