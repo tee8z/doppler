@@ -20,10 +20,8 @@ node_image = { node_kind ~ "IMAGE" ~ image_name ~ image_version }
 
 node_pair = { node_kind ~ (( ident ~ "PAIR") | ( ident ~ image_name ~ "PAIR")) ~ (ident ~ num | ident) }
 
-node_miner = { node_kind ~ ident ~ ( (image_name ~ (num)* ~ time_digits) | ((num)* ~ time_digits)) }
-
 skip_conf = { "SKIP_CONF" }
-conf = { node_pair | node_image  | node_miner | node_def  }
+conf = { node_pair | node_image | node_def  }
 every = { "EVERY" }
 loop = { "LOOP" }
 tag = { "TAG" ~ ident }

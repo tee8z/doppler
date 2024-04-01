@@ -2,7 +2,7 @@ BITCOIND IMAGE older polarlightning/bitcoind:22.0
 LND IMAGE 16 polarlightning/lnd:0.16.4-beta
 LND IMAGE 17 polarlightning/lnd:0.17.0-beta
 
-BITCOIND_MINER bd1 10s
+BITCOIND_MINER bd1
 BITCOIND bd2 older
 BITCOIND bd3
 

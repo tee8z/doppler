@@ -110,8 +110,6 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     thread::sleep(Duration::from_secs(6));
     pair_bitcoinds(options)?;
 
-    //TODO: make optional to be mining in the background
-    start_miners(options)?;
     mine_initial_blocks(options)?;
     setup_l2_nodes(options)?;
     if !options.utility_services.is_empty() {
@@ -132,16 +130,6 @@ fn start_docker_compose(options: &Options) -> Result<(), Error> {
         "-d",
     ];
     run_command(options, "start up".to_owned(), commands)?;
-    Ok(())
-}
-fn start_miners(options: &Options) -> Result<(), Error> {
-    // kick of miners in background, mine every x interval
-    options
-        .bitcoinds
-        .iter()
-        .filter(|bitcoind| bitcoind.get_miner_time().is_some())
-        .for_each(|bitcoind| bitcoind.clone().start_mining(options).unwrap());
-
     Ok(())
 }
 
@@ -409,15 +397,15 @@ pub fn update_bash_alias_external(options: &Options) -> Result<(), Error> {
         .create(true)
         .open(full_path.clone())?;
     file.write_all(script_content.as_bytes())?;
+
+    let mut permissions = file.metadata()?.permissions();
+    permissions.set_mode(0o755);
+    file.set_permissions(permissions)?;
     debug!(
         options.global_logger(),
         "wrote aliases script @ {}",
         full_path.display()
     );
-    let mut permissions = file.metadata()?.permissions();
-    permissions.set_mode(0o755);
-    file.set_permissions(permissions)?;
-    debug!(options.global_logger(), "wrote aliases script");
 
     Ok(())
 }

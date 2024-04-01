@@ -1,4 +1,4 @@
-BITCOIND_MINER bd1 10s
+BITCOIND_MINER bd1
 LND alice PAIR bd1
 LND bob PAIR bd1
 LND carol PAIR bd1
