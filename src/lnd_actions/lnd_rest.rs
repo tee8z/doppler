@@ -491,7 +491,7 @@ impl LndRest {
                 "payment_hash":base64_url_safe(&byte_base64_encoding(&r_hash)?),
                 "dest_custom_records": {
                     "5482373484": base64_url_safe(&byte_base64_encoding(&preimage)?),
-                    "34349334": memo,
+                    "34349334": base64_encoding(&memo)?,
                 }
         });
 
@@ -752,6 +752,10 @@ pub fn base64_url_safe(base64_str: &str) -> String {
 pub fn byte_base64_encoding(hex_str: &str) -> Result<String, Error> {
     let pubkey_bytes = Vec::from_hex(hex_str)?;
     Ok(BASE64_STANDARD.encode(&pubkey_bytes))
+}
+
+pub fn base64_encoding(raw_str: &str) -> Result<String, Error> {
+    Ok(base64_url_safe(&BASE64_STANDARD.encode(&raw_str)))
 }
 
 pub fn hex_encoding(byte_base64: &str) -> Result<String, Error> {

@@ -152,7 +152,12 @@ impl L2Node for Cln {
     fn wait_for_block(&self, _options: &Options, _num_of_blocks: i64) -> Result<(), Error> {
         unimplemented!("only implemented for LND nodes at the moment");
     }
-    fn send_keysend(&self, _options: &Options, _node_command: &NodeCommand, _to_pubkey:String) -> Result<(), Error>{
+    fn send_keysend(
+        &self,
+        _options: &Options,
+        _node_command: &NodeCommand,
+        _to_pubkey: String,
+    ) -> Result<(), Error> {
         unimplemented!("only implemented for LND nodes at the moment");
     }
 }

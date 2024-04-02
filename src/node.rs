@@ -67,7 +67,12 @@ pub trait L2Node: Any {
         self.pay_invoice(options, node_command, invoice)?;
         Ok(())
     }
-    fn send_keysend(&self, options: &Options, node_command: &NodeCommand, to_pubkey:String) -> Result<(), Error>;
+    fn send_keysend(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+        to_pubkey: String,
+    ) -> Result<(), Error>;
     fn create_hold_invoice(
         &self,
         option: &Options,

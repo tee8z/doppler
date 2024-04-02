@@ -194,7 +194,8 @@ impl L2Node for Lnd {
         if let Some(rest) = self.lnd_rest.clone() {
             rest.send_keysend(options, node_command, to_pubkey)
         } else {
-            self.lnd_cli.send_keysend(self, options, node_command, to_pubkey)
+            self.lnd_cli
+                .send_keysend(self, options, node_command, to_pubkey)
         }
     }
 
