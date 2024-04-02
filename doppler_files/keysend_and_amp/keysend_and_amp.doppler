@@ -1,11 +1,4 @@
 SKIP_CONF
 
-LOOP EVERY 10s
-    exchange SEND_LN customer AMT 10 --keysend
-    merchant SEND_LN exchange AMT 10 --keysend
-    customer SEND_LN exchange AMT 10 --amp
-END
+exchange SEND_LN customer AMT 10 --keysend
 
-LOOP EVERY 20s
-    exchange SEND_LN merchant AMT 100 --amp
-END

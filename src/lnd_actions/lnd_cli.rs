@@ -381,11 +381,18 @@ impl LndCli {
             "--network=regtest",
             macaroon_path,
             &rpc_command,
-            "payinvoice",
+            "sendpayment",
             "--pay_req",
             &payment_request,
             "-f",
         ];
+
+        // Used for amp payments
+        let mut subcommand = String::from("");
+        if let Some(command) = node_command.subcommand.clone() {
+            subcommand = command;
+            commands.push(&subcommand);
+        }
 
         //This is an odd trick to get around lifetime issues
         let mut time_strings = Vec::new();
@@ -412,6 +419,52 @@ impl LndCli {
         Ok(())
     }
 
+    pub fn send_keysend(
+        &self,
+        node: &Lnd,
+        options: &Options,
+        node_command: &NodeCommand,
+        to_pubkey: String,
+    ) -> Result<(), Error> {
+        let amt = node_command.amt.unwrap_or(1000).to_string();
+        let rpc_command = node.get_rpc_server_command();
+        let macaroon_path = node.get_macaroon_path();
+        let compose_path = options.compose_path.as_ref().unwrap();
+
+        let commands = vec![
+            "-f",
+            compose_path,
+            "exec",
+            "--user",
+            "1000:1000",
+            node.get_container_name(),
+            "lncli",
+            "--lnddir=/home/lnd/.lnd",
+            "--network=regtest",
+            macaroon_path,
+            &rpc_command,
+            "sendpayment",
+            "--amt",
+            &amt,
+            "--keysend",
+            &to_pubkey,
+        ];
+
+        let output = run_command(options, "send_keysend".to_owned(), commands)?;
+        if !output.status.success() {
+            error!(
+                options.global_logger(),
+                "failed to make payment from {} to {}", node_command.from, node_command.to
+            )
+        }
+        debug!(
+            options.global_logger(),
+            "output.stdout: {}, output.stderr: {}",
+            from_utf8(&output.stdout)?,
+            from_utf8(&output.stderr)?
+        );
+        Ok(())
+    }
     pub fn pay_address(
         &self,
         node: &Lnd,
@@ -622,9 +675,7 @@ impl LndCli {
         } else {
             error!(options.global_logger(), "failed to got getbestblock");
         }
-        let found_block_height: Option<i64> = node
-            .get_property("block_height", output)
-            .map(|s| s.parse::<i64>().unwrap());
+        let found_block_height: Option<i64> = node.get_property_num("block_height", output);
         if found_block_height.is_none() {
             error!(options.global_logger(), "failed to get getbestblock");
             return Ok(0);

@@ -1,4 +1,4 @@
-use crate::{L2Node, Lnd, NodeCommand, Options};
+use crate::{generate_memo, L2Node, Lnd, NodeCommand, Options};
 use anyhow::{anyhow, Error, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use hex::FromHex;
@@ -467,6 +467,68 @@ impl LndRest {
                 )
             }
         }
+        debug!(
+            options.global_logger(),
+            "successful payment from {} to {}: {}", node_command.from, node_command.to, result_text
+        );
+        Ok(())
+    }
+
+    pub fn send_keysend(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+        to_pubkey: String,
+    ) -> Result<(), Error> {
+        let url: String = self.build_url("/v1/channels/transactions");
+        let memo = generate_memo();
+        let r_hash = self.get_rhash(options)?;
+        let preimage = self.get_preimage(options, r_hash.clone())?;
+
+        let body = json!({
+                "dest":base64_url_safe(&byte_base64_encoding(&to_pubkey)?),
+                "amt":node_command.amt.unwrap_or(1000),
+                "payment_hash":base64_url_safe(&byte_base64_encoding(&r_hash)?),
+                "dest_custom_records": {
+                    "5482373484": base64_url_safe(&byte_base64_encoding(&preimage)?),
+                    "34349334": memo,
+                }
+        });
+
+        let result = self.send_request(
+            options,
+            "send_keysend".to_owned(),
+            Method::POST,
+            url,
+            Some(body.to_string()),
+            node_command.timeout,
+        )?;
+        if !result.status().is_success() {
+            error!(
+                options.global_logger(),
+                "failed to make payment from {} to {}: {}",
+                node_command.from,
+                node_command.to,
+                result.text()?,
+            );
+            return Ok(());
+        }
+        let result_text: Value = result.json()?;
+        if let Some(error) = result_text.get("payment_error") {
+            if error.is_string() && !error.as_str().unwrap().is_empty() {
+                error!(
+                    options.global_logger(),
+                    "failed to make payment from {} to {}: {}",
+                    node_command.from,
+                    node_command.to,
+                    result_text
+                )
+            }
+        }
+        debug!(
+            options.global_logger(),
+            "successful payment from {} to {}: {}", node_command.from, node_command.to, result_text
+        );
         Ok(())
     }
 
@@ -683,16 +745,16 @@ pub fn add_rest_client(rest_client: LndRest) -> Result<LndRest, Error> {
     Ok(rest_client_cpy)
 }
 
-fn base64_url_safe(base64_str: &str) -> String {
+pub fn base64_url_safe(base64_str: &str) -> String {
     base64_str.replace("+", "-").replace("/", "_")
 }
 
-fn byte_base64_encoding(hex_str: &str) -> Result<String, Error> {
+pub fn byte_base64_encoding(hex_str: &str) -> Result<String, Error> {
     let pubkey_bytes = Vec::from_hex(hex_str)?;
     Ok(BASE64_STANDARD.encode(&pubkey_bytes))
 }
 
-fn hex_encoding(byte_base64: &str) -> Result<String, Error> {
+pub fn hex_encoding(byte_base64: &str) -> Result<String, Error> {
     let bytes = BASE64_STANDARD.decode(byte_base64)?;
     Ok(hex::encode(bytes))
 }

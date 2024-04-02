@@ -184,6 +184,20 @@ impl L2Node for Lnd {
                 .pay_invoice(self, options, node_command, payment_request)
         }
     }
+
+    fn send_keysend(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+        to_pubkey: String,
+    ) -> Result<(), Error> {
+        if let Some(rest) = self.lnd_rest.clone() {
+            rest.send_keysend(options, node_command, to_pubkey)
+        } else {
+            self.lnd_cli.send_keysend(self, options, node_command, to_pubkey)
+        }
+    }
+
     fn create_on_chain_address(&self, options: &Options) -> Result<String, Error> {
         if let Some(rest) = self.lnd_rest.clone() {
             rest.create_lnd_address(options)
