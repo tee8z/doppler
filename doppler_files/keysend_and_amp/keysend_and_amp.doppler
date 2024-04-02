@@ -1,0 +1,6 @@
+SKIP_CONF
+
+LOOP EVERY 5s
+    exchange SEND_LN customer AMT 10 --keysend
+    exchange SEND_LN customer AMT 10 --amp
+END

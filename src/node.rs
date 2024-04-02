@@ -58,10 +58,21 @@ pub trait L2Node: Any {
     ) -> Result<String, Error>;
     fn send_ln(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         let to_node = options.get_l2_by_name(&node_command.to)?;
+        if let Some(command) = node_command.subcommand.clone() {
+            if command == "--keysend" {
+                return self.send_keysend(options, node_command, to_node.get_cached_pubkey());
+            }
+        }
         let invoice = to_node.create_invoice(options, node_command)?;
         self.pay_invoice(options, node_command, invoice)?;
         Ok(())
     }
+    fn send_keysend(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+        to_pubkey: String,
+    ) -> Result<(), Error>;
     fn create_hold_invoice(
         &self,
         option: &Options,
@@ -87,6 +98,9 @@ pub trait L2Node: Any {
     }
     fn get_property(&self, name: &str, output: Output) -> Option<String> {
         get_property(name, output)
+    }
+    fn get_property_num(&self, name: &str, output: Output) -> Option<i64> {
+        get_property_num(name, output)
     }
     fn get_array_property(
         &self,
@@ -366,6 +380,21 @@ fn get_property(name: &str, output: Output) -> Option<String> {
             .and_then(|obj| obj.get(name))
             .and_then(Value::as_str)
             .map(str::to_owned)
+        {
+            Some(value) => return Some(value),
+            None => return None,
+        }
+    }
+    None
+}
+
+fn get_property_num(name: &str, output: Output) -> Option<i64> {
+    if output.status.success() {
+        let response: Value = from_slice(&output.stdout).expect("failed to parse JSON");
+        match response
+            .as_mapping()
+            .and_then(|obj| obj.get(name))
+            .and_then(Value::as_i64)
         {
             Some(value) => return Some(value),
             None => return None,

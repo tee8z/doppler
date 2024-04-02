@@ -99,6 +99,8 @@ impl L2Node for Lnd {
     fn add_pubkey(&mut self, options: &Options) {
         if options.rest {
             if let Some(lnd_rest) = self.lnd_rest.clone() {
+                info!(options.global_logger(), "rest {:?}", lnd_rest);
+
                 self.lnd_rest = Some(add_rest_client(lnd_rest).unwrap());
             }
         }
@@ -119,6 +121,7 @@ impl L2Node for Lnd {
     }
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error> {
         if let Some(rest) = self.lnd_rest.clone() {
+            info!(options.global_logger(), "rest {:?}", rest);
             rest.get_node_pubkey(options)
         } else {
             self.lnd_cli.get_node_pubkey(self, options)
@@ -181,6 +184,21 @@ impl L2Node for Lnd {
                 .pay_invoice(self, options, node_command, payment_request)
         }
     }
+
+    fn send_keysend(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+        to_pubkey: String,
+    ) -> Result<(), Error> {
+        if let Some(rest) = self.lnd_rest.clone() {
+            rest.send_keysend(options, node_command, to_pubkey)
+        } else {
+            self.lnd_cli
+                .send_keysend(self, options, node_command, to_pubkey)
+        }
+    }
+
     fn create_on_chain_address(&self, options: &Options) -> Result<String, Error> {
         if let Some(rest) = self.lnd_rest.clone() {
             rest.create_lnd_address(options)
@@ -319,11 +337,14 @@ pub fn build_lnd(
         .insert(lnd_conf.container_name.clone(), Some(lnd));
     lnd_conf.server_url = format!("https://localhost:{}", rest_port.to_string());
     if options.rest {
+        info!(options.global_logger(), "here making rest");
         lnd_conf.lnd_rest = Some(LndRest::new(
             &lnd_conf.server_url,
             lnd_conf.macaroon_path.clone(),
             lnd_conf.certificate_path.clone(),
         )?)
+    } else {
+        lnd_conf.lnd_rest = None;
     }
     info!(
         options.global_logger(),
@@ -410,6 +431,7 @@ pub fn load_config(
     container_name: String,
     bitcoind_service: String,
     rest_port: Option<&str>,
+    rest: bool,
 ) -> Result<Lnd, Error> {
     let full_path = &format!("data/{}/.lnd", name);
     let macaroon_path = format!(
@@ -423,11 +445,15 @@ pub fn load_config(
         format!("http://{}:8080", container_name)
     };
     let lnd_rest = if let Some(_) = rest_port {
-        Some(LndRest::new(
-            &server_url,
-            macaroon_path.clone(),
-            tls_path.clone(),
-        )?)
+        if rest {
+            Some(LndRest::new(
+                &server_url,
+                macaroon_path.clone(),
+                tls_path.clone(),
+            )?)
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -573,9 +599,16 @@ pub fn add_lnd_nodes(options: &mut Options) -> Result<(), Error> {
                     container_name.to_owned(),
                     bitcoind_service,
                     rest_port,
+                    options.rest,
                 );
             }
-            load_config(lnd_name, container_name.to_owned(), bitcoind_service, None)
+            load_config(
+                lnd_name,
+                container_name.to_owned(),
+                bitcoind_service,
+                None,
+                options.rest,
+            )
         })
         .filter_map(|res| res.ok())
         .collect();

@@ -3,6 +3,7 @@ use clap::{Args, Subcommand, ValueEnum};
 use conf_parser::processer::FileConf;
 use docker_compose_types::{Compose, ComposeNetworks, MapOrEmpty, Service, Services};
 use indexmap::map::IndexMap;
+use log::info;
 use rusqlite::Connection;
 use slog::{debug, error, Logger};
 use std::{
@@ -150,6 +151,7 @@ impl Options {
             Err(err) => panic!("error pulling down images: {}", err),
         };
         if external_nodes_path.is_some() {
+            info!("here");
             rest = true;
         }
         Self {
