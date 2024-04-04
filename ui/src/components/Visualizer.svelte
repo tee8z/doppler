@@ -16,6 +16,9 @@
 	function setNode(node: any) {
 		console.log(node.info);
 		info = node.info;
+		if (jsonData) {
+			jsonData = node.info;
+		}
 	}
 
 	const fetchData = async (connections: Connections) => {
@@ -45,7 +48,8 @@
 		let key = Object.keys(nodeData)[0];
 		//Set starting node
 		setNode(nodeData[key]);
-
+		edges = [];
+		nodes = [];
 		Object.entries(nodeData).forEach(([key, value]) => {
 			let current_pubkey = value.info.identity_pubkey;
 			nodes.push({ id: current_pubkey, alias: key, nodeInfo: value.info, known: current_pubkey });
@@ -91,7 +95,7 @@
 		tick();
 		let connections = await getConnections();
 		fetchData(connections);
-		//poller = setInterval(() => fetchData(connections), 20000); // Poll every 20 seconds
+		poller = setInterval(() => fetchData(connections), 20000); // Poll every 20 seconds
 	});
 
 	onDestroy(() => {
