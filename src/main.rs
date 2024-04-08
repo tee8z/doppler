@@ -17,7 +17,7 @@ pub struct Cli {
     #[arg(short, long)]
     docker_dash: bool,
 
-    // Path to doppler.db, stores tags
+    /// Path to doppler.db, stores tags
     #[arg(short, long, default_value = "./doppler.db")]
     storage_path: String,
 
@@ -32,6 +32,10 @@ pub struct Cli {
 
     #[command(subcommand)]
     app_sub_commands: Option<AppSubCommands>,
+
+    /// Path to ui config file, used to connect to the nodes via the browser
+    #[arg(short, long, default_value = "./ui/config/info.conf")]
+    ui_config_path: String,
 }
 
 fn main() -> Result<(), Error> {
@@ -47,6 +51,7 @@ fn main() -> Result<(), Error> {
     let mut options = Options::new(
         logger.clone(),
         cli.docker_dash,
+        cli.ui_config_path,
         cli.app_sub_commands,
         conn,
         cli.rest,

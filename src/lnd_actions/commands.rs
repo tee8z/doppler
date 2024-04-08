@@ -337,7 +337,6 @@ pub fn build_lnd(
         .insert(lnd_conf.container_name.clone(), Some(lnd));
     lnd_conf.server_url = format!("https://localhost:{}", rest_port.to_string());
     if options.rest {
-        info!(options.global_logger(), "here making rest");
         lnd_conf.lnd_rest = Some(LndRest::new(
             &lnd_conf.server_url,
             lnd_conf.macaroon_path.clone(),

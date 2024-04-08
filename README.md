@@ -4,7 +4,7 @@
 
 The DSL should empower developers to compose a concise script that configures an entire cluster of nodes running a single docker network, even if they are of different implementation types, to suit precise testing requirements. This should provide a sensation similar to working with a set of Lego blocks, where all the necessary components are at your fingertips, ready to be assembled based on the idea at hand.
 
-Additionally, this DSL can be used against a cluster of remote LND nodes (more implementations will follow) to generate activity across them. This could be payments or channel related activity at the moment, but more work can be done to further expand this to include starting and stopping the remote nodes as well as funding them from a configured faucet. Still would not recommend running these doppler files on a mainnet cluster of nodes, but I wont stop you from being reckless :wink:
+Additionally, this DSL can be used against a cluster of remote LND nodes (more implementations will follow) to generate activity across them. This could be payments or channel related activity at the moment, but more work can be done to further expand this to include starting and stopping the remote nodes as well as funding them from a configured faucet. Still would not recommend running these doppler files on a mainnet cluster of nodes, but we wont stop you from being reckless :wink:
 
 #### How to use:
 - More information on how to use this tool can be found here: [USAGE.md](./docs/USAGE.md)

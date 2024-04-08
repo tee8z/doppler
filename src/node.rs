@@ -193,7 +193,6 @@ impl ImageInfo {
                 NodeKind::Eclair => {
                     format!("polarlightning/eclair:{}", self.tag.clone())
                 }
-                NodeKind::Visualizer => self.tag.clone(),
             }
         }
     }

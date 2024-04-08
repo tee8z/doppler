@@ -1,7 +1,7 @@
 use crate::{
-    build_bitcoind, build_cln, build_eclair, build_lnd, build_visualizer,
-    load_options_from_compose, load_options_from_external_nodes, run_cluster, DopplerParser,
-    ImageInfo, L1Node, MinerTime, NodeCommand, NodeKind, Options, Rule, Tag,
+    build_bitcoind, build_cln, build_eclair, build_lnd, load_options_from_compose,
+    load_options_from_external_nodes, run_cluster, DopplerParser, ImageInfo, L1Node, MinerTime,
+    NodeCommand, NodeKind, Options, Rule, Tag,
 };
 use anyhow::{Error, Result};
 use pest::{
@@ -360,9 +360,6 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                 unimplemented!("can only support LND nodes at the moment for remote nodes");
             }
             let node_name = inner.next().expect("node name").as_str();
-            if kind == NodeKind::Visualizer {
-                return build_visualizer(options, node_name);
-            }
             let image: ImageInfo = match inner.next() {
                 Some(image) => get_image(options, kind.clone(), image.as_str()),
                 None => options.get_default_image(kind.clone()),
@@ -471,7 +468,6 @@ fn handle_build_command(
         NodeKind::Lnd => build_lnd(options, name, image, &details.unwrap().pair.unwrap()),
         NodeKind::Eclair => build_eclair(options, name, image, &details.unwrap().pair.unwrap()),
         NodeKind::Coreln => build_cln(options, name, image, &details.unwrap().pair.unwrap()),
-        NodeKind::Visualizer => build_visualizer(options, name),
     }
 }
 

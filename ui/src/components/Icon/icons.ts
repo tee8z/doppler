@@ -14,7 +14,7 @@ const icons = {
 	check,
 	radar,
 	octocat,
-	download
+	download,
 };
 
 export type IconName = keyof typeof icons;

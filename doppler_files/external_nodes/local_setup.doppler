@@ -4,7 +4,6 @@ LND exchange PAIR bd1
 LND customer PAIR bd1
 LND merchant PAIR bd1
 
-VISUALIZER view
 UP
 bd1 SEND_COINS merchant AMT 5000000
 bd1 SEND_COINS exchange AMT 5000000
