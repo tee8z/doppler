@@ -3,7 +3,6 @@ use clap::{Args, Subcommand, ValueEnum};
 use conf_parser::processer::FileConf;
 use docker_compose_types::{Compose, ComposeNetworks, MapOrEmpty, Service, Services};
 use indexmap::map::IndexMap;
-use log::info;
 use rusqlite::Connection;
 use slog::{debug, error, Logger};
 use std::{
@@ -84,6 +83,7 @@ pub struct Options {
     pub rest: bool,
     pub external_nodes_path: Option<String>,
     pub external_nodes: Option<Vec<ExternalNode>>,
+    pub ui_config_path: String,
 }
 
 #[derive(Clone)]
@@ -119,6 +119,7 @@ impl Options {
     pub fn new(
         logger: Logger,
         docker_dash: bool,
+        ui_config_path: String,
         app_sub_commands: Option<AppSubCommands>,
         connection: Connection,
         mut rest: bool,
@@ -175,6 +176,7 @@ impl Options {
             rest: rest,
             external_nodes_path: external_nodes_path,
             external_nodes: None,
+            ui_config_path
         }
     }
     pub fn get_image(&self, name: &str) -> Option<ImageInfo> {

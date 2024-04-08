@@ -53,7 +53,7 @@
 			.attr('orient', 'auto')
 			.append('path')
 			.attr('d', 'M0,-5L10,0L0,5')
-			.attr('fill', 'green');
+			.attr('fill', '#81fd90');
 
 		const path = svg
 			.append('g')
@@ -65,7 +65,7 @@
 			.attr('marker-end', (d: any) => `url(#initiator)`)
 			.attr('stroke-width', 5)
 			.attr('fill', 'none')
-			.style('stroke', 'green');
+			.style('stroke', '#81fd90');
 		path.on('click', sendJson);
 		svg
 			.append('defs')
@@ -99,7 +99,12 @@
 			.attr('fill', 'purple');
 
 		const node = svg.selectAll('.node').data(nodes).enter().append('g');
-		node.append('circle').attr('r', 25).attr('fill', 'blue');
+		node
+			.append('circle')
+			.attr('r', 35)
+			.attr('fill', '#15b2a7')
+			.attr('stroke', 'grey')
+			.attr('stroke-width', 2);
 		node
 			.append('text')
 			.text((d: any) => d.alias) // Assuming each node has an 'alias' property
