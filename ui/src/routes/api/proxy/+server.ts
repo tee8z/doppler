@@ -17,12 +17,16 @@ export const GET: RequestHandler = async function (event) {
                 error: "Failed, 'target' header to proxy GET request is required"
             })
         }
-        const httpsAgent = new https.Agent({
-            rejectUnauthorized: false,
-        });
-        const response = await fetch(target, { method: 'GET', agent: httpsAgent, headers: fetchHeaders });
+        let requestOptions: any = { method: 'GET', headers: fetchHeaders, credentials: "include" };
+        if (target.includes("https")) {
+            const httpsAgent = new https.Agent({
+                rejectUnauthorized: false,
+            });
+            requestOptions['agent'] = httpsAgent;
+        }
+        const response = await fetch(target, requestOptions);
         if (!response.ok) {
-            throw new Error("Failed to fetch from node")
+            throw new Error(`Failed to fetch from node: ${await response.text()}`)
         }
         const payload = await response.json();
         return json(payload);
@@ -49,12 +53,21 @@ export const POST: RequestHandler = async function (event) {
                 error: "Failed, 'target' header to proxy POST request is required"
             })
         }
-        const httpsAgent = new https.Agent({
-            rejectUnauthorized: false,
-        });
-        const response = await fetch(target, { method: 'POST', agent: httpsAgent, headers: fetchHeaders, body: await event.request.json() });
+        let requestOptions: any = { method: 'POST', headers: fetchHeaders, credentials: "include" };
+        if (target.includes("https")) {
+            const httpsAgent = new https.Agent({
+                rejectUnauthorized: false,
+            });
+            requestOptions['agent'] = httpsAgent;
+        }
+        const bodyText = await event.request.text();
+        if (bodyText) {
+            const body = JSON.parse(bodyText);
+            requestOptions['body'] = JSON.stringify(body);
+        }
+        const response = await fetch(target, requestOptions);
         if (!response.ok) {
-            throw new Error("Failed to fetch from node")
+            throw new Error(`Failed to fetch from node: ${await response.text()}`)
         }
         const payload = await response.json();
         return json(payload);

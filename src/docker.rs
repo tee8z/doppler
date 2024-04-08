@@ -1,6 +1,6 @@
 extern crate ini;
 use crate::{
-    create_config_files, get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options,
+    create_ui_config_files, get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options,
 };
 use anyhow::{anyhow, Error};
 use slog::{debug, error, info};
@@ -27,7 +27,7 @@ pub fn load_options_from_external_nodes(
     options.load_lnds()?;
     debug!(options.global_logger(), "loaded lnds");
     let network = options.external_nodes.clone().unwrap()[0].network.clone();
-    create_config_files(&options.ui_config_path, &network, options.lnd_nodes.clone())?;
+    create_ui_config_files(&options, &network)?;
     Ok(())
 }
 
@@ -102,7 +102,7 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     debug!(options.global_logger(), "saved cluster config");
 
     start_docker_compose(options)?;
-    create_config_files(&options.ui_config_path, "regtest", options.lnd_nodes.clone())?;
+    create_ui_config_files(options, "regtest")?;
 
     debug!(options.global_logger(), "started cluster");
     //simple wait for docker-compose to spin up
@@ -210,7 +210,7 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
         script_content.push_str(&format!(
             r#"
 {name}() {{
-    {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} eclair-cli -p test1234! "$@"
+    {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} eclair-cli -p test1234 "$@"
 }}
 "#,
         docker_command= docker_command,

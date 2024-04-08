@@ -25,9 +25,13 @@ pub struct Cln {
     pub alias: String,
     pub grpc_port: String,
     pub p2p_port: String,
+    pub rpc_server: String,
+    pub rest_port: String,
+    pub macaroon_path: String,
     pub server_url: String,
     pub path_vol: String,
     pub bitcoind_node_container_name: String,
+    pub network: String,
 }
 
 impl Cln {
@@ -168,7 +172,7 @@ pub fn build_cln(
     image: &ImageInfo,
     pair: &NodePair,
 ) -> Result<()> {
-    let cln_conf = build_and_save_config(options, name, pair).unwrap();
+    let mut cln_conf = build_and_save_config(options, name, pair).unwrap();
     debug!(
         options.global_logger(),
         "{} volume: {}", name, cln_conf.path_vol
@@ -177,29 +181,39 @@ pub fn build_cln(
     // Passing these args on the command line is unavoidable due to how the docker image is setup
     let command = Command::Simple("--network=regtest --lightning-dir=/home/clightning".to_string());
 
+    let rest_port = options.new_port();
+    let grpc_port = options.new_port();
+    let p2p_port = options.new_port();
     let bitcoind = vec![cln_conf.bitcoind_node_container_name.clone()];
     let cln = Service {
         depends_on: DependsOnOptions::Simple(bitcoind),
         image: Some(image.get_image()),
         container_name: Some(cln_conf.container_name.clone()),
-        ports: Ports::Short(vec![format!(
-            "{}:{}",
-            options.new_port(),
-            cln_conf.p2p_port
-        )]),
+        ports: Ports::Short(vec![
+            format!("{}:{}", p2p_port, cln_conf.p2p_port),
+            format!("{}:{}", grpc_port, cln_conf.grpc_port),
+            format!("{}:{}", rest_port, cln_conf.rest_port),
+        ]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         command: Some(command),
-        volumes: Volumes::Simple(vec![format!("{}:/home/clightning:rw", cln_conf.path_vol)]),
+        volumes: Volumes::Simple(vec![format!("{}:/home/clightning:rw", cln_conf.path_vol), format!("{}/certs:/opt/c-lightning-rest/certs:rw", cln_conf.path_vol)]),
         networks: Networks::Simple(vec![NETWORK.to_owned()]),
         ..Default::default()
     };
     options
         .services
         .insert(cln_conf.container_name.clone(), Some(cln));
+    cln_conf.server_url = format!("https://localhost:{}", rest_port.to_string());
     info!(
         options.global_logger(),
-        "JTODO: FIXUP: connect to {} - {}", cln_conf.container_name, cln_conf.server_url,
+        "connect to {} via rest using {} with access macaroons at {} and via rpc using localhost:{} ",
+        cln_conf.container_name,
+        cln_conf.server_url,
+        cln_conf.macaroon_path,
+        grpc_port,
     );
+    cln_conf.grpc_port = grpc_port.to_string();
+    cln_conf.rest_port = rest_port.to_string();
 
     options.cln_nodes.push(cln_conf);
     Ok(())
@@ -255,10 +269,14 @@ pub fn build_and_save_config(
         container_name: container_name.clone(),
         pubkey: None,
         server_url: format!("http://{}:10000", container_name),
-        path_vol: full_path,
+        path_vol: full_path.clone(),
+        macaroon_path: format!("{}/certs/access.macaroon", full_path),
+        rpc_server: format!("{}:10000", container_name),
         grpc_port: "10000".to_owned(),
         p2p_port: "9735".to_owned(),
+        rest_port: "8080".to_owned(),
         bitcoind_node_container_name: bitcoind_node.container_name.clone(),
+        network: String::from("regtest"),
     })
 }
 
@@ -349,11 +367,15 @@ fn load_config(name: &str, container_name: String, bitcoind_service: String) -> 
         alias: name.to_owned(),
         container_name: container_name.to_owned(),
         pubkey: None,
+        rpc_server: format!("{}:10000", container_name),
         server_url: format!("https://{}:8080", container_name),
         path_vol: full_path.to_owned(),
         grpc_port: "10000".to_owned(),
         p2p_port: "9735".to_owned(),
+        rest_port: "8080".to_owned(),
+        macaroon_path: format!("{}/certs/access.macaroon", full_path),
         bitcoind_node_container_name: bitcoind_service,
+        network: String::from("regtest"),
     })
 }
 
@@ -448,7 +470,7 @@ fn open_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> Re
         "fundchannel",
         &to_pubkey,
         &amt,
-        "slow",
+        "normal",
     ];
     let output = run_command(options, "newaddr".to_owned(), commands)?;
     if output.status.success() {
