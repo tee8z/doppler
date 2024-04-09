@@ -347,10 +347,10 @@ pub fn build_lnd(
     }
     info!(
         options.global_logger(),
-        "connect to {} via rest using {} and via grpc using {} with admin.macaroon found at {}",
+        "connect to {} via rest using {} and via grpc using {} with admin.macaroon found at localhost:{}",
         lnd_conf.container_name,
         lnd_conf.server_url,
-        lnd_conf.rpc_server,
+        grpc_port,
         lnd_conf.macaroon_path.clone(),
     );
     lnd_conf.grpc_port = grpc_port.to_string();

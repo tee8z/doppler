@@ -9,16 +9,6 @@
 		<dl>
 			<dt>Alias</dt>
 			<dd>{info.alias}</dd>
-			<dt>Blockheight</dt>
-			<dd>{info.block_height}</dd>
-			<dt># Peers</dt>
-			<dd>{info.num_peers}</dd>
-			<dt># Active Channels</dt>
-			<dd>{info.num_active_channels}</dd>
-			<dt>Synced to Chain</dt>
-			<dd>{info.synced_to_chain ? 'True' : 'False'}</dd>
-			<dt>Synced to Graph</dt>
-			<dd>{info.synced_to_graph ? 'True' : 'False'}</dd>
 			<dt>Version</dt>
 			<dd>{info.version}</dd>
 		</dl>

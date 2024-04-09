@@ -178,7 +178,6 @@
 			}
 			dispatch('dataEvent', identifiers);
 		}
-		//dispatch();
 	}
 </script>
 

@@ -1,32 +1,30 @@
 import type { NodeRequests } from "./nodes";
 
-export interface LndRequests {
+export interface EclairRequests {
     base_url: string;
     header: HeadersInit;
-    tls: string;
-    new(base_url: string, macaroon: string, tls: any): void;
+    new(base_url: string, password: string): void;
 }
 
-export class LndRequests implements LndRequests, NodeRequests {
+export class EclairRequests implements EclairRequests, NodeRequests {
     base_url: string;
     header: HeadersInit;
-    tls: string;
     proxy: string;
 
-    constructor(base_url: string, macaroon: string, tls: string) {
+    constructor(base_url: string, password: string) {
         this.base_url = base_url;
+        const encodedCredentials = btoa(":" + password);
         this.header = {
-            'Grpc-Metadata-macaroon': macaroon,
+            'Authorization': `Basic ${encodedCredentials}`
         };
-        this.tls = tls;
         this.proxy = '/api/proxy';
     }
-    //API docs: https://lightning.engineering/api-docs/api/lnd/index.html
+    //API docs: https://acinq.github.io/eclair/#introduction
 
     async fetchChannels(): Promise<any> {
-        let url = `${this.base_url}/v1/channels`
+        let url = `${this.base_url}/channels`
         let headers = { ...this.header, 'target': url };
-        const response = await fetch(this.proxy, { headers });
+        const response = await fetch(this.proxy, { method: "POST", headers, credentials: "include" });
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -34,9 +32,9 @@ export class LndRequests implements LndRequests, NodeRequests {
     }
 
     async fetchInfo(): Promise<any> {
-        let url = `${this.base_url}/v1/getinfo`
+        let url = `${this.base_url}/getinfo`
         let headers = { ...this.header, 'target': url };
-        const response = await fetch(this.proxy, { headers });
+        const response = await fetch(this.proxy, { method: "POST", headers, credentials: "include" });
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -44,9 +42,9 @@ export class LndRequests implements LndRequests, NodeRequests {
     }
 
     async fetchBalance(): Promise<any> {
-        let url = `${this.base_url}/v1/balance/blockchain`
+        let url = `${this.base_url}/globalbalance`
         let headers = { ...this.header, 'target': url };
-        const response = await fetch(this.proxy, { headers });
+        const response = await fetch(this.proxy, { method: "POST", headers, credentials: "include" });
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -54,9 +52,9 @@ export class LndRequests implements LndRequests, NodeRequests {
     }
 
     async fetchSpecificNodeInfo(pubkey: String): Promise<any> {
-        let url = `${this.base_url}/v1/graph/node/${pubkey}`
+        let url = `${this.base_url}/node/${pubkey}`
         let headers = { ...this.header, 'target': url };
-        const response = await fetch(this.proxy, { headers });
+        const response = await fetch(this.proxy, { method: "POST", headers, credentials: "include" });
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }

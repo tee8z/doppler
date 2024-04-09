@@ -12,7 +12,7 @@ Additionally, this DSL can be used against a cluster of remote LND nodes (more i
 #### Supports:
 - [x] creating a cluster of bitcoind nodes
 - [x] setting up one or many as miners on a provided time interval
-- [x] setting up and funding a cluster of lnd nodes, backed by a specified bitcoind node
+- [x] setting up and funding a cluster of LND nodes, backed by a specified bitcoind node
 - [x] outputing the cluster configuration as a docker-compose
 - [x] making all the logs/data of the nodes available to the running of doppler
 - [x] allowing to set values in LND's native configuration file
@@ -37,7 +37,7 @@ Additionally, this DSL can be used against a cluster of remote LND nodes (more i
 
 ### Interesting Simulations
 - Chain of force closures due to an inflight htlc: [force_closures](./doppler_files/force_close/README.md)
-- Executing a successful hodl invoice in lnd nodes: [hodl_invoice](./doppler_files/hold_invoices/README.md)
+- Executing a successful hodl invoice in LND nodes: [hodl_invoice](./doppler_files/hold_invoices/README.md)
 - Using external LND nodes and generating payment activity: [external_nodes](./doppler_files/external_nodes/README.md)
 - Running with multiple versions of lightning implementations: [different_versions](./doppler_files/different_images/different_images.doppler)
 

@@ -25,6 +25,7 @@ pub struct Eclair {
     pub alias: String,
     pub rest_port: String,
     pub p2p_port: String,
+    pub grpc_port: String,
     pub server_url: String,
     pub rpc_server: String,
     pub api_password: String,
@@ -169,6 +170,8 @@ pub fn build_eclair(
     );
 
     let rest_port = options.new_port();
+    let grpc_port = options.new_port();
+    let p2p_port = options.new_port();
     let bitcoind = vec![eclair_conf.bitcoind_node_container_name.clone()];
     let eclair = Service {
         depends_on: DependsOnOptions::Simple(bitcoind),
@@ -176,8 +179,9 @@ pub fn build_eclair(
         container_name: Some(eclair_conf.container_name.clone()),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         ports: Ports::Short(vec![
-            format!("{}:{}", options.new_port(), eclair_conf.p2p_port),
-            format!("{}:{}", options.new_port(), eclair_conf.rest_port),
+            format!("{}:{}", p2p_port, eclair_conf.p2p_port),
+            format!("{}:{}", rest_port, eclair_conf.rest_port),
+            format!("{}:{}", grpc_port, eclair_conf.grpc_port),
         ]),
         volumes: Volumes::Simple(vec![format!("{}:/home/eclair:rw", eclair_conf.path_vol)]),
         networks: Networks::Simple(vec![NETWORK.to_owned()]),
@@ -186,13 +190,15 @@ pub fn build_eclair(
     options
         .services
         .insert(eclair_conf.container_name.clone(), Some(eclair));
+    eclair_conf.server_url = format!("http://localhost:{}", rest_port.to_string());
     info!(
         options.global_logger(),
-        "connect to {} via rest using {} and via grpc using {}",
+        "connect to {} via rest using {} and via grpc using localhost:{}",
         eclair_conf.container_name,
         eclair_conf.server_url,
-        eclair_conf.rpc_server,
+        grpc_port,
     );
+    eclair_conf.grpc_port = grpc_port.to_string();
     eclair_conf.rest_port = rest_port.to_string();
     options.eclair_nodes.push(eclair_conf);
     Ok(())
@@ -221,7 +227,7 @@ fn build_and_save_config(options: &Options, name: &str, pair: &NodePair) -> Resu
     if let Some(node) = found_node {
         bitcoind_node = node;
     }
-    let api_password = r#""test1234!""#;
+    let api_password = r#""test1234""#;
     set_values(
         &mut conf,
         name.to_owned(),
@@ -246,11 +252,12 @@ fn build_and_save_config(options: &Options, name: &str, pair: &NodePair) -> Resu
         container_name: container_name.clone(),
         pubkey: None,
         rpc_server: format!("{}:10000", container_name),
-        server_url: format!("http://{}:10000", container_name),
+        server_url: format!("http://{}:8080", container_name),
         path_vol: full_path,
         api_password: api_password.to_owned(),
         rest_port: "8080".to_owned(),
         p2p_port: "9735".to_owned(),
+        grpc_port: "10000".to_owned(),
         bitcoind_node_container_name: bitcoind_node.get_container_name(),
     })
 }
@@ -347,12 +354,13 @@ fn load_config(
         container_name: container_name.to_owned(),
         pubkey: None,
         rpc_server: format!("{}:10000", container_name),
-        server_url: format!("https://{}:8080", container_name),
+        server_url: format!("http://{}:8080", container_name),
         path_vol: full_path.to_owned(),
+        grpc_port: "10000".to_owned(),
         rest_port: "8080".to_owned(),
         p2p_port: "9735".to_owned(),
         //TODO: pull this value from the config file
-        api_password: "test1234!".to_owned(),
+        api_password: "test1234".to_owned(),
         bitcoind_node_container_name: bitcoind_service,
     })
 }
@@ -614,10 +622,11 @@ fn open_channel(node: &Eclair, options: &Options, node_command: &NodeCommand) ->
         debug!(options.global_logger(), "failed to connect: {}", e);
     });
     let to_node = options.get_l2_by_name(node_command.to.as_str())?;
-    let amt = node_command.amt.unwrap_or(100000).to_string();
+    let amt = node_command.amt.unwrap_or(100000);
     let compose_path = options.compose_path.as_ref().unwrap();
     let to_pubkey = format!("--nodeId={}", to_node.get_cached_pubkey());
     let funding_command = format!("--fundingSatoshis={}", amt);
+    let funding_fee_budget = format!("--fundingFeeBudgetSatoshis={}", amt as f64 * 0.10);
     let commands = vec![
         "-f",
         compose_path,
@@ -631,6 +640,7 @@ fn open_channel(node: &Eclair, options: &Options, node_command: &NodeCommand) ->
         "open",
         &to_pubkey,
         &funding_command,
+        &funding_fee_budget,
     ];
     let output = run_command(options, "open channel".to_owned(), commands)?;
     if output.status.success() {
