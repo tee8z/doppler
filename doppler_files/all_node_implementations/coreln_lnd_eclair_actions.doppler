@@ -25,8 +25,3 @@ bd1 MINE_BLOCKS 12
 
 lnd1 OPEN_CHANNEL coreln1 AMT 100000
 bd1 MINE_BLOCKS 10
-
-coreln1 SEND_LN lnd1 AMT 10
-eclair1 SEND_LN coreln1 AMT 10
-lnd1 SEND_LN coreln1 AMT 10
-

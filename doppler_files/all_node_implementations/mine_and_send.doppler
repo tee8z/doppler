@@ -1,0 +1,11 @@
+SKIP_CONF
+
+LOOP EVERY 30s
+    bd1 MINE_BLOCKS 1
+END
+
+LOOP EVERY 20s
+    coreln1 SEND_LN lnd1 AMT 10
+    eclair1 SEND_LN coreln1 AMT 10
+    lnd1 SEND_LN coreln1 AMT 10
+END

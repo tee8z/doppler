@@ -17,7 +17,7 @@ export const GET: RequestHandler = async function (event) {
                 error: "Failed, 'target' header to proxy GET request is required"
             })
         }
-        let requestOptions: any = { method: 'GET', headers: fetchHeaders, credentials: "include" };
+        let requestOptions: any = { method: 'GET', headers: fetchHeaders };
         if (target.includes("https")) {
             const httpsAgent = new https.Agent({
                 rejectUnauthorized: false,
@@ -26,7 +26,7 @@ export const GET: RequestHandler = async function (event) {
         }
         const response = await fetch(target, requestOptions);
         if (!response.ok) {
-            throw new Error(`Failed to fetch from node: ${await response.text()}`)
+            throw new Error(`Failed to fetch from node ${target}: ${await response.text()} `)
         }
         const payload = await response.json();
         return json(payload);
