@@ -108,6 +108,12 @@
 						});
 					}
 				}
+				if (!channel.initiator) {
+					return;
+				}
+				if (edges.includes((edge: any) => edge.channel_id === channel.chan_id)) {
+					return;
+				}
 				edges.push({
 					source: current_pubkey,
 					target: channel.remote_pubkey,
@@ -153,6 +159,12 @@
 						});
 					}
 				}
+				if (!channel.initiator) {
+					return;
+				}
+				if (edges.includes((edge: any) => edge.channel_id === channel.channel_id)) {
+					return;
+				}
 				edges.push({
 					source: current_pubkey,
 					target: channel.id,
@@ -196,6 +208,12 @@
 							known: current_pubkey
 						});
 					}
+				}
+				if (!channel.initiator) {
+					return;
+				}
+				if (edges.includes((edge: any) => edge.channel_id === channel.channelId)) {
+					return;
 				}
 				edges.push({
 					source: current_pubkey,

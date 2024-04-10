@@ -54,18 +54,45 @@
 			.append('path')
 			.attr('d', 'M0,-5L10,0L0,5')
 			.attr('fill', '#81fd90');
-
+		const pathWidth = 5;
 		const path = svg
 			.append('g')
 			.selectAll('path')
 			.data(edges)
 			.enter()
 			.append('path')
-			//.attr('class', (d: any) => `link ${d.type}`)
+			.attr('id', (d: any, i: any) => `path_${i}`)
 			.attr('marker-end', (d: any) => `url(#initiator)`)
-			.attr('stroke-width', 5)
+			.attr('stroke-width', pathWidth)
 			.attr('fill', 'none')
 			.style('stroke', '#81fd90');
+
+		const pathLabels = svg
+			.selectAll('.path-label')
+			.data(edges)
+			.enter()
+			.append('text')
+			.attr('class', 'path-label-local')
+			.style('font-size', '18px')
+			.attr('text-anchor', 'middle') // Adjust text-anchor as needed
+			.append('textPath')
+			.attr('xlink:href', (d: any, i: any) => `#path_${i}`) // Reference the path by its ID
+			.attr('startOffset', '30%')
+			.text((d: any) => d.remote_balance);
+
+		const pathLabelsEnd = svg
+			.selectAll('.path-label-end')
+			.data(edges)
+			.enter()
+			.append('text')
+			.attr('class', 'path-label-remote')
+			.style('font-size', '18px')
+			.attr('text-anchor', 'middle') // Center the text horizontally
+			.append('textPath')
+			.attr('xlink:href', (d: any, i: any) => `#path_${i}`) // Reference the path by its ID
+			.attr('startOffset', '70%') // Position the text at the end of the path
+			.text((d: any) => d.local_balance);
+
 		path.on('click', sendJson);
 		svg
 			.append('defs')
@@ -85,19 +112,6 @@
 			.append('path')
 			.attr('d', 'M0,-5L10,0L0,5');
 
-		svg
-			.selectAll('text.label')
-			.data(edges)
-			.enter()
-			.append('text')
-			.attr('class', 'label')
-			.append('textPath')
-			.attr('xlink:href', (d: any, i: any) => `#path_${i}`) // Reference the path by its unique ID
-			.text((d: any) => d.capacity)
-			.attr('startOffset', '50%')
-			.style('text-anchor', 'middle')
-			.attr('fill', 'purple');
-
 		const node = svg.selectAll('.node').data(nodes).enter().append('g');
 		node
 			.append('circle')
@@ -114,18 +128,25 @@
 			.style('fill', 'white');
 
 		node.on('click', sendJson);
-
 		simulation.on('tick', () => {
-			path.attr('d', linkArc);
+			path.attr('d', (d: any) => linkArc(d, edges)); // Pass the links array to linkArc
 			node.attr('transform', transform);
 		});
 	}
 
-	function linkArc(d: any) {
-		var dx = d.target.x - d.source.x,
-			dy = d.target.y - d.source.y,
-			dr = Math.sqrt(dx * dx + dy * dy);
+	function linkArc(d: any, edges: any) {
+		const dx = d.target.x - d.source.x,
+			dy = d.target.y - d.source.y;
+		let dr = Math.sqrt(dx * dx + dy * dy);
 
+		const sameSourceTargetPaths = edges.filter(function (edge: any) {
+			return edge.source === d.source && edge.target === d.target;
+		});
+		const currentIndex = sameSourceTargetPaths.indexOf(d);
+		if (currentIndex > 0) {
+			//This bit of math allows none of the curves to overlap
+			dr = (dr * currentIndex) / 10;
+		}
 		return (
 			'M' +
 			d.source.x +
