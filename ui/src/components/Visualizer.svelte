@@ -2,6 +2,7 @@
 	import { LndRequests } from '$lib/lnd_requests';
 	import { onDestroy, onMount, tick } from 'svelte';
 	import Graph from './Graph.svelte';
+	import { edges, nodes } from './Graph.svelte';
 	import Info from './Info.svelte';
 	import Button from './Button.svelte';
 	import type { Connections } from '../routes/api/connections/+server';
@@ -11,8 +12,6 @@
 	import { EclairRequests } from '$lib/eclair_requests';
 	let dataPromise: Promise<Nodes> | null = null;
 	let poller: ReturnType<typeof setInterval>;
-	let edges: any[] = [];
-	let nodes: any[] = [];
 
 	let info: any = null;
 	let jsonData: any = null;
@@ -70,13 +69,14 @@
 		let key = Object.keys(nodeData)[0];
 		//Set starting node
 		setNode(nodeData[key]);
-		//TODO: only take the delta of edges/nodes, don't fully reset each time
-		edges = [];
-		nodes = [];
-		map_lnd_channels(nodes, nodesWeKnow, edges, nodeData);
-		map_coreln_channels(nodes, nodesWeKnow, edges, nodeData);
-		map_eclair_channels(nodes, nodesWeKnow, edges, nodeData);
 
+		let cur_nodes: any[] = [];
+		let cur_edges: any[] = [];
+		map_lnd_channels(cur_nodes, nodesWeKnow, cur_edges, nodeData);
+		map_coreln_channels(cur_nodes, nodesWeKnow, cur_edges, nodeData);
+		map_eclair_channels(cur_nodes, nodesWeKnow, cur_edges, nodeData);
+		nodes.set(cur_nodes);
+		edges.set(cur_edges);
 		dataPromise = Promise.resolve(nodeData);
 	};
 
@@ -289,8 +289,8 @@
 		</div>
 	</div>
 	<div class="flex flex-1">
-		{#if nodes.length > 0}
-			<Graph on:dataEvent={handleClickData} {nodes} {edges} />
+		{#if $nodes.length > 0}
+			<Graph on:dataEvent={handleClickData} />
 		{/if}
 	</div>
 {:catch error}
