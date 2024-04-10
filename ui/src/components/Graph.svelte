@@ -219,7 +219,7 @@
 		console.log(data);
 		if (data.channel_id) {
 			const identifiers = {
-				channel_id: data.chan_id,
+				channel_id: data.channel_id,
 				source: data.source.id,
 				type: 'channel',
 				channel: data.channel

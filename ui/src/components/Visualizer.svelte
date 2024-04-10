@@ -75,6 +75,7 @@
 		map_lnd_channels(cur_nodes, nodesWeKnow, cur_edges, nodeData);
 		map_coreln_channels(cur_nodes, nodesWeKnow, cur_edges, nodeData);
 		map_eclair_channels(cur_nodes, nodesWeKnow, cur_edges, nodeData);
+		console.log(cur_edges);
 		nodes.set(cur_nodes);
 		edges.set(cur_edges);
 		dataPromise = Promise.resolve(nodeData);
@@ -160,22 +161,24 @@
 						});
 					}
 				}
-				if (!channel.initiator) {
+				if (!(channel.opener === 'local')) {
 					return;
 				}
 				if (edges.includes((edge: any) => edge.channel_id === channel.channel_id)) {
 					return;
 				}
-				edges.push({
+				let edge = {
 					source: current_pubkey,
 					target: channel.id,
 					channel_id: channel.channel_id,
 					capacity: channel.msatoshi_total,
-					local_balance: channel.msatoshi_to_them / 1000,
-					remote_balance: channel.msatoshi_to_us / 1000,
+					local_balance: channel.msatoshi_to_us / 1000,
+					remote_balance: channel.msatoshi_to_them / 1000,
 					initiator: channel.opener === 'local',
 					channel: channel
-				});
+				};
+				console.log('coreln edge', edge);
+				edges.push(edge);
 			});
 		});
 	}
@@ -210,22 +213,28 @@
 						});
 					}
 				}
-				if (!channel.initiator) {
+				console.log(
+					'eclair is initiator: ',
+					channel.data.commitments.params.localParams.isInitiator
+				);
+				if (!channel.data.commitments.params.localParams.isInitiator) {
 					return;
 				}
 				if (edges.includes((edge: any) => edge.channel_id === channel.channelId)) {
 					return;
 				}
-				edges.push({
+				console.log("eclair active:", channel.data.commitments.active);
+				let edge = {
 					source: current_pubkey,
 					target: channel.nodeId,
 					channel_id: channel.channelId,
 					capacity: channel.data.commitments.active[0].fundingTx.amountSatoshis,
-					local_balance: 0,
-					remote_balance: 0, // TODO fix these and see what happens when multiple payments are sent
+					local_balance: channel.data.commitments.active[0].localCommit.spec.toLocal / 1000,
+					remote_balance: channel.data.commitments.active[0].localCommit.spec.toRemote / 1000, // TODO fix these and see what happens when multiple payments are sent
 					initiator: channel.data.commitments.params.localParams.isInitiator,
 					channel: channel
-				});
+				};
+				edges.push(edge);
 			});
 		});
 	}
