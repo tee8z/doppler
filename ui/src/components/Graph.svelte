@@ -7,12 +7,12 @@
 	export let nodes: any[] = [];
 	export let edges: any[] = [];
 	let svg: any;
-
 	onMount(() => {
+		console.log('on mount');
 		const svgElement = document.querySelector('#graphSVG');
 		if (!svgElement) return;
 
-		const svg = d3
+		svg = d3
 			.select(svgElement)
 			.attr('width', '100%')
 			.attr('height', '100%')
@@ -73,12 +73,13 @@
 			.enter()
 			.append('text')
 			.attr('class', 'path-label-local')
-			.style('font-size', '18px')
+			.style('font-size', '22px')
 			.attr('text-anchor', 'middle') // Adjust text-anchor as needed
 			.append('textPath')
 			.attr('xlink:href', (d: any, i: any) => `#path_${i}`) // Reference the path by its ID
 			.attr('startOffset', '30%')
-			.text((d: any) => d.remote_balance);
+			.attr('fill', '#c851e4')
+			.text((d: any) => `${d.local_balance} sats`);
 
 		const pathLabelsEnd = svg
 			.selectAll('.path-label-end')
@@ -86,12 +87,13 @@
 			.enter()
 			.append('text')
 			.attr('class', 'path-label-remote')
-			.style('font-size', '18px')
+			.style('font-size', '22px')
 			.attr('text-anchor', 'middle') // Center the text horizontally
 			.append('textPath')
 			.attr('xlink:href', (d: any, i: any) => `#path_${i}`) // Reference the path by its ID
 			.attr('startOffset', '70%') // Position the text at the end of the path
-			.text((d: any) => d.local_balance);
+			.attr('fill', '#c851e4')
+			.text((d: any) => `${d.remote_balance} sats`);
 
 		path.on('click', sendJson);
 		svg

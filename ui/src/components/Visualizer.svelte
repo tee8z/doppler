@@ -70,6 +70,7 @@
 		let key = Object.keys(nodeData)[0];
 		//Set starting node
 		setNode(nodeData[key]);
+		//TODO: only take the delta of edges/nodes, don't fully reset each time
 		edges = [];
 		nodes = [];
 		map_lnd_channels(nodes, nodesWeKnow, edges, nodeData);
@@ -236,7 +237,7 @@
 		tick();
 		let connections = await getConnections();
 		fetchData(connections);
-		//poller = setInterval(() => fetchData(connections), 20000); // Poll every 20 seconds
+		poller = setInterval(() => fetchData(connections), 15000); // Poll every 15 seconds
 	});
 
 	onDestroy(() => {
