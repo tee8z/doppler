@@ -32,6 +32,7 @@ export const GET: RequestHandler = async function (event) {
         return json(payload);
     } catch (error) {
         console.error(error);
+        //TODO: send error code here instead of 200 with a body
         return json({
             error: 'Failed to proxy response to nodes'
         });

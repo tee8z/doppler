@@ -3,6 +3,7 @@ export interface NodeData {
     info: any;
     balance: any;
     type: string;
+    online: boolean;
 }
 
 export interface Nodes {
