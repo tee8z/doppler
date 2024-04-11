@@ -38,10 +38,10 @@
 				return;
 			}
 			if (!simulation) {
-				console.log("render graph")
+				console.log('render graph');
 				renderGraph(svg, cur_nodes, cur_edges);
-			} else if (svg){
-				console.log("update graph");
+			} else if (svg) {
+				console.log('update graph');
 				updateGraph(svg, simulation, cur_nodes, cur_edges);
 			}
 		});
@@ -68,10 +68,10 @@
 				d3
 					.forceLink(edges)
 					.id((d: any) => d.id)
-					.distance(400) //increase to greaten the length of the edges
+					.distance(300) //increase to greaten the length of the edges
 			)
-			.force('charge', d3.forceManyBody().strength(-200)) //make more negative to increase the space between non connected nodes
-			.force('center', d3.forceCenter(500, 500));
+			.force('charge', d3.forceManyBody().strength(-900)) //make more negative to increase the space between non connected nodes
+			.force('center', d3.forceCenter(400, 400));
 
 		svg
 			.append('defs')
@@ -88,7 +88,7 @@
 			.attr('orient', 'auto')
 			.append('path')
 			.attr('d', 'M0,-5L10,0L0,5')
-			.attr('fill', '#81fd90');
+			.attr('fill', '#b3b3cc');
 		const pathWidth = 5;
 		const path = svg
 			.append('g')
@@ -100,7 +100,7 @@
 			.attr('marker-end', (d: any) => `url(#initiator)`)
 			.attr('stroke-width', pathWidth)
 			.attr('fill', 'none')
-			.style('stroke', '#81fd90');
+			.style('stroke', '#b3b3cc');
 
 		const pathLabels = svg
 			.selectAll('.path-label')
@@ -113,7 +113,9 @@
 			.append('textPath')
 			.attr('xlink:href', (d: any, i: any) => `#path_${i}`) // Reference the path by its ID
 			.attr('startOffset', '30%')
-			.attr('fill', '#c851e4')
+			.attr('fill', '#FF9900')
+			.attr('stroke', '#000000')
+			.attr('stroke-width', '.3px')
 			.text((d: any) => `${d.local_balance} sats`);
 
 		const pathLabelsEnd = svg
@@ -127,7 +129,9 @@
 			.append('textPath')
 			.attr('xlink:href', (d: any, i: any) => `#path_${i}`) // Reference the path by its ID
 			.attr('startOffset', '70%') // Position the text at the end of the path
-			.attr('fill', '#c851e4')
+			.attr('fill', '#FF9900')
+			.attr('stroke', '#000000')
+			.attr('stroke-width', '.3px')
 			.text((d: any) => `${d.remote_balance} sats`);
 
 		path.on('click', sendJson);
@@ -162,7 +166,9 @@
 			.attr('text-anchor', 'middle')
 			.style('font-size', '24px')
 			.style('font-family', 'sans-serif')
-			.style('fill', 'white');
+			.style('fill', 'white')
+			.attr('stroke', '#000000') // Set the outline color
+			.attr('stroke-width', '.4px'); // Set the outline thickness
 
 		node.on('click', sendJson);
 		simulation.on('tick', () => {
@@ -181,8 +187,10 @@
 		});
 		const currentIndex = sameSourceTargetPaths.indexOf(d);
 		if (currentIndex > 0) {
-			//This bit of math allows none of the curves to overlap
-			dr = (dr * currentIndex) / 10;
+			// Adjust the scaling factor based on the total number of edges
+			const totalEdges = sameSourceTargetPaths.length;
+			const scalingFactor = 60 / totalEdges;
+			dr = (dr * currentIndex) / scalingFactor;
 		}
 		return (
 			'M' +
@@ -281,7 +289,7 @@
 			.append('path')
 			.attr('id', (d: any, i: any) => `path_${i}`)
 			.attr('marker-end', (d: any) => `url(#initiator)`)
-			.attr('stroke-width', 5)
+			.attr('stroke-width', 20)
 			.attr('fill', 'none')
 			.style('stroke', '#81fd90');
 

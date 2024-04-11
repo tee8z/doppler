@@ -12,7 +12,8 @@
 	import { EclairRequests } from '$lib/eclair_requests';
 	let dataPromise: Promise<Nodes> | null = null;
 	let poller: ReturnType<typeof setInterval>;
-
+	let isPolling = false;
+	let connections: Connections;
 	let info: any = null;
 	let jsonData: any = null;
 	let nodeConnections: { pubkey: string; connection: NodeRequests }[] = [];
@@ -33,12 +34,17 @@
 					connectionConfig.tls
 				);
 				let response = await requests.fetchChannels();
-				let channels = response.channels;
+				let channels = [];
+				if (response && response.channels) {
+					channels = response.channels;
+				}
 				let balance = await requests.fetchBalance();
 				let info = await requests.fetchInfo();
 				nodesWeKnow[info.identity_pubkey] = key;
 				nodeConnections.push({ pubkey: info.identity_pubkey, connection: requests });
-				return { [key]: { channels, balance, info, type: 'lnd' } };
+				if (channels && balance && info) {
+					return { [key]: { channels, balance, info, type: 'lnd' } };
+				}
 			} else if (connectionConfig.type === 'coreln') {
 				const requests = new CorelnRequests(connectionConfig.host, connectionConfig.macaroon);
 				const channels = await requests.fetchChannels();
@@ -46,7 +52,9 @@
 				const info = await requests.fetchInfo();
 				nodesWeKnow[info.id] = key;
 				nodeConnections.push({ pubkey: info.id, connection: requests });
-				return { [key]: { channels, balance, info, type: 'coreln' } };
+				if (channels && balance && info) {
+					return { [key]: { channels, balance, info, type: 'coreln' } };
+				}
 			} else if (connectionConfig.type === 'eclair') {
 				const requests = new EclairRequests(connectionConfig.host, connectionConfig.password);
 				const channels = await requests.fetchChannels();
@@ -54,7 +62,9 @@
 				const info = await requests.fetchInfo();
 				nodesWeKnow[info.nodeId] = key;
 				nodeConnections.push({ pubkey: info.nodeId, connection: requests });
-				return { [key]: { channels, balance, info, type: 'eclair' } };
+				if (channels && balance && info) {
+					return { [key]: { channels, balance, info, type: 'eclair' } };
+				}
 			}
 		});
 		const results = await Promise.all(promises);
@@ -223,7 +233,7 @@
 				if (edges.includes((edge: any) => edge.channel_id === channel.channelId)) {
 					return;
 				}
-				console.log("eclair active:", channel.data.commitments.active);
+				console.log('eclair active:', channel.data.commitments.active);
 				let edge = {
 					source: current_pubkey,
 					target: channel.nodeId,
@@ -244,9 +254,8 @@
 			clearInterval(poller);
 		}
 		tick();
-		let connections = await getConnections();
+		connections = await getConnections();
 		fetchData(connections);
-		poller = setInterval(() => fetchData(connections), 15000); // Poll every 15 seconds
 	});
 
 	onDestroy(() => {
@@ -274,6 +283,20 @@
 	function prettyPrintJson(jsonData: any) {
 		return JSON.stringify(jsonData, null, 2);
 	}
+
+	function stop() {
+		isPolling = false;
+		if (poller) {
+			clearInterval(poller);
+		}
+	}
+
+	function start() {
+		if (connections) {
+			poller = setInterval(() => fetchData(connections), 15000); // Poll every 15 seconds
+			isPolling = true;
+		}
+	}
 </script>
 
 {#await dataPromise}
@@ -282,6 +305,15 @@
 	<div class="info">
 		<div>
 			<h1>Visualize</h1>
+			<div>
+				<span>Polling</span>
+				<Button on:click={start}>Start</Button>
+				<Button on:click={stop}>Stop</Button>
+				<label class="switch">
+					<input type="checkbox" id="pollingToggle" bind:checked={isPolling} />
+					<span class="slider round" />
+				</label>
+			</div>
 			<Info {info} />
 			<div>
 				{#if nodeData}
@@ -324,5 +356,55 @@
 		overflow-wrap: break-word;
 		white-space: pre-wrap;
 		word-break: break-all;
+	}
+	.switch {
+		position: relative;
+		display: inline-block;
+		width: 60px;
+		height: 34px;
+	}
+
+	.switch input {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.slider {
+		position: absolute;
+		cursor: pointer;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: #ccc;
+		transition: 0.4s;
+	}
+
+	.slider:before {
+		position: absolute;
+		content: '';
+		height: 26px;
+		width: 26px;
+		left: 4px;
+		bottom: 4px;
+		background-color: white;
+		transition: 0.4s;
+	}
+
+	input:checked + .slider {
+		background-color: #2196f3;
+	}
+
+	input:checked + .slider:before {
+		transform: translateX(26px);
+	}
+
+	.slider.round {
+		border-radius: 34px;
+	}
+
+	.slider.round:before {
+		border-radius: 50%;
 	}
 </style>
