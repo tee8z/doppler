@@ -237,8 +237,8 @@
 					target: channel.id,
 					channel_id: channel.channel_id,
 					capacity: channel.msatoshi_total,
-					local_balance: channel.msatoshi_to_us / 1000,
-					remote_balance: channel.msatoshi_to_them / 1000,
+					local_balance: Math.floor(channel.msatoshi_to_us / 1000),
+					remote_balance: Math.floor(channel.msatoshi_to_them / 1000),
 					initiator: channel.opener === 'local',
 					active: channel.state === 'CHANNELD_NORMAL',
 					channel: channel
@@ -293,8 +293,8 @@
 					target: channel.nodeId,
 					channel_id: channel.channelId,
 					capacity: channel.data.commitments.active[0].fundingTx.amountSatoshis,
-					local_balance: channel.data.commitments.active[0].localCommit.spec.toLocal / 1000,
-					remote_balance: channel.data.commitments.active[0].localCommit.spec.toRemote / 1000, // TODO fix these and see what happens when multiple payments are sent
+					local_balance: Math.floor(channel.data.commitments.active[0].localCommit.spec.toLocal / 1000),
+					remote_balance: Math.floor(channel.data.commitments.active[0].localCommit.spec.toRemote / 1000), // TODO fix these and see what happens when multiple payments are sent
 					initiator: channel.data.commitments.params.localParams.isInitiator,
 					active: channel.state === 'NORMAL',
 					channel: channel
