@@ -6,4 +6,4 @@ doppler-cluster.yaml
 doppler.db
 external_nodes/info.conf
 external_nodes/*/*
-/ui/config/*
+/ui/config/info.conf
