@@ -28,10 +28,7 @@
 		const promises = Object.keys(connections).map(async (key) => {
 			const connectionConfig = connections[key];
 			if (connectionConfig.type === 'lnd') {
-				let requests = new LndRequests(
-					connectionConfig.host,
-					connectionConfig.macaroon,
-				);
+				let requests = new LndRequests(connectionConfig.host, connectionConfig.macaroon);
 				let response = await requests.fetchChannels();
 				let channels = [];
 				if (response && response.channels) {
@@ -221,7 +218,7 @@
 					let known = nodeConnections.find((node) => node.pubkey === channel.id);
 					nodes.push({
 						id: channel.id,
-						alias: (known && known.alias) ? known.alias : channel.id,
+						alias: known && known.alias ? known.alias : channel.id,
 						known: current_pubkey
 					});
 				}
@@ -277,7 +274,7 @@
 					let known = nodeConnections.find((node) => node.pubkey === channel.nodeId);
 					nodes.push({
 						id: channel.nodeId,
-						alias: (known && known.alias) ? known.alias : channel.nodeId,
+						alias: known && known.alias ? known.alias : channel.nodeId,
 						known: current_pubkey
 					});
 				}
@@ -293,8 +290,12 @@
 					target: channel.nodeId,
 					channel_id: channel.channelId,
 					capacity: channel.data.commitments.active[0].fundingTx.amountSatoshis,
-					local_balance: Math.floor(channel.data.commitments.active[0].localCommit.spec.toLocal / 1000),
-					remote_balance: Math.floor(channel.data.commitments.active[0].localCommit.spec.toRemote / 1000), // TODO fix these and see what happens when multiple payments are sent
+					local_balance: Math.floor(
+						channel.data.commitments.active[0].localCommit.spec.toLocal / 1000
+					),
+					remote_balance: Math.floor(
+						channel.data.commitments.active[0].localCommit.spec.toRemote / 1000
+					), // TODO fix these and see what happens when multiple payments are sent
 					initiator: channel.data.commitments.params.localParams.isInitiator,
 					active: channel.state === 'NORMAL',
 					channel: channel
@@ -323,13 +324,20 @@
 		if (data.type == 'channel') {
 			jsonData = data.channel;
 		} else if (data.type == 'node') {
-			if (data.id != data.known) {
+			if (data.known) {
 				let connection = nodeConnections.find((connection) => connection.pubkey == data.known);
-				connection?.connection.fetchSpecificNodeInfo(data.id).then((nodeInfo) => {
+				console.log(connection);
+				connection?.connection.fetchInfo().then((nodeInfo) => {
+					console.log(nodeInfo);
 					jsonData = nodeInfo;
 				});
-			} else {
-				jsonData = data.nodeInfo;
+			} else if (data.id != data.known) {
+				let connection = nodeConnections.find((connection) => connection.pubkey == data.known);
+				console.log(connection);
+				connection?.connection.fetchSpecificNodeInfo(data.id).then((nodeInfo) => {
+					console.log(nodeInfo);
+					jsonData = nodeInfo;
+				});
 			}
 		} else {
 			console.error('data type not supported', data);

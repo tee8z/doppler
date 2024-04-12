@@ -245,9 +245,6 @@
 				type: 'node',
 				known: data.known
 			};
-			if (data.nodeInfo) {
-				identifiers['nodeInfo'] = data.nodeInfo;
-			}
 			dispatch('dataEvent', identifiers);
 		}
 	}
