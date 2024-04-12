@@ -70,7 +70,7 @@
 					.id((d: any) => d.id)
 					.distance(300) //increase to greaten the length of the edges
 			)
-			.force('charge', d3.forceManyBody().strength(-300)) //make more negative to increase the space between non connected nodes
+			.force('charge', d3.forceManyBody().strength(-900)) //make more negative to increase the space between non connected nodes
 			.force('center', d3.forceCenter(400, 400));
 
 		svg

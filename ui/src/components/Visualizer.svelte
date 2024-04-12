@@ -242,7 +242,6 @@
 					remote_balance: channel.msatoshi_to_them / 1000,
 					initiator: channel.opener === 'local',
 					active: channel.state === 'CHANNELD_NORMAL',
-
 					channel: channel
 				};
 				edges.push(edge);

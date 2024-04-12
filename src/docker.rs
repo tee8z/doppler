@@ -130,7 +130,7 @@ fn start_docker_compose(options: &Options) -> Result<(), Error> {
 }
 
 fn mine_initial_blocks(options: &Options) -> Result<(), Error> {
-    // mine 100+ blocks
+    // mine 200+ blocks
     let miner = options
         .bitcoinds
         .iter()
@@ -140,7 +140,7 @@ fn mine_initial_blocks(options: &Options) -> Result<(), Error> {
             "at least one miner is required to be setup for this cluster to run"
         ));
     }
-    miner.unwrap().mine_bitcoin(options, 100)?;
+    miner.unwrap().mine_bitcoin(options, 200)?;
     Ok(())
 }
 

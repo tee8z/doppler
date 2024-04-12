@@ -1,9 +1,11 @@
 SKIP_CONF
 
-LOOP EVERY 30m
+LOOP EVERY 2s
+    exchange WAIT BLOCKS 1
     exchange SEND_LN customer AMT 10
 END
 
-LOOP EVERY 20s
+LOOP EVERY 2s
+    exchange WAIT BLOCKS 1
     exchange SEND_LN merchant AMT 100
 END
