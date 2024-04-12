@@ -1,9 +1,13 @@
 ### How to run teh daemon
 
+if using docker-compose
 ```
 cargo run --bin doppler -- -f "doppler_files/only_setup_network.doppler" -d
 ```
-
+if using docker compose
+```
+cargo run --bin doppler -- -f "doppler_files/only_setup_network.doppler"
+```
 - add a new .doppler file to create the cluster how you want
 - examples of the possible valid grammar for the doppler files can be found in [doppler_files](../doppler_files/)
 

@@ -1,6 +1,6 @@
-BITCOIND_MINER bd1
-CORELN coreln1 PAIR bd1
-ECLAIR eclair1 PAIR bd1
-LND lnd1 PAIR bd1
+BITCOIND_MINER bd
+CORELN coreln PAIR bd
+ECLAIR eclair PAIR bd
+LND lnd PAIR bd
 
 UP

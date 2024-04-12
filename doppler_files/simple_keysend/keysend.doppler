@@ -1,0 +1,3 @@
+SKIP_CONF
+
+lnd1 SEND_LN lnd3 AMT 10 --keysend

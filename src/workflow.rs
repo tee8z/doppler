@@ -391,7 +391,7 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
                     .as_str()
                     .parse()
                     .unwrap(),
-                false => 10000000,
+                false => 100000000,
             };
             handle_build_command(
                 options,

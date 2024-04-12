@@ -1,7 +1,6 @@
 export interface ConnectionConfig {
     macaroon: string;
     password: string;
-    tls: string;
     host: string;
     type: string;
 }

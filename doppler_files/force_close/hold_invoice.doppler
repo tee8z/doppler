@@ -1,2 +1,2 @@
 SKIP_CONF
-sender SEND_HOLD_LN problem AMT 350 TIMEOUT 30s TAG inflight_payment
+sender SEND_HOLD_LN problem AMT 350 TIMEOUT 60s TAG inflight_payment

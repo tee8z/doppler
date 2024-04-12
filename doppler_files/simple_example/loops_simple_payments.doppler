@@ -1,0 +1,11 @@
+SKIP_CONF
+
+// mine block every 30s 
+LOOP EVERY 30s
+    bd1 MINE_BLOCKS 1
+END
+
+LOOP EVERY 15s
+  lnd2 SEND_LN lnd1 AMT 90
+  lnd1 SEND_LN lnd3 AMT 90
+END

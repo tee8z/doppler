@@ -1,14 +1,15 @@
 SKIP_CONF
 
-LOOP EVERY 20s
-    merchant WAIT BLOCKS 10
+LOOP EVERY 2s
+    merchant WAIT BLOCKS 1
     merchant SEND_LN exchange AMT 100
 END
 
-LOOP EVERY 30m
+LOOP EVERY 2s
+    merchant WAIT BLOCKS 1
     customer SEND_LN exchange AMT 10
-    customer SEND_HOLD_LN merchant AMT 350 TAG customer_payment
-    merchant WAIT BLOCKS 10
-    merchant SETTLE_HOLD_LN customer TAG customer_payment
 END
 
+LOOP EVERY 5s
+    bd1 MINE_BLOCKS 6
+END

@@ -12,49 +12,85 @@
 	import { EclairRequests } from '$lib/eclair_requests';
 	let dataPromise: Promise<Nodes> | null = null;
 	let poller: ReturnType<typeof setInterval>;
-
+	let isPolling = false;
+	let connections: Connections;
 	let info: any = null;
 	let jsonData: any = null;
-	let nodeConnections: { pubkey: string; connection: NodeRequests }[] = [];
+	let nodeConnections: { pubkey: string; alias: string; connection: NodeRequests }[] = [];
 	function setNode(node: any) {
 		info = node.info;
 		jsonData = node.info;
 	}
-
+	//TODO: add color to channels to show active/inactive
+	//TODO: show a light or symbol when each given node sees all the channels, use graph description for this
 	const fetchData = async (connections: Connections) => {
 		let nodeData: Nodes = {};
-		let nodesWeKnow: Record<string, string> = {};
 		const promises = Object.keys(connections).map(async (key) => {
 			const connectionConfig = connections[key];
 			if (connectionConfig.type === 'lnd') {
 				let requests = new LndRequests(
 					connectionConfig.host,
 					connectionConfig.macaroon,
-					connectionConfig.tls
 				);
 				let response = await requests.fetchChannels();
-				let channels = response.channels;
+				let channels = [];
+				if (response && response.channels) {
+					channels = response.channels;
+				}
 				let balance = await requests.fetchBalance();
 				let info = await requests.fetchInfo();
-				nodesWeKnow[info.identity_pubkey] = key;
-				nodeConnections.push({ pubkey: info.identity_pubkey, connection: requests });
-				return { [key]: { channels, balance, info, type: 'lnd' } };
+				if (!response['error']) {
+					nodeConnections.push({ pubkey: info.identity_pubkey, alias: key, connection: requests });
+				}
+				if (channels && balance && info) {
+					return {
+						[key]: {
+							channels,
+							balance,
+							info,
+							type: 'lnd',
+							online: response['error'] ? false : true
+						}
+					};
+				}
 			} else if (connectionConfig.type === 'coreln') {
 				const requests = new CorelnRequests(connectionConfig.host, connectionConfig.macaroon);
 				const channels = await requests.fetchChannels();
 				const balance = await requests.fetchBalance();
 				const info = await requests.fetchInfo();
-				nodesWeKnow[info.id] = key;
-				nodeConnections.push({ pubkey: info.id, connection: requests });
-				return { [key]: { channels, balance, info, type: 'coreln' } };
+				if (!info['error']) {
+					nodeConnections.push({ pubkey: info.id, alias: key, connection: requests });
+				}
+				if (channels && balance && info) {
+					return {
+						[key]: {
+							channels,
+							balance,
+							info,
+							type: 'coreln',
+							online: info['error'] ? false : true
+						}
+					};
+				}
 			} else if (connectionConfig.type === 'eclair') {
 				const requests = new EclairRequests(connectionConfig.host, connectionConfig.password);
 				const channels = await requests.fetchChannels();
 				const balance = await requests.fetchBalance();
 				const info = await requests.fetchInfo();
-				nodesWeKnow[info.nodeId] = key;
-				nodeConnections.push({ pubkey: info.nodeId, connection: requests });
-				return { [key]: { channels, balance, info, type: 'eclair' } };
+				if (!info['error']) {
+					nodeConnections.push({ pubkey: info.nodeId, alias: key, connection: requests });
+				}
+				if (channels && balance && info) {
+					return {
+						[key]: {
+							channels,
+							balance,
+							info,
+							type: 'eclair',
+							online: info['error'] ? false : true
+						}
+					};
+				}
 			}
 		});
 		const results = await Promise.all(promises);
@@ -72,50 +108,57 @@
 
 		let cur_nodes: any[] = [];
 		let cur_edges: any[] = [];
-		map_lnd_channels(cur_nodes, nodesWeKnow, cur_edges, nodeData);
-		map_coreln_channels(cur_nodes, nodesWeKnow, cur_edges, nodeData);
-		map_eclair_channels(cur_nodes, nodesWeKnow, cur_edges, nodeData);
-		console.log(cur_edges);
+		map_lnd_channels(cur_nodes, cur_edges, nodeData);
+		map_coreln_channels(cur_nodes, cur_edges, nodeData);
+		map_eclair_channels(cur_nodes, cur_edges, nodeData);
 		nodes.set(cur_nodes);
 		edges.set(cur_edges);
 		dataPromise = Promise.resolve(nodeData);
 	};
 
-	function map_lnd_channels(
-		nodes: any[],
-		nodesWeKnow: Record<string, string>,
-		edges: any[],
-		nodeData: Nodes
-	) {
+	function map_lnd_channels(nodes: any[], edges: any[], nodeData: Nodes) {
 		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
 			if (value.type !== 'lnd') {
 				return;
 			}
+			if (!value.online) {
+				return;
+			}
+			if (!has_node(nodes, value.info.identity_pubkey)) {
+				nodes.push({
+					id: value.info.identity_pubkey,
+					alias: key,
+					known: value.info.identity_pubkey
+				});
+			}
+		});
+		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
+			if (value.type !== 'lnd') {
+				return;
+			}
+			if (!value.online) {
+				return;
+			}
 			let current_pubkey = value.info.identity_pubkey;
-			nodes.push({ id: current_pubkey, alias: key, nodeInfo: value.info, known: current_pubkey });
 			value.channels.forEach((channel: any) => {
-				let knownNode = nodesWeKnow[channel.remote_pubkey];
-				if (!knownNode) {
-					if (channel.peer_alias) {
-						nodes.push({
-							id: channel.remote_pubkey,
-							alias: channel.peer_alias,
-							known: current_pubkey
-						});
-					} else if (!nodes.includes((node: any) => node.id === channel.remote_pubkey)) {
-						nodes.push({
-							id: channel.remote_pubkey,
-							alias: channel.remote_pubkey,
-							known: current_pubkey
-						});
-					}
+				if (!channel.remote_pubkey) {
+					return;
+				}
+				if (!has_node(nodes, channel.remote_pubkey)) {
+					let known = nodeConnections.find((node) => node.pubkey === channel.remote_pubkey);
+					nodes.push({
+						id: channel.remote_pubkey,
+						alias: known && known.alias ? known.alias : channel.remote_pubkey,
+						known: channel.remote_pubkey
+					});
 				}
 				if (!channel.initiator) {
 					return;
 				}
-				if (edges.includes((edge: any) => edge.channel_id === channel.chan_id)) {
+				if (has_channel(edges, channel.chan_id)) {
 					return;
 				}
+				console.log(channel);
 				edges.push({
 					source: current_pubkey,
 					target: channel.remote_pubkey,
@@ -124,49 +167,71 @@
 					local_balance: channel.local_balance,
 					remote_balance: channel.remote_balance,
 					initiator: channel.initiator,
+					active: channel.active,
 					channel: channel
 				});
 			});
 		});
 	}
 
-	function map_coreln_channels(
-		nodes: any[],
-		nodesWeKnow: Record<string, string>,
-		edges: any[],
-		nodeData: Nodes
-	) {
+	function has_node(nodes: any[], channel_remote: string) {
+		for (let node of nodes) {
+			if (node.id === channel_remote) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function has_channel(channels: any[], channel_id: string) {
+		for (let channel of channels) {
+			if (channel.channel_id === channel_id) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function map_coreln_channels(nodes: any[], edges: any[], nodeData: Nodes) {
 		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
 			if (value.type !== 'coreln') {
 				return;
 			}
+			if (!value.online) {
+				return;
+			}
+			if (!has_node(nodes, value.info.id)) {
+				nodes.push({
+					id: value.info.id,
+					alias: key,
+					known: value.info.id
+				});
+			}
+		});
+		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
+			if (value.type !== 'coreln') {
+				return;
+			}
+			if (!value.online) {
+				return;
+			}
 			let current_pubkey = value.info.id;
-			console.log(current_pubkey);
-			nodes.push({ id: current_pubkey, alias: key, nodeInfo: value.info, known: current_pubkey });
 			value.channels.forEach((channel: any) => {
-				console.log('coreln channel', channel);
-				let knownNode = nodesWeKnow[channel.id];
-				if (!knownNode) {
-					if (channel.alias) {
-						nodes.push({
-							id: channel.id,
-							alias: channel.alias,
-							known: current_pubkey
-						});
-					} else if (!nodes.includes((node: any) => node.id === channel.id)) {
-						nodes.push({
-							id: channel.id,
-							alias: channel.id,
-							known: current_pubkey
-						});
-					}
+				if (!has_node(nodes, channel.id)) {
+					let known = nodeConnections.find((node) => node.pubkey === channel.id);
+					nodes.push({
+						id: channel.id,
+						alias: (known && known.alias) ? known.alias : channel.id,
+						known: current_pubkey
+					});
 				}
 				if (!(channel.opener === 'local')) {
 					return;
 				}
-				if (edges.includes((edge: any) => edge.channel_id === channel.channel_id)) {
+				if (has_channel(edges, channel.channel_id)) {
 					return;
 				}
+				console.log(channel);
 				let edge = {
 					source: current_pubkey,
 					target: channel.id,
@@ -175,55 +240,54 @@
 					local_balance: channel.msatoshi_to_us / 1000,
 					remote_balance: channel.msatoshi_to_them / 1000,
 					initiator: channel.opener === 'local',
+					active: channel.state === 'CHANNELD_NORMAL',
 					channel: channel
 				};
-				console.log('coreln edge', edge);
 				edges.push(edge);
 			});
 		});
 	}
 
-	function map_eclair_channels(
-		nodes: any[],
-		nodesWeKnow: Record<string, string>,
-		edges: any[],
-		nodeData: Nodes
-	) {
+	function map_eclair_channels(nodes: any[], edges: any[], nodeData: Nodes) {
 		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
 			if (value.type !== 'eclair') {
 				return;
 			}
+			if (!value.online) {
+				return;
+			}
+			if (!has_node(nodes, value.info.nodeId)) {
+				nodes.push({
+					id: value.info.nodeId,
+					alias: key,
+					known: value.info.nodeId
+				});
+			}
+		});
+		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
+			if (value.type !== 'eclair') {
+				return;
+			}
+			if (!value.online) {
+				return;
+			}
 			let current_pubkey = value.info.nodeId;
-			nodes.push({ id: current_pubkey, alias: key, nodeInfo: value.info, known: current_pubkey });
 			value.channels.forEach((channel: any) => {
-				console.log('eclair channel', channel);
-				let knownNode = nodesWeKnow[channel.nodeId];
-				if (!knownNode) {
-					if (channel.alias) {
-						nodes.push({
-							id: channel.id,
-							alias: channel.alias,
-							known: current_pubkey
-						});
-					} else if (!nodes.includes((node: any) => node.id === channel.nodeId)) {
-						nodes.push({
-							id: channel.nodeId,
-							alias: channel.nodeId,
-							known: current_pubkey
-						});
-					}
+				if (!has_node(nodes, channel.nodeId)) {
+					let known = nodeConnections.find((node) => node.pubkey === channel.nodeId);
+					nodes.push({
+						id: channel.nodeId,
+						alias: (known && known.alias) ? known.alias : channel.nodeId,
+						known: current_pubkey
+					});
 				}
-				console.log(
-					'eclair is initiator: ',
-					channel.data.commitments.params.localParams.isInitiator
-				);
 				if (!channel.data.commitments.params.localParams.isInitiator) {
 					return;
 				}
-				if (edges.includes((edge: any) => edge.channel_id === channel.channelId)) {
+				if (has_channel(edges, channel.channelId)) {
 					return;
 				}
-				console.log("eclair active:", channel.data.commitments.active);
+				console.log(channel);
 				let edge = {
 					source: current_pubkey,
 					target: channel.nodeId,
@@ -232,6 +296,7 @@
 					local_balance: channel.data.commitments.active[0].localCommit.spec.toLocal / 1000,
 					remote_balance: channel.data.commitments.active[0].localCommit.spec.toRemote / 1000, // TODO fix these and see what happens when multiple payments are sent
 					initiator: channel.data.commitments.params.localParams.isInitiator,
+					active: channel.state === 'NORMAL',
 					channel: channel
 				};
 				edges.push(edge);
@@ -244,9 +309,8 @@
 			clearInterval(poller);
 		}
 		tick();
-		let connections = await getConnections();
+		connections = await getConnections();
 		fetchData(connections);
-		poller = setInterval(() => fetchData(connections), 15000); // Poll every 15 seconds
 	});
 
 	onDestroy(() => {
@@ -274,6 +338,20 @@
 	function prettyPrintJson(jsonData: any) {
 		return JSON.stringify(jsonData, null, 2);
 	}
+
+	function stop() {
+		isPolling = false;
+		if (poller) {
+			clearInterval(poller);
+		}
+	}
+
+	function start() {
+		if (connections) {
+			poller = setInterval(() => fetchData(connections), 15000); // Poll every 15 seconds
+			isPolling = true;
+		}
+	}
 </script>
 
 {#await dataPromise}
@@ -282,6 +360,15 @@
 	<div class="info">
 		<div>
 			<h1>Visualize</h1>
+			<div>
+				<span>Polling</span>
+				<Button on:click={start}>Start</Button>
+				<Button on:click={stop}>Stop</Button>
+				<label class="switch">
+					<input type="checkbox" id="pollingToggle" bind:checked={isPolling} />
+					<span class="slider round" />
+				</label>
+			</div>
 			<Info {info} />
 			<div>
 				{#if nodeData}
@@ -324,5 +411,55 @@
 		overflow-wrap: break-word;
 		white-space: pre-wrap;
 		word-break: break-all;
+	}
+	.switch {
+		position: relative;
+		display: inline-block;
+		width: 60px;
+		height: 34px;
+	}
+
+	.switch input {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.slider {
+		position: absolute;
+		cursor: pointer;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: #ccc;
+		transition: 0.4s;
+	}
+
+	.slider:before {
+		position: absolute;
+		content: '';
+		height: 26px;
+		width: 26px;
+		left: 4px;
+		bottom: 4px;
+		background-color: white;
+		transition: 0.4s;
+	}
+
+	input:checked + .slider {
+		background-color: #2196f3;
+	}
+
+	input:checked + .slider:before {
+		transform: translateX(26px);
+	}
+
+	.slider.round {
+		border-radius: 34px;
+	}
+
+	.slider.round:before {
+		border-radius: 50%;
 	}
 </style>
