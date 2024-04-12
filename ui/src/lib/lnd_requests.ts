@@ -1,13 +1,13 @@
 import { BaseRequestHandler, type NodeRequests } from "./nodes";
 
 export interface LndRequests {
-    new(base_url: string, macaroon: string, tls: any): void;
+    new(base_url: string, macaroon: string): void;
 }
 
 export class LndRequests implements LndRequests, NodeRequests {
     requestHandler: BaseRequestHandler
 
-    constructor(base_url: string, macaroon: string, tls: string) {
+    constructor(base_url: string, macaroon: string) {
         const header = {
             'Grpc-Metadata-macaroon': macaroon,
         };

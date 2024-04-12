@@ -6,5 +6,6 @@ END
 
 LOOP EVERY 15s
     eclair SEND_LN coreln AMT 10
-    lnd SEND_LN coreln AMT 10
+    coreln SEND_LN lnd AMT 10
+    lnd SEND_LN eclair AMT 10
 END

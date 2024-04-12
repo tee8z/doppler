@@ -7,7 +7,6 @@ export interface ConnectionConfig {
     macaroon: string;
     password: string;
     type: string;
-    tls: string;
     host: string;
 }
 
@@ -25,10 +24,8 @@ export const GET: RequestHandler = async function () {
             const sectionConfig = parsedConfig[section];
             if (sectionConfig.TYPE == 'lnd') {
                 const readMacaroon = fs.readFileSync(sectionConfig.ADMIN_MACAROON_PATH).toString('hex');
-                const readTls = fs.readFileSync(sectionConfig.TLS_CERT_PATH, 'utf-8');
                 connections[section] = {
                     macaroon: readMacaroon,
-                    tls: readTls,
                     host: sectionConfig.API_ENDPOINT,
                     type: sectionConfig.TYPE,
                     password: ''
@@ -40,14 +37,12 @@ export const GET: RequestHandler = async function () {
                     macaroon: readMacaroon,
                     host: sectionConfig.API_ENDPOINT,
                     type: sectionConfig.TYPE,
-                    tls: '',
                     password: ''
                 };
             } else if (sectionConfig.TYPE === 'eclair') {
                 connections[section] = {
                     macaroon: '',
                     host: sectionConfig.API_ENDPOINT,
-                    tls: '',
                     password: sectionConfig.API_PASSWORD,
                     type: sectionConfig.TYPE
                 };

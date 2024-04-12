@@ -31,7 +31,6 @@
 				let requests = new LndRequests(
 					connectionConfig.host,
 					connectionConfig.macaroon,
-					connectionConfig.tls
 				);
 				let response = await requests.fetchChannels();
 				let channels = [];
