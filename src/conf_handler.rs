@@ -84,6 +84,7 @@ pub struct Options {
     pub external_nodes_path: Option<String>,
     pub external_nodes: Option<Vec<ExternalNode>>,
     pub ui_config_path: String,
+    pub network: String,
 }
 
 #[derive(Clone)]
@@ -124,6 +125,7 @@ impl Options {
         connection: Connection,
         mut rest: bool,
         external_nodes_path: Option<String>,
+        network: String,
     ) -> Self {
         let starting_port = vec![9089];
         let (aliases, shell_type) = if app_sub_commands.is_some() {
@@ -176,7 +178,8 @@ impl Options {
             rest: rest,
             external_nodes_path: external_nodes_path,
             external_nodes: None,
-            ui_config_path
+            ui_config_path,
+            network
         }
     }
     pub fn get_image(&self, name: &str) -> Option<ImageInfo> {

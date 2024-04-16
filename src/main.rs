@@ -25,6 +25,10 @@ pub struct Cli {
     #[arg(short, long)]
     rest: bool,
 
+    /// Set network lightning nodes and bitcoind are running on, default to regtest
+    #[arg(short, long, default_value = "regtest")]
+    network: String,
+
     /// Path to override file for external LND nodes
     /// Doppler scripts can only use these nodes matching aliases when set
     #[arg(short, long)]
@@ -56,6 +60,7 @@ fn main() -> Result<(), Error> {
         conn,
         cli.rest,
         cli.external_nodes,
+        cli.network,
     );
     run_workflow_until_stop(&mut options, contents)?;
     info!(logger, "successfully cleaned up processes, shutting down");

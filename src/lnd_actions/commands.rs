@@ -41,8 +41,12 @@ impl Lnd {
         }
     }
 
-    pub fn get_macaroon_path(&self) -> &str {
-        "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon"
+    pub fn get_macaroon_path(&self) -> String {
+        format!(
+            "--macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/{}/admin.macaroon",
+            self.network
+        )
+        .clone()
     }
     pub fn get_rpc_server_command(&self) -> String {
         "--rpcserver=localhost:10000".to_owned()
@@ -372,7 +376,7 @@ fn build_and_save_config(
         ));
     }
 
-    let original = get_absolute_path("config/lnd.conf")?;
+    let original = get_absolute_path(&format!("config/{}/lnd.conf", options.network))?;
     let destination_dir = &format!("data/{}/.lnd", name);
     let source: File = OpenOptions::new().read(true).write(true).open(original)?;
 
@@ -389,7 +393,7 @@ fn build_and_save_config(
         bitcoind_node = node;
     }
 
-    set_l1_values(&mut conf, bitcoind_node)?;
+    set_l1_values(&mut conf, &options.network, bitcoind_node)?;
     let container_name = format!("doppler-lnd-{}", name);
 
     set_application_options_values(&mut conf, name, &container_name)?;
@@ -401,7 +405,8 @@ fn build_and_save_config(
         .to_string();
     let macaroon_path = format!(
         "{}/data/chain/bitcoin/{}/admin.macaroon",
-        full_path, "regtest"
+        full_path,
+        options.network.clone()
     );
     let server_url = format!("http://{}:10000", container_name);
     Ok(Lnd {
@@ -421,7 +426,7 @@ fn build_and_save_config(
         bitcoind_node_container_name: bitcoind_node.container_name.clone(),
         lnd_cli: LndCli,
         lnd_rest: None, //we set this later in the process when the forwarding ports are determined
-        network: String::from("regtest"),
+        network: options.network.clone(),
     })
 }
 
@@ -431,11 +436,12 @@ pub fn load_config(
     bitcoind_service: String,
     rest_port: Option<&str>,
     rest: bool,
+    network: &str,
 ) -> Result<Lnd, Error> {
     let full_path = &format!("data/{}/.lnd", name);
     let macaroon_path = format!(
         "{}/data/chain/bitcoin/{}/admin.macaroon",
-        full_path, "regtest"
+        full_path, network
     );
     let tls_path = format!("{}/tls.cert", full_path);
     let server_url = if let Some(rest_port) = rest_port {
@@ -474,7 +480,7 @@ pub fn load_config(
         bitcoind_node_container_name: bitcoind_service,
         lnd_cli: LndCli,
         lnd_rest: lnd_rest,
-        network: String::from("regtest"),
+        network: network.to_owned(),
     })
 }
 
@@ -507,13 +513,17 @@ pub fn load_external_node_config(external_node: &ExternalNode) -> Result<Lnd, Er
     })
 }
 
-pub fn set_l1_values(conf: &mut FileConf, bitcoind_node: &dyn L1Node) -> Result<(), Error> {
+pub fn set_l1_values(
+    conf: &mut FileConf,
+    network: &str,
+    bitcoind_node: &dyn L1Node,
+) -> Result<(), Error> {
     if conf.sections.get("Bitcoin").is_none() {
         conf.sections.insert("Bitcoin".to_owned(), Section::new());
     }
     let bitcoin = conf.sections.get_mut("Bitcoin").unwrap();
     bitcoin.set_property("bitcoin.active", "true");
-    bitcoin.set_property("bitcoin.regtest", "true");
+    bitcoin.set_property(&format!("bitcoin.{}", network), "true");
     bitcoin.set_property("bitcoin.node", "bitcoind");
 
     if conf.sections.get("Bitcoind").is_none() {
@@ -599,6 +609,7 @@ pub fn add_lnd_nodes(options: &mut Options) -> Result<(), Error> {
                     bitcoind_service,
                     rest_port,
                     options.rest,
+                    &options.network,
                 );
             }
             load_config(
@@ -607,6 +618,7 @@ pub fn add_lnd_nodes(options: &mut Options) -> Result<(), Error> {
                 bitcoind_service,
                 None,
                 options.rest,
+                &options.network,
             )
         })
         .filter_map(|res| res.ok())
