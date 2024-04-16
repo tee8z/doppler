@@ -384,7 +384,7 @@ fn build_and_save_config(
     let mut bitcoind_node = options
         .bitcoinds
         .first()
-        .expect("a layer 1 needs to be confirgured before using a layer 2 node");
+        .expect("a layer 1 needs to be configured before using a layer 2 node");
     let found_node = options
         .bitcoinds
         .iter()
@@ -528,6 +528,9 @@ pub fn set_l1_values(
 
     if conf.sections.get("Bitcoind").is_none() {
         conf.sections.insert("Bitcoind".to_owned(), Section::new());
+    } else {
+        // Skipping connecting to bitcoind in docker-compose as we want to use an external one
+        return Ok(());
     }
     let bitcoind = conf.sections.get_mut("Bitcoind").unwrap();
     bitcoind.set_property(
