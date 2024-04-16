@@ -5,7 +5,7 @@ use crate::{
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
 use docker_compose_types::{EnvFile, Networks, Ports, Service, Volumes};
-use slog::{error, info, Logger};
+use slog::{error, Logger};
 use std::{
     fs::{File, OpenOptions},
     str::from_utf8,
