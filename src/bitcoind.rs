@@ -1,10 +1,11 @@
 use crate::{
-    copy_file, get_absolute_path, run_command, ImageInfo, L1Node, NodeCommand, Options, NETWORK,
+    copy_file, get_absolute_path, run_command, ImageInfo, L1Node, NodeCommand,
+    Options, NETWORK,
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
 use docker_compose_types::{EnvFile, Networks, Ports, Service, Volumes};
-use slog::{error, Logger};
+use slog::{error, info, Logger};
 use std::{
     fs::{File, OpenOptions},
     str::from_utf8,
@@ -103,8 +104,13 @@ impl L1Node for Bitcoind {
 pub fn get_config(options: &mut Options, name: &str, is_miner: bool) -> Result<Bitcoind, Error> {
     get_bitcoind_config(options, name, is_miner)
 }
-pub fn add_config(options: &Options, name: &str, container_name: &str) -> Result<Bitcoind, Error> {
-    load_config(name, container_name, options.global_logger())
+pub fn add_config(
+    options: &Options,
+    name: &str,
+    network: &str,
+    container_name: &str,
+) -> Result<Bitcoind, Error> {
+    load_config(name, container_name, network, options.global_logger())
 }
 
 pub fn build_bitcoind(
@@ -145,7 +151,12 @@ pub fn add_bitcoinds(options: &mut Options) -> Result<()> {
         .map(|service| {
             let container_name = service.0;
             let bitcoind_name = container_name.split('-').last().unwrap();
-            load_config(bitcoind_name, container_name.as_str(), logger.clone())
+            load_config(
+                bitcoind_name,
+                container_name.as_str(),
+                &options.network,
+                logger.clone(),
+            )
         })
         .filter_map(|res| res.ok())
         .collect();
@@ -153,7 +164,12 @@ pub fn add_bitcoinds(options: &mut Options) -> Result<()> {
     Ok(())
 }
 
-fn load_config(name: &str, container_name: &str, logger: Logger) -> Result<Bitcoind, Error> {
+fn load_config(
+    name: &str,
+    container_name: &str,
+    network: &str,
+    logger: Logger,
+) -> Result<Bitcoind, Error> {
     let bitcoind_config: &String = &format!("data/{}/.bitcoin/bitcoin.conf", name);
     let full_path = get_absolute_path(bitcoind_config)?
         .to_str()
@@ -167,10 +183,10 @@ fn load_config(name: &str, container_name: &str, logger: Logger) -> Result<Bitco
         error!(logger, "failed to read bitcoind conf file: {}", e);
         e
     })?;
-    let regtest_section = get_regtest_section(conf).map_err(|e| {
+    let network_section = get_network_section(conf, network).map_err(|e| {
         error!(
             logger,
-            "failed to get regtest section from bitcoind conf file: {}", e
+            "failed to get network section from bitcoind conf file: {}", e
         );
         e
     })?;
@@ -181,23 +197,23 @@ fn load_config(name: &str, container_name: &str, logger: Logger) -> Result<Bitco
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
         container_name: container_name.to_owned(),
         path_vol: full_path,
-        user: regtest_section.get_property("rpcuser"),
-        password: regtest_section.get_property("rpcpassword"),
-        p2pport: regtest_section.get_property("port"),
-        rpcport: regtest_section.get_property("rpcport"),
-        zmqpubrawblock: regtest_section
+        user: network_section.get_property("rpcuser"),
+        password: network_section.get_property("rpcpassword"),
+        p2pport: network_section.get_property("port"),
+        rpcport: network_section.get_property("rpcport"),
+        zmqpubrawblock: network_section
             .get_property("zmqpubrawblock")
             .split(':')
             .last()
             .unwrap()
             .to_owned(),
-        zmqpubhashblock: regtest_section
+        zmqpubhashblock: network_section
             .get_property("zmqpubhashblock")
             .split(':')
             .last()
             .unwrap()
             .to_owned(),
-        zmqpubrawtx: regtest_section
+        zmqpubrawtx: network_section
             .get_property("zmqpubrawtx")
             .split(':')
             .last()
@@ -211,12 +227,12 @@ fn get_bitcoind_config(
     name: &str,
     is_miner: bool,
 ) -> Result<Bitcoind, Error> {
-    let original = get_absolute_path("config/bitcoin.conf")?;
+    let original = get_absolute_path(&format!("config/{}/bitcoin.conf", options.network))?;
     let source: File = File::open(original)?;
 
     let destination_dir: &String = &format!("data/{}/.bitcoin", name);
     let conf = conf_parser::processer::read_to_file_conf_mut(&source)?;
-    let regtest_section = set_regtest_section(conf, options)?;
+    let network_section = set_network_section(conf, options)?;
     let _ = copy_file(conf, destination_dir, "bitcoin.conf")?;
 
     let full_path = get_absolute_path(destination_dir)?
@@ -233,23 +249,23 @@ fn get_bitcoind_config(
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
         container_name,
         path_vol: full_path,
-        user: regtest_section.get_property("rpcuser"),
-        password: regtest_section.get_property("rpcpassword"),
-        p2pport: regtest_section.get_property("port"),
-        rpcport: regtest_section.get_property("rpcport"),
-        zmqpubrawblock: regtest_section
+        user: network_section.get_property("rpcuser"),
+        password: network_section.get_property("rpcpassword"),
+        p2pport: network_section.get_property("port"),
+        rpcport: network_section.get_property("rpcport"),
+        zmqpubrawblock: network_section
             .get_property("zmqpubrawblock")
             .split(':')
             .last()
             .unwrap()
             .to_owned(),
-        zmqpubhashblock: regtest_section
+        zmqpubhashblock: network_section
             .get_property("zmqpubhashblock")
             .split(':')
             .last()
             .unwrap()
             .to_owned(),
-        zmqpubrawtx: regtest_section
+        zmqpubrawtx: network_section
             .get_property("zmqpubrawtx")
             .split(':')
             .last()
@@ -258,11 +274,12 @@ fn get_bitcoind_config(
     })
 }
 
-fn set_regtest_section(conf: &mut FileConf, options: &mut Options) -> Result<Section, Error> {
-    if conf.sections.get("regtest").is_none() {
-        conf.sections.insert("regtest".to_owned(), Section::new());
+fn set_network_section(conf: &mut FileConf, options: &mut Options) -> Result<Section, Error> {
+    if conf.sections.get(&options.network).is_none() {
+        conf.sections
+            .insert(options.network.clone(), Section::new());
     }
-    let bitcoin = conf.sections.get_mut("regtest").unwrap();
+    let bitcoin = conf.sections.get_mut(&options.network).unwrap();
     let port = options.new_port();
     let rpc_port = options.new_port();
     bitcoin.set_property("bind", "0.0.0.0");
@@ -282,16 +299,13 @@ fn set_regtest_section(conf: &mut FileConf, options: &mut Options) -> Result<Sec
         "zmqpubhashblock",
         &format!("tcp://0.0.0.0:{}", options.new_port()),
     );
-    let regtest_section = get_regtest_section(conf)?;
-    Ok(regtest_section)
+    let network_section = get_network_section(conf, &options.network)?;
+    Ok(network_section)
 }
 
-fn get_regtest_section(conf: &mut FileConf) -> Result<Section, Error> {
-    let regtest_section = conf
-        .sections
-        .get("regtest")
-        .expect("regtest section missing");
-    Ok(regtest_section.to_owned())
+fn get_network_section(conf: &mut FileConf, network: &str) -> Result<Section, Error> {
+    let network_section = conf.sections.get(network).expect("network section missing");
+    Ok(network_section.to_owned())
 }
 
 pub fn pair_bitcoinds(options: &Options) -> Result<(), Error> {

@@ -11,6 +11,7 @@ impl LndCli {
         let rpc_command = lnd.get_rpc_server_command();
         let macaroon_path = lnd.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
         let commands = vec![
             "-f",
             compose_path,
@@ -20,8 +21,8 @@ impl LndCli {
             &lnd.container_name,
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "getinfo",
         ];
@@ -57,6 +58,7 @@ impl LndCli {
         let rpc_command = lnd.get_rpc_server_command();
         let macaroon_path = lnd.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
 
         let commands = vec![
             "-f",
@@ -67,8 +69,8 @@ impl LndCli {
             &lnd.container_name,
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "newaddress",
             "p2tr", // TODO: set as a taproot address by default, make this configurable
@@ -97,6 +99,8 @@ impl LndCli {
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
         let to_pubkey = to_node.get_cached_pubkey();
+        let network = format!("--network={}", options.network.clone());
+
         let commands = vec![
             "-f",
             compose_path,
@@ -106,8 +110,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "openchannel",
             &to_pubkey,
@@ -150,6 +154,7 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
 
         let commands = vec![
             "-f",
@@ -160,23 +165,43 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "connect",
             connection_url.as_ref(),
         ];
-        let output = run_command(options, "connect".to_owned(), commands)?;
-
-        if output.status.success()
-            || from_utf8(&output.stderr)?.contains("already connected to peer")
-        {
-            info!(
-                options.global_logger(),
-                "successfully connected from {} to {}",
-                node.get_name(),
-                to_node.get_name()
-            );
+        let mut retries = 3;
+        let mut output_found = None;
+        while retries > 0 {
+            let output = run_command(options, "connect".to_owned(), commands.clone())?;
+            if from_utf8(&output.stderr)?.contains("server is still in the process of starting") {
+                debug!(options.global_logger(), "trying to connect again");
+                thread::sleep(Duration::from_secs(5));
+                retries -= 1;
+            } else {
+                output_found = Some(output);
+                break;
+            }
+        }
+        if let Some(output) = output_found {
+            if output.status.success()
+                || from_utf8(&output.stderr)?.contains("already connected to peer")
+            {
+                info!(
+                    options.global_logger(),
+                    "successfully connected from {} to {}",
+                    node.get_name(),
+                    to_node.get_name()
+                );
+            } else {
+                error!(
+                    options.global_logger(),
+                    "failed to connect from {} to {}",
+                    node.get_name(),
+                    to_node.get_name()
+                );
+            }
         } else {
             error!(
                 options.global_logger(),
@@ -200,6 +225,8 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
+
         let commands = vec![
             "-f",
             compose_path,
@@ -209,8 +236,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "closechannel",
             "--chan_point",
@@ -248,6 +275,8 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
+
         let commands = vec![
             "-f",
             compose_path,
@@ -257,8 +286,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "closechannel",
             "--force",
@@ -296,6 +325,8 @@ impl LndCli {
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
         let to_pubkey = to_node.get_cached_pubkey();
+        let network = format!("--network={}", options.network.clone());
+
         let commands = vec![
             "-f",
             compose_path,
@@ -305,8 +336,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "listchannels",
             "--peer",
@@ -331,6 +362,7 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
 
         let commands = vec![
             "-f",
@@ -341,8 +373,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "addinvoice",
             "--memo",
@@ -368,6 +400,7 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
 
         let mut commands = vec![
             "-f",
@@ -378,8 +411,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "sendpayment",
             "--pay_req",
@@ -430,6 +463,7 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
 
         let commands = vec![
             "-f",
@@ -440,8 +474,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "sendpayment",
             "--amt",
@@ -477,6 +511,7 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
 
         let commands = vec![
             "-f",
@@ -487,8 +522,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "sendcoins",
             &subcommand,
@@ -520,6 +555,7 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
 
         let commands = vec![
             "-f",
@@ -530,8 +566,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "addinvoice",
         ];
@@ -553,6 +589,7 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
 
         let commands = vec![
             "-f",
@@ -563,8 +600,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "lookupinvoice",
             &rhash,
@@ -589,6 +626,7 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
 
         let commands = vec![
             "-f",
@@ -599,8 +637,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "addholdinvoice",
             &rhash,
@@ -624,6 +662,7 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
 
         let commands = vec![
             "-f",
@@ -634,8 +673,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "settleinvoice",
             preimage,
@@ -653,6 +692,7 @@ impl LndCli {
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
         let compose_path = options.compose_path.as_ref().unwrap();
+        let network = format!("--network={}", options.network.clone());
 
         let commands = vec![
             "-f",
@@ -663,8 +703,8 @@ impl LndCli {
             node.get_container_name(),
             "lncli",
             "--lnddir=/home/lnd/.lnd",
-            "--network=regtest",
-            macaroon_path,
+            &network,
+            &macaroon_path,
             &rpc_command,
             "chain",
             "getbestblock",

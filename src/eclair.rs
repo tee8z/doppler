@@ -211,7 +211,7 @@ fn build_and_save_config(options: &Options, name: &str, pair: &NodePair) -> Resu
         ));
     }
 
-    let original = get_absolute_path("config/eclair.conf")?;
+    let original = get_absolute_path(&format!("config/{}/eclair.conf", options.network))?;
     let destination_dir = &format!("data/{}", name);
     let source: File = OpenOptions::new().read(true).write(true).open(original)?;
 
@@ -237,8 +237,8 @@ fn build_and_save_config(options: &Options, name: &str, pair: &NodePair) -> Resu
 
     let _ = copy_file(&conf, &destination_dir.clone(), "eclair.conf")?;
 
-    // Needed so that the data store in the regtest folder have permissions by the current user and not root
-    create_folder(&format!("{}/regtest", destination_dir))?;
+    // Needed so that the data store in the network folder have permissions by the current user and not root
+    create_folder(&format!("{}/{}", destination_dir, options.network))?;
 
     let full_path = get_absolute_path(destination_dir)?
         .to_str()

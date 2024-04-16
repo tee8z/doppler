@@ -102,14 +102,15 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     debug!(options.global_logger(), "saved cluster config");
 
     start_docker_compose(options)?;
-    create_ui_config_files(options, "regtest")?;
+    create_ui_config_files(options, &options.network)?;
 
     debug!(options.global_logger(), "started cluster");
     //simple wait for docker-compose to spin up
     thread::sleep(Duration::from_secs(6));
     pair_bitcoinds(options)?;
-
-    mine_initial_blocks(options)?;
+    if options.network == "regtest" {
+        mine_initial_blocks(options)?;
+    }
     setup_l2_nodes(options)?;
     if options.aliases && options.external_nodes.is_none() {
         update_bash_alias(options)?;
@@ -157,17 +158,19 @@ fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
         ));
     }
 
-    let logger = options.global_logger();
-    options.get_l2_nodes().into_iter().for_each(|node| {
-        let found_miner = miner.unwrap();
-        match node.fund_node(&options.clone(), found_miner) {
-            Ok(_) => info!(logger, "container: {} funded", node.get_container_name()),
-            Err(e) => error!(logger, "failed to start/fund node: {}", e),
-        }
-    });
+    //TODO: add faucet call here instead of miner for signet
+    if options.network == "regtest" {
+        connect_l2_nodes(options)?;
 
-    connect_l2_nodes(options)?;
-
+        let logger = options.global_logger();
+        options.get_l2_nodes().into_iter().for_each(|node| {
+            let found_miner = miner.unwrap();
+            match node.fund_node(&options.clone(), found_miner) {
+                Ok(_) => info!(logger, "container: {} funded", node.get_container_name()),
+                Err(e) => error!(logger, "failed to start/fund node: {}", e),
+            }
+        });
+    }
     Ok(())
 }
 
@@ -184,12 +187,13 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
         script_content.push_str(&format!(
             r#"
 {name}() {{
-    {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} lncli --lnddir=/home/lnd/.lnd --network=regtest --macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/regtest/admin.macaroon --rpcserver=localhost:10000 "$@"
+    {docker_command} -f ./doppler-cluster.yaml exec --user 1000:1000 {container_name} lncli --lnddir=/home/lnd/.lnd --network={network} --macaroonpath=/home/lnd/.lnd/data/chain/bitcoin/{network}/admin.macaroon --rpcserver=localhost:10000 "$@"
 }}
 "#,
         docker_command= docker_command,
         container_name= lnd.get_container_name(),
-        name=name));
+        name=name,
+        network=options.network));
         script_content.push('\n');
     });
     options.cln_nodes.iter().for_each(|lnd| {
@@ -197,12 +201,13 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
         script_content.push_str(&format!(
             r#"
 {name}() {{
-    {docker_command} -f ./doppler-cluster.yaml exec {container_name} lightning-cli --lightning-dir=/home/clightning --network=regtest "$@"
+    {docker_command} -f ./doppler-cluster.yaml exec {container_name} lightning-cli --lightning-dir=/home/clightning --network={network} "$@"
 }}
 "#,
         docker_command= docker_command,
         container_name= lnd.get_container_name(),
-        name=name));
+        name=name,
+    network=options.network));
         script_content.push('\n');
     });
     options.eclair_nodes.iter().for_each(|lnd| {

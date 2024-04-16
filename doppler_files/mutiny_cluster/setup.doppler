@@ -1,0 +1,18 @@
+BITCOIND IMAGE mutiny mutinynet/bitcoind
+
+BITCOIND_MINER bd1 mutiny
+
+LND lnd1 PAIR bd1
+LND lnd2 PAIR bd1
+LND lnd3 PAIR bd1
+LND lnd4 PAIR bd1
+LND lnd5 PAIR bd1
+LND lnd6 PAIR bd1
+LND lnd7 PAIR bd1
+LND lnd8 PAIR bd1
+LND lnd9 PAIR bd1
+LND lnd10 PAIR bd1
+LND lnd11 PAIR bd1
+LND lnd12 PAIR bd1
+
+UP

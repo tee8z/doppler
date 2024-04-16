@@ -179,7 +179,13 @@ pub fn build_cln(
     );
 
     // Passing these args on the command line is unavoidable due to how the docker image is setup
-    let command = Command::Simple("--network=regtest --lightning-dir=/home/clightning".to_string());
+    let command = Command::Simple(
+        format!(
+            "--network={} --lightning-dir=/home/clightning",
+            options.network
+        )
+        .to_string(),
+    );
 
     let rest_port = options.new_port();
     let grpc_port = options.new_port();
@@ -196,7 +202,10 @@ pub fn build_cln(
         ]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         command: Some(command),
-        volumes: Volumes::Simple(vec![format!("{}:/home/clightning:rw", cln_conf.path_vol), format!("{}/certs:/opt/c-lightning-rest/certs:rw", cln_conf.path_vol)]),
+        volumes: Volumes::Simple(vec![
+            format!("{}:/home/clightning:rw", cln_conf.path_vol),
+            format!("{}/certs:/opt/c-lightning-rest/certs:rw", cln_conf.path_vol),
+        ]),
         networks: Networks::Simple(vec![NETWORK.to_owned()]),
         ..Default::default()
     };
@@ -230,7 +239,7 @@ pub fn build_and_save_config(
         ));
     }
 
-    let original = get_absolute_path("config/cln.conf")?;
+    let original = get_absolute_path(&format!("config/{}/cln.conf", options.network))?;
     let destination_dir = &format!("data/{}", name);
     let source: File = OpenOptions::new().read(true).write(true).open(original)?;
 
@@ -255,8 +264,8 @@ pub fn build_and_save_config(
     )?;
     let _ = copy_file(&conf, &destination_dir.clone(), "config")?;
 
-    // Needed so that the data store in the regtest folder have permissions by the current user and not root
-    create_folder(&format!("{}/regtest", destination_dir))?;
+    // Needed so that the data store in the network folder have permissions by the current user and not root
+    create_folder(&format!("{}/{}", destination_dir, options.network))?;
     let full_path = get_absolute_path(destination_dir)?
         .to_str()
         .unwrap()
@@ -276,7 +285,7 @@ pub fn build_and_save_config(
         p2p_port: "9735".to_owned(),
         rest_port: "8080".to_owned(),
         bitcoind_node_container_name: bitcoind_node.container_name.clone(),
-        network: String::from("regtest"),
+        network: options.network.clone(),
     })
 }
 
@@ -324,7 +333,12 @@ pub fn add_coreln_nodes(options: &mut Options) -> Result<()> {
             {
                 bitcoind_service = layer_1_nodes[0].clone();
             }
-            load_config(node_name, container_name.to_owned(), bitcoind_service)
+            load_config(
+                node_name,
+                container_name.to_owned(),
+                options.network.clone(),
+                bitcoind_service,
+            )
         })
         .filter_map(|res| res.ok())
         .collect();
@@ -359,7 +373,12 @@ fn add_pubkey(node: &mut Cln, options: &Options) {
     }
 }
 
-fn load_config(name: &str, container_name: String, bitcoind_service: String) -> Result<Cln, Error> {
+fn load_config(
+    name: &str,
+    container_name: String,
+    network: String,
+    bitcoind_service: String,
+) -> Result<Cln, Error> {
     let full_path = &format!("data/{}/.cln", name);
     Ok(Cln {
         wallet_starting_balance: 0,
@@ -375,13 +394,13 @@ fn load_config(name: &str, container_name: String, bitcoind_service: String) -> 
         rest_port: "8080".to_owned(),
         macaroon_path: format!("{}/certs/access.macaroon", full_path),
         bitcoind_node_container_name: bitcoind_service,
-        network: String::from("regtest"),
+        network,
     })
 }
 
 fn get_node_pubkey(node: &Cln, options: &Options) -> Result<String, Error> {
     let compose_path = options.compose_path.as_ref().unwrap();
-
+    let network = format!("--network={}", options.network);
     let commands = vec![
         "-f",
         compose_path,
@@ -389,7 +408,7 @@ fn get_node_pubkey(node: &Cln, options: &Options) -> Result<String, Error> {
         node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
-        "--network=regtest",
+        &network,
         "getinfo",
     ];
     let mut retries = 8;
@@ -431,6 +450,7 @@ fn get_node_pubkey(node: &Cln, options: &Options) -> Result<String, Error> {
 
 fn create_cln_address(node: &Cln, options: &Options) -> Result<String, Error> {
     let compose_path = options.compose_path.as_ref().unwrap();
+    let network = format!("--network={}", options.network);
     let commands = vec![
         "-f",
         compose_path.as_ref(),
@@ -438,7 +458,7 @@ fn create_cln_address(node: &Cln, options: &Options) -> Result<String, Error> {
         node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
-        "--network=regtest",
+        &network,
         "newaddr",
         "bech32",
     ];
@@ -459,6 +479,7 @@ fn open_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> Re
     let to_node = options.get_l2_by_name(node_command.to.as_str())?;
     let to_pubkey = to_node.get_cached_pubkey();
     let compose_path = options.compose_path.as_ref().unwrap();
+    let network = format!("--network={}", options.network);
     let commands = vec![
         "-f",
         compose_path.as_ref(),
@@ -466,7 +487,7 @@ fn open_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> Re
         node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
-        "--network=regtest",
+        &network,
         "fundchannel",
         &to_pubkey,
         &amt,
@@ -495,6 +516,7 @@ fn connect(node: &Cln, options: &Options, node_command: &NodeCommand) -> Result<
     let to_node = options.get_l2_by_name(node_command.to.as_str())?;
     let to_pubkey = to_node.get_cached_pubkey();
     let compose_path = options.compose_path.as_ref().unwrap();
+    let network = format!("--network={}", options.network);
     let commands = vec![
         "-f",
         compose_path.as_ref(),
@@ -502,7 +524,7 @@ fn connect(node: &Cln, options: &Options, node_command: &NodeCommand) -> Result<
         node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
-        "--network=regtest",
+        &network,
         "connect",
         &to_pubkey,
         to_node.get_container_name(),
@@ -537,6 +559,7 @@ fn create_invoice(
     let compose_path = options.compose_path.as_ref().unwrap();
     let uuid = Uuid::new_v4();
     let random_label = uuid.to_string();
+    let network: String = format!("--network={}", options.network);
 
     let commands = vec![
         "-f",
@@ -545,7 +568,7 @@ fn create_invoice(
         node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
-        "--network=regtest",
+        &network,
         "invoice",
         &amt,
         &random_label,
@@ -566,6 +589,7 @@ fn pay_invoice(
     payment_request: String,
 ) -> Result<(), Error> {
     let compose_path = options.compose_path.as_ref().unwrap();
+    let network: String = format!("--network={}", options.network);
     let commands = vec![
         "-f",
         compose_path,
@@ -573,7 +597,7 @@ fn pay_invoice(
         node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
-        "--network=regtest",
+        &network,
         "pay",
         &payment_request,
     ];
@@ -601,6 +625,7 @@ fn pay_address(
 ) -> Result<String, Error> {
     let amt = node_command.amt.unwrap_or(1000).to_string();
     let compose_path = options.compose_path.as_ref().unwrap();
+    let network: String = format!("--network={}", options.network);
 
     let commands = vec![
         "-f",
@@ -609,7 +634,7 @@ fn pay_address(
         node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
-        "--network=regtest",
+        &network,
         "withdraw",
         address,
         &amt,
@@ -638,6 +663,8 @@ fn close_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> R
         );
         return Ok(());
     }
+    let network: String = format!("--network={}", options.network);
+
     let commands = vec![
         "-f",
         compose_path,
@@ -645,7 +672,7 @@ fn close_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> R
         node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
-        "--network=regtest",
+        &network,
         "close",
         &to_node_channel_id,
     ];
@@ -686,6 +713,8 @@ fn force_close_channel(
         );
         return Ok(());
     }
+    let network: String = format!("--network={}", options.network);
+
     let commands = vec![
         "-f",
         compose_path,
@@ -693,7 +722,7 @@ fn force_close_channel(
         node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
-        "--network=regtest",
+        &network,
         "close",
         &to_node_channel_id,
         "1",
@@ -726,6 +755,7 @@ fn get_peers_short_channel_id(
     let compose_path = options.compose_path.as_ref().unwrap();
     let to_node = options.get_l2_by_name(node_command.to.as_str())?;
     let to_pubkey = format!("{}={}", param, to_node.get_cached_pubkey());
+    let network: String = format!("--network={}", options.network);
     let commands = vec![
         "-f",
         compose_path,
@@ -733,7 +763,7 @@ fn get_peers_short_channel_id(
         node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
-        "--network=regtest",
+        &network,
         "listchannels",
         &to_pubkey,
     ];
@@ -768,6 +798,7 @@ fn get_rhash(node: &Cln, options: &Options) -> Result<String, Error> {
     let compose_path = options.compose_path.as_ref().unwrap();
     let uuid = Uuid::new_v4();
     let random_label = uuid.to_string();
+    let network: String = format!("--network={}", options.network);
 
     let commands = vec![
         "-f",
@@ -776,7 +807,7 @@ fn get_rhash(node: &Cln, options: &Options) -> Result<String, Error> {
         node.get_container_name(),
         "lightning-cli",
         "--lightning-dir=/home/clightning",
-        "--network=regtest",
+        &network,
         "invoice",
         &amt,
         &random_label,
