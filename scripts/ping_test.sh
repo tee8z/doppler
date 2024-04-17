@@ -6,7 +6,7 @@ SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
 
 # Source the aliases file
 source $SCRIPT_DIR/aliases.sh
-alias_count=50
+alias_count=7
 
 # Enable alias expansion
 shopt -s expand_aliases
