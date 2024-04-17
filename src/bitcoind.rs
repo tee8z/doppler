@@ -1,11 +1,10 @@
 use crate::{
-    copy_file, get_absolute_path, run_command, ImageInfo, L1Node, NodeCommand,
-    Options, NETWORK,
+    copy_file, get_absolute_path, run_command, ImageInfo, L1Node, NodeCommand, Options, NETWORK,
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
 use docker_compose_types::{EnvFile, Networks, Ports, Service, Volumes};
-use slog::{error, Logger};
+use slog::{error, info, Logger};
 use std::{
     fs::{File, OpenOptions},
     str::from_utf8,
@@ -372,11 +371,8 @@ fn create_wallet(node: &dyn L1Node, options: &Options) -> Result<(), Error> {
     ];
 
     let output = run_command(options, "create wallet".to_owned(), commands)?;
-    if !output.status.success()
-        && !from_utf8(&output.stderr)
-            .unwrap()
-            .contains("Database already exists")
-    {
+    if !output.status.success() && from_utf8(&output.stderr).unwrap().contains("exists") {
+        info!(options.global_logger(), "wallet already created, will trying to load existing. If you want to start fresh for a new cluster/doppler script run `./scripts/reset.sh` @ the root of the repo");
         node.load_wallet(options)?;
     }
     Ok(())
@@ -401,13 +397,23 @@ fn load_wallet(node: &Bitcoind, options: &Options) -> Result<(), Error> {
 
     let output = run_command(options, "load wallet".to_owned(), commands)?;
     if !output.status.success() {
-        error!(
-            options.global_logger(),
-            "failed to load wallet for {}: {} {}",
-            node.get_name(),
-            from_utf8(&output.stdout).unwrap().to_owned(),
-            from_utf8(&output.stderr).unwrap().to_owned()
-        )
+        if from_utf8(&output.stderr).unwrap().contains("already loaded") {
+            info!(
+                options.global_logger(),
+                "wallet already loaded for {}, continuing: {} {}",
+                node.get_name(),
+                from_utf8(&output.stdout).unwrap().to_owned(),
+                from_utf8(&output.stderr).unwrap().to_owned()
+            )
+        } else {
+            error!(
+                options.global_logger(),
+                "failed to load wallet for {}: {} {}",
+                node.get_name(),
+                from_utf8(&output.stdout).unwrap().to_owned(),
+                from_utf8(&output.stderr).unwrap().to_owned()
+            )
+        }
     }
     Ok(())
 }
