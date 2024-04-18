@@ -11,3 +11,11 @@ LND lnd6 PAIR bd1
 LND lnd7 PAIR bd1
 
 UP
+
+lnd1 STOP_LN
+lnd2 STOP_LN
+lnd3 STOP_LN
+lnd4 STOP_LN
+lnd5 STOP_LN
+lnd6 STOP_LN
+lnd7 STOP_LN
