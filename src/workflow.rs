@@ -4,11 +4,11 @@ use crate::{
     NodeCommand, NodeKind, Options, Rule, Tag,
 };
 use anyhow::{Error, Result};
+use log::{debug, error, info};
 use pest::{
     iterators::{Pair, Pairs},
     Parser,
 };
-use slog::{debug, error, info};
 use std::{
     io,
     sync::{
@@ -180,29 +180,28 @@ fn process_loop_sleep(
 
 fn handle_loop(options: &mut Options, line: Pair<'_, Rule>) -> Result<()> {
     let line_inner = line.clone().into_inner();
-    let logger = options.global_logger();
 
     let mut command_stack = vec![];
     let mut current_loop = None;
     for inner_pair in line_inner {
         match inner_pair.as_rule() {
             Rule::start => {
-                debug!(logger, "processing start command");
+                debug!("processing start command");
                 options.loop_count.as_ref().fetch_add(1, Ordering::SeqCst);
                 current_loop = Some(process_start_loop(inner_pair));
             }
             Rule::btc_node_action => {
-                debug!(logger, "processing btc node command");
+                debug!("processing btc node command");
                 let node_command = process_btc_action(inner_pair);
                 command_stack.push(node_command);
             }
             Rule::ln_node_action => {
-                debug!(logger, "processing ln node command");
+                debug!("processing ln node command");
                 let node_command = process_ln_action(inner_pair);
                 command_stack.push(node_command);
             }
             Rule::end => {
-                debug!(logger, "processing end command");
+                debug!("processing end command");
                 run_loop(
                     options,
                     current_loop.clone().unwrap(),
@@ -224,16 +223,12 @@ fn run_loop(
     let current_options = options.clone();
     let thread_options = options.clone();
     debug!(
-        options.global_logger(),
         "starting loop: {} command total: {}",
         loop_options.name,
         loop_command_stack.len()
     );
     spawn(move || {
-        debug!(
-            current_options.global_logger(),
-            "in child thread for loop: {}", loop_options.name
-        );
+        debug!("in child thread for loop: {}", loop_options.name);
         let thread_handle = thread::current();
         thread_options.add_thread(thread_handle);
         let mut iter_count = -1;
@@ -241,16 +236,12 @@ fn run_loop(
             iter_count = loop_options.iterations.unwrap();
         }
         debug!(
-            current_options.global_logger(),
             "main thread active: {}",
             current_options.main_thread_active.val()
         );
         while current_options.main_thread_active.val() {
             if iter_count == 0 {
-                debug!(
-                    current_options.global_logger(),
-                    "finished iterations, stopping loop: {}", loop_options.name
-                );
+                debug!("finished iterations, stopping loop: {}", loop_options.name);
                 current_options
                     .loop_count
                     .as_ref()
@@ -258,18 +249,12 @@ fn run_loop(
                 break;
             }
             if current_options.main_thread_paused.val() {
-                debug!(
-                    current_options.global_logger(),
-                    "main thread paused, sleeping: {}", loop_options.name
-                );
+                debug!("main thread paused, sleeping: {}", loop_options.name);
                 thread::sleep(Duration::from_secs(1));
                 continue;
             }
             for command in loop_command_stack.clone() {
-                debug!(
-                    current_options.global_logger(),
-                    "running commands for loop: {}", loop_options.name
-                );
+                debug!("running commands for loop: {}", loop_options.name);
 
                 let action = match command.name.as_str() {
                     "MINE_BLOCKS" => node_mine_bitcoin(
@@ -293,10 +278,7 @@ fn run_loop(
                 };
                 match action {
                     Ok(_) => (),
-                    Err(e) => error!(
-                        current_options.global_logger(),
-                        "error running an action in a loop: {}", e
-                    ),
+                    Err(e) => error!("error running an action in a loop: {}", e),
                 };
             }
             if loop_options.sleep_time_amt.is_some() && loop_options.sleep_time_amt.is_some() {
@@ -307,8 +289,8 @@ fn run_loop(
                     _ => unimplemented!(),
                 };
                 debug!(
-                    current_options.global_logger(),
-                    "pausing for specified amount of time loop: {}", loop_options.name
+                    "pausing for specified amount of time loop: {}",
+                    loop_options.name
                 );
                 thread::sleep(sleep_time);
             }
@@ -473,25 +455,19 @@ fn handle_build_command(
 
 fn handle_up(options: &mut Options) -> Result<(), Error> {
     run_cluster(options, COMPOSE_PATH).map_err(|e| {
-        error!(
-            options.global_logger(),
-            "Failed to start cluster from generated compose file: {}", e
-        );
+        error!("Failed to start cluster from generated compose file: {}", e);
         e
     })?;
 
     //pause until input
-    info!(
-        options.global_logger(),
-        "doppler cluster has been created, please press enter to continue the script"
-    );
+    info!("doppler cluster has been created, please press enter to continue the script");
     options.main_thread_paused.set(true);
     let mut input = String::new();
     io::stdin()
         .read_line(&mut input)
         .expect("Failed to read line");
     options.main_thread_paused.set(false);
-    debug!(options.global_logger(), "read in user input, continuing");
+    debug!("read in user input, continuing");
     Ok(())
 }
 
@@ -509,10 +485,7 @@ fn handle_ln_action(options: &mut Options, line: Pair<Rule>) -> Result<()> {
         "SETTLE_HOLD_LN" => settle_hold_invoice(options, &command),
         "WAIT" => wait_number_of_blocks(options, &command),
         _ => {
-            error!(
-                options.global_logger(),
-                "command not supported yet! {:?}", command.name
-            );
+            error!("command not supported yet! {:?}", command.name);
             Ok(())
         }
     }
@@ -589,10 +562,7 @@ fn handle_btc_action(options: &Options, line: Pair<Rule>) -> Result<()> {
         "START_BTC" => start_l1_node(options, &command),
         "SEND_COINS" => send_to_l2(options, &command),
         _ => {
-            error!(
-                options.global_logger(),
-                "command not supported yet! {:?}", command.name
-            );
+            error!("command not supported yet! {:?}", command.name);
             Ok(())
         }
     }
@@ -647,16 +617,10 @@ fn handle_skip_conf(options: &mut Options) -> Result<(), Error> {
     if let Some(external_nodes_path) = options.external_nodes_path.clone() {
         //TODO: add reading from external nodes config and build nodes from there
         load_options_from_external_nodes(options, &external_nodes_path)?;
-        info!(
-            options.global_logger(),
-            "external nodes have been found and loaded, continuing with script"
-        );
+        info!("external nodes have been found and loaded, continuing with script");
     } else {
         load_options_from_compose(options, COMPOSE_PATH)?;
-        info!(
-            options.global_logger(),
-            "doppler cluster has been found and loaded, continuing with script"
-        );
+        info!("doppler cluster has been found and loaded, continuing with script");
     }
     Ok(())
 }

@@ -4,7 +4,7 @@ use crate::{
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
 use docker_compose_types::{EnvFile, Networks, Ports, Service, Volumes};
-use slog::{error, info, Logger};
+use log::{error, info};
 use std::{
     fs::{File, OpenOptions},
     str::from_utf8,
@@ -103,13 +103,8 @@ impl L1Node for Bitcoind {
 pub fn get_config(options: &mut Options, name: &str, is_miner: bool) -> Result<Bitcoind, Error> {
     get_bitcoind_config(options, name, is_miner)
 }
-pub fn add_config(
-    options: &Options,
-    name: &str,
-    network: &str,
-    container_name: &str,
-) -> Result<Bitcoind, Error> {
-    load_config(name, container_name, network, options.global_logger())
+pub fn add_config(name: &str, network: &str, container_name: &str) -> Result<Bitcoind, Error> {
+    load_config(name, container_name, network)
 }
 
 pub fn build_bitcoind(
@@ -142,7 +137,6 @@ pub fn build_bitcoind(
 }
 
 pub fn add_bitcoinds(options: &mut Options) -> Result<()> {
-    let logger: Logger = options.global_logger();
     let bitcoinds: Vec<_> = options
         .services
         .iter_mut()
@@ -150,12 +144,7 @@ pub fn add_bitcoinds(options: &mut Options) -> Result<()> {
         .map(|service| {
             let container_name = service.0;
             let bitcoind_name = container_name.split('-').last().unwrap();
-            load_config(
-                bitcoind_name,
-                container_name.as_str(),
-                &options.network,
-                logger.clone(),
-            )
+            load_config(bitcoind_name, container_name.as_str(), &options.network)
         })
         .filter_map(|res| res.ok())
         .collect();
@@ -163,12 +152,7 @@ pub fn add_bitcoinds(options: &mut Options) -> Result<()> {
     Ok(())
 }
 
-fn load_config(
-    name: &str,
-    container_name: &str,
-    network: &str,
-    logger: Logger,
-) -> Result<Bitcoind, Error> {
+fn load_config(name: &str, container_name: &str, network: &str) -> Result<Bitcoind, Error> {
     let bitcoind_config: &String = &format!("data/{}/.bitcoin/bitcoin.conf", name);
     let full_path = get_absolute_path(bitcoind_config)?
         .to_str()
@@ -179,13 +163,13 @@ fn load_config(
         .write(true)
         .open(full_path.clone())?;
     let conf = conf_parser::processer::read_to_file_conf_mut(&source).map_err(|e| {
-        error!(logger, "failed to read bitcoind conf file: {}", e);
+        error!("failed to read bitcoind conf file: {}", e);
         e
     })?;
     let network_section = get_network_section(conf, network).map_err(|e| {
         error!(
-            logger,
-            "failed to get network section from bitcoind conf file: {}", e
+            "failed to get network section from bitcoind conf file: {}",
+            e
         );
         e
     })?;
@@ -321,7 +305,6 @@ pub fn pair_bitcoinds(options: &Options) -> Result<(), Error> {
             match current_bitcoind.create_wallet(&options.clone()) {
                 Ok(_) => (),
                 Err(e) => error!(
-                    options.global_logger(),
                     "container {} failed to create wallet: {}",
                     current_bitcoind.get_container_name(),
                     e
@@ -372,7 +355,7 @@ fn create_wallet(node: &dyn L1Node, options: &Options) -> Result<(), Error> {
 
     let output = run_command(options, "create wallet".to_owned(), commands)?;
     if !output.status.success() && from_utf8(&output.stderr).unwrap().contains("exists") {
-        info!(options.global_logger(), "wallet already created, will trying to load existing. If you want to start fresh for a new cluster/doppler script run `./scripts/reset.sh` @ the root of the repo");
+        info!("wallet already created, will trying to load existing. If you want to start fresh for a new cluster/doppler script run `./scripts/reset.sh` @ the root of the repo");
         node.load_wallet(options)?;
     }
     Ok(())
@@ -397,9 +380,11 @@ fn load_wallet(node: &Bitcoind, options: &Options) -> Result<(), Error> {
 
     let output = run_command(options, "load wallet".to_owned(), commands)?;
     if !output.status.success() {
-        if from_utf8(&output.stderr).unwrap().contains("already loaded") {
+        if from_utf8(&output.stderr)
+            .unwrap()
+            .contains("already loaded")
+        {
             info!(
-                options.global_logger(),
                 "wallet already loaded for {}, continuing: {} {}",
                 node.get_name(),
                 from_utf8(&output.stdout).unwrap().to_owned(),
@@ -407,7 +392,6 @@ fn load_wallet(node: &Bitcoind, options: &Options) -> Result<(), Error> {
             )
         } else {
             error!(
-                options.global_logger(),
                 "failed to load wallet for {}: {} {}",
                 node.get_name(),
                 from_utf8(&output.stdout).unwrap().to_owned(),
@@ -475,7 +459,6 @@ fn send_to_address(
     let output = run_command(options, "getnewaddress".to_owned(), commands)?;
     if !output.status.success() {
         error!(
-            options.global_logger(),
             "failed to mine to address: {} {}",
             from_utf8(&output.stdout).unwrap().to_owned(),
             from_utf8(&output.stderr).unwrap().to_owned()
@@ -512,7 +495,6 @@ fn mine_to_address(
     let output = run_command(options, "getnewaddress".to_owned(), commands)?;
     if !output.status.success() {
         error!(
-            options.global_logger(),
             "failed to mine to address: {} {}",
             from_utf8(&output.stdout).unwrap().to_owned(),
             from_utf8(&output.stderr).unwrap().to_owned()

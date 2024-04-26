@@ -5,8 +5,8 @@ use crate::{
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{Command, DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
+use log::{debug, error, info};
 use serde_json::{from_slice, Value};
-use slog::{debug, error, info};
 use std::{
     fmt::Debug,
     fs::{File, OpenOptions},
@@ -173,10 +173,7 @@ pub fn build_cln(
     pair: &NodePair,
 ) -> Result<()> {
     let mut cln_conf = build_and_save_config(options, name, pair).unwrap();
-    debug!(
-        options.global_logger(),
-        "{} volume: {}", name, cln_conf.path_vol
-    );
+    debug!("{} volume: {}", name, cln_conf.path_vol);
 
     // Passing these args on the command line is unavoidable due to how the docker image is setup
     let command = Command::Simple(
@@ -214,7 +211,6 @@ pub fn build_cln(
         .insert(cln_conf.container_name.clone(), Some(cln));
     cln_conf.server_url = format!("https://localhost:{}", rest_port.to_string());
     info!(
-        options.global_logger(),
         "connect to {} via rest using {} with access macaroons at {} and via rpc using localhost:{} ",
         cln_conf.container_name,
         cln_conf.server_url,
@@ -361,14 +357,10 @@ fn add_pubkey(node: &mut Cln, options: &Options) {
     match result {
         Ok(pubkey) => {
             node.pubkey = Some(pubkey);
-            info!(
-                options.global_logger(),
-                "container: {} found",
-                node.get_name()
-            );
+            info!("container: {} found", node.get_name());
         }
         Err(e) => {
-            error!(options.global_logger(), "failed to find node: {}", e);
+            error!("failed to find node: {}", e);
         }
     }
 }
@@ -416,10 +408,7 @@ fn get_node_pubkey(node: &Cln, options: &Options) -> Result<String, Error> {
     while retries > 0 {
         let output = run_command(options, "pubkey".to_owned(), commands.clone())?;
         if from_utf8(&output.stderr)?.contains("is not running container") {
-            debug!(
-                options.global_logger(),
-                "sleeping and trying to get pubkey again"
-            );
+            debug!("sleeping and trying to get pubkey again");
             thread::sleep(Duration::from_secs(4));
             retries -= 1;
             continue;
@@ -441,7 +430,7 @@ fn get_node_pubkey(node: &Cln, options: &Options) -> Result<String, Error> {
             if let Some(pubkey) = node.get_property("id", output) {
                 return Ok(pubkey);
             } else {
-                error!(options.global_logger(), "no pubkey found");
+                error!("no pubkey found");
             }
         }
     }
@@ -465,7 +454,7 @@ fn create_cln_address(node: &Cln, options: &Options) -> Result<String, Error> {
     let output = run_command(options, "newaddr".to_owned(), commands)?;
     let found_address: Option<String> = node.get_property("bech32", output);
     if found_address.is_none() {
-        error!(options.global_logger(), "no addess found");
+        error!("no addess found");
         return Ok("".to_string());
     }
     Ok(found_address.unwrap())
@@ -473,7 +462,7 @@ fn create_cln_address(node: &Cln, options: &Options) -> Result<String, Error> {
 
 fn open_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     let _ = node.connect(options, node_command).map_err(|e| {
-        debug!(options.global_logger(), "failed to connect: {}", e);
+        debug!("failed to connect: {}", e);
     });
     let amt = node_command.amt.unwrap_or(100000).to_string();
     let to_node = options.get_l2_by_name(node_command.to.as_str())?;
@@ -496,14 +485,12 @@ fn open_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> Re
     let output = run_command(options, "newaddr".to_owned(), commands)?;
     if output.status.success() {
         info!(
-            options.global_logger(),
             "successfully opened channel from {} to {}",
             node.get_name(),
             to_node.get_name()
         );
     } else {
         error!(
-            options.global_logger(),
             "failed to open channel from {} to {}",
             node.get_name(),
             to_node.get_name()
@@ -533,14 +520,12 @@ fn connect(node: &Cln, options: &Options, node_command: &NodeCommand) -> Result<
     let output = run_command(options, "connect".to_owned(), commands)?;
     if output.status.success() || from_utf8(&output.stderr)?.contains("already connected") {
         info!(
-            options.global_logger(),
             "successfully connected from {} to {}",
             node.get_name(),
             to_node.get_name()
         );
     } else {
         error!(
-            options.global_logger(),
             "failed to connect from {} to {}",
             node.get_name(),
             to_node.get_name()
@@ -577,7 +562,7 @@ fn create_invoice(
     let output = run_command(options, "invoice".to_owned(), commands)?;
     let found_payment_request: Option<String> = node.get_property("bolt11", output);
     if found_payment_request.is_none() {
-        error!(options.global_logger(), "no payment requests found");
+        error!("no payment requests found");
     }
     Ok(found_payment_request.unwrap())
 }
@@ -604,12 +589,11 @@ fn pay_invoice(
     let output = run_command(options, "pay".to_owned(), commands)?;
     if !output.status.success() {
         error!(
-            options.global_logger(),
-            "failed to make payment from {} to {}", node_command.from, node_command.to
+            "failed to make payment from {} to {}",
+            node_command.from, node_command.to
         )
     }
     debug!(
-        options.global_logger(),
         "output.stdout: {}, output.stderr: {}",
         from_utf8(&output.stdout)?,
         from_utf8(&output.stderr)?
@@ -641,7 +625,7 @@ fn pay_address(
     ];
     let output = run_command(options, "withdraw".to_owned(), commands)?;
     if !output.status.success() {
-        error!(options.global_logger(), "failed to pay on chain tx");
+        error!("failed to pay on chain tx");
         return Ok("".to_owned());
     }
     let found_tx_id = from_utf8(&output.stdout)?.trim();
@@ -656,7 +640,6 @@ fn close_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> R
     let to_node_channel_id = node.get_peers_short_channel_id(options, node_command)?;
     if to_node_channel_id.is_empty() {
         info!(
-            options.global_logger(),
             "no channels to closed from {} to {}",
             node.get_name(),
             to_node.get_name()
@@ -679,14 +662,12 @@ fn close_channel(node: &Cln, options: &Options, node_command: &NodeCommand) -> R
     let output = run_command(options, "close channel".to_owned(), commands)?;
     if output.status.success() {
         info!(
-            options.global_logger(),
             "successfully closed channel from {} to {}",
             node.get_name(),
             to_node.get_name()
         );
     } else {
         error!(
-            options.global_logger(),
             "failed to close channel from {} to {}",
             node.get_name(),
             to_node.get_name()
@@ -706,7 +687,6 @@ fn force_close_channel(
     let to_node_channel_id = node.get_peers_short_channel_id(options, node_command)?;
     if to_node_channel_id.is_empty() {
         info!(
-            options.global_logger(),
             "no channels to closed from {} to {}",
             node.get_name(),
             to_node.get_name()
@@ -730,14 +710,12 @@ fn force_close_channel(
     let output = run_command(options, "close channel".to_owned(), commands)?;
     if output.status.success() {
         info!(
-            options.global_logger(),
             "successfully closed channel from {} to {}",
             node.get_name(),
             to_node.get_name()
         );
     } else {
         error!(
-            options.global_logger(),
             "failed to close channel from {} to {}",
             node.get_name(),
             to_node.get_name()
@@ -816,7 +794,7 @@ fn get_rhash(node: &Cln, options: &Options) -> Result<String, Error> {
     let output = run_command(options, "invoice".to_owned(), commands)?;
     let found_rhash: Option<String> = node.get_property("payment_hash", output);
     if found_rhash.is_none() {
-        error!(options.global_logger(), "no r_hash found");
+        error!("no r_hash found");
     }
     Ok(found_rhash.unwrap())
 }

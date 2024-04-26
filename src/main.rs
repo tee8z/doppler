@@ -1,7 +1,9 @@
 use clap::{arg, command, Parser};
 use doppler::{create_db, get_absolute_path, run_workflow_until_stop, AppSubCommands, Options};
-use slog::{debug, info, o, Drain, Level, Logger};
+use fern::colors::{Color, ColoredLevelConfig};
+use log::{debug, info, LevelFilter};
 use std::{env, fs, io::Error, path::PathBuf};
+use time::{format_description::well_known::Iso8601, OffsetDateTime};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -44,16 +46,15 @@ pub struct Cli {
 
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
-    let logger = setup_logger(&cli);
+    setup_logger(&cli).map_err(|e| Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
     let doppler_file_path = get_doppler_file_path(&cli)?;
-    debug!(logger, "reading doppler file: {}", doppler_file_path);
+    debug!("reading doppler file: {}", doppler_file_path);
     let contents = fs::read_to_string(doppler_file_path).expect("file read error");
-    debug!(logger, "doppler.db location: {}", cli.storage_path);
+    debug!("doppler.db location: {}", cli.storage_path);
     let conn = create_db(cli.storage_path).expect("failed to create doppler.db file");
-    info!(logger, "rest {}", cli.rest);
+    info!("rest {}", cli.rest);
     let mut options = Options::new(
-        logger.clone(),
         cli.docker_dash,
         cli.ui_config_path,
         cli.app_sub_commands,
@@ -63,39 +64,57 @@ fn main() -> Result<(), Error> {
         cli.network,
     );
     run_workflow_until_stop(&mut options, contents)?;
-    info!(logger, "successfully cleaned up processes, shutting down");
+    info!("successfully cleaned up processes, shutting down");
     Ok(())
 }
 
-fn setup_logger(cli: &Cli) -> Logger {
-    let log_level = if cli.level.is_some() {
+fn setup_logger(cli: &Cli) -> Result<(), fern::InitError> {
+    let rust_log = get_log_level(cli);
+    let colors = ColoredLevelConfig::new()
+        .trace(Color::White)
+        .debug(Color::Cyan)
+        .info(Color::Green)
+        .warn(Color::Yellow)
+        .error(Color::Magenta);
+
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "[{} {}] {}",
+                OffsetDateTime::now_utc().format(&Iso8601::DEFAULT).unwrap(),
+                colors.color(record.level()),
+                message
+            ));
+        })
+        .level(LevelFilter::Error)
+        .level_for("doppler", rust_log)
+        .chain(std::io::stdout())
+        .apply()?;
+    Ok(())
+}
+
+fn get_log_level(cli: &Cli) -> LevelFilter {
+    if cli.level.is_some() {
         let level = cli.level.as_ref().unwrap();
         match level.as_ref() {
-            "trace" => Level::Trace,
-            "debug" => Level::Debug,
-            "info" => Level::Info,
-            "warn" => Level::Warning,
-            "error" => Level::Error,
-            _ => Level::Info,
+            "trace" => LevelFilter::Trace,
+            "debug" => LevelFilter::Debug,
+            "info" => LevelFilter::Info,
+            "warn" => LevelFilter::Warn,
+            "error" => LevelFilter::Error,
+            _ => LevelFilter::Info,
         }
     } else {
         let rust_log = env::var("RUST_LOG").unwrap_or_else(|_| String::from(""));
         match rust_log.to_lowercase().as_str() {
-            "trace" => Level::Trace,
-            "debug" => Level::Debug,
-            "info" => Level::Info,
-            "warn" => Level::Warning,
-            "error" => Level::Error,
-            _ => Level::Info,
+            "trace" => LevelFilter::Trace,
+            "debug" => LevelFilter::Debug,
+            "info" => LevelFilter::Info,
+            "warn" => LevelFilter::Warn,
+            "error" => LevelFilter::Error,
+            _ => LevelFilter::Info,
         }
-    };
-
-    let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::CompactFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain).build().fuse();
-    let drain = drain.filter_level(log_level).fuse();
-    let log = slog::Logger::root(drain, o!("version" => "0.5"));
-    log
+    }
 }
 
 pub fn get_doppler_file_path(cli: &Cli) -> Result<String, Error> {
