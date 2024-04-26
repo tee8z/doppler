@@ -2,13 +2,13 @@ use crate::{generate_memo, L2Node, Lnd, NodeCommand, Options};
 use anyhow::{anyhow, Error, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use hex::FromHex;
+use log::{debug, error, info};
 use reqwest::{
     blocking::{Client, Response},
     header::{HeaderMap, HeaderValue},
     Certificate, Method,
 };
 use serde_json::{json, Value};
-use slog::{debug, error, info};
 use std::{fs::OpenOptions, io::Read, thread, time::Duration};
 
 #[derive(Debug, Clone)]
@@ -44,7 +44,6 @@ impl LndRest {
     }
     fn send_request(
         &self,
-        options: &Options,
         command_name: String,
         method: Method,
         url: String,
@@ -55,10 +54,7 @@ impl LndRest {
         match method {
             Method::POST => {
                 if let Some(body) = body {
-                    info!(
-                        options.global_logger(),
-                        "({}): {} {}", command_name, url, body
-                    );
+                    info!("({}): {} {}", command_name, url, body);
                     if let Some(timeout) = timeout {
                         Ok(self
                             .client
@@ -70,36 +66,30 @@ impl LndRest {
                         Ok(self.client.post(url).body(body).send()?)
                     }
                 } else {
-                    info!(options.global_logger(), "({}): {}", command_name, url);
+                    info!("({}): {}", command_name, url);
                     Ok(self.client.post(url).send()?)
                 }
             }
             Method::DELETE => {
-                info!(options.global_logger(), "({}): {}", command_name, url);
+                info!("({}): {}", command_name, url);
                 Ok(self.client.delete(url).send()?)
             }
             _ => {
                 //Default to GET
-                info!(options.global_logger(), "({}): {}", command_name, url);
+                info!("({}): {}", command_name, url);
                 Ok(self.client.get(url).send()?)
             }
         }
     }
-    pub fn get_node_pubkey(&self, options: &Options) -> Result<String, Error> {
+    pub fn get_node_pubkey(&self, _options: &Options) -> Result<String, Error> {
         let url = self.build_url("/v1/getinfo");
         let mut retries = 3;
         let mut get_info_response = None;
         while retries > 0 {
-            let response = self.send_request(
-                options,
-                "pubkey".to_owned(),
-                Method::GET,
-                url.clone(),
-                None,
-                None,
-            )?;
+            let response =
+                self.send_request("pubkey".to_owned(), Method::GET, url.clone(), None, None)?;
             if !response.status().is_success() {
-                debug!(options.global_logger(), "trying to get pubkey again");
+                debug!("trying to get pubkey again");
                 thread::sleep(Duration::from_secs(2));
                 retries -= 1;
             } else {
@@ -113,29 +103,22 @@ impl LndRest {
             if let Some(pubkey) = info.get("identity_pubkey").and_then(Value::as_str) {
                 return Ok(pubkey.to_owned());
             } else {
-                error!(options.global_logger(), "no pubkey found");
+                error!("no pubkey found");
             }
         }
 
         Ok("".to_owned())
     }
 
-    pub fn create_lnd_address(&self, options: &Options) -> Result<String, Error> {
+    pub fn create_lnd_address(&self, _options: &Options) -> Result<String, Error> {
         let url = self.build_url("/v1/newaddress?type=UNUSED_TAPROOT_PUBKEY");
         let result: Value = self
-            .send_request(
-                options,
-                "newaddress".to_owned(),
-                Method::GET,
-                url,
-                None,
-                None,
-            )?
+            .send_request("newaddress".to_owned(), Method::GET, url, None, None)?
             .json()?;
         if let Some(address) = result.get("address").and_then(Value::as_str) {
             return Ok(address.to_owned());
         }
-        error!(options.global_logger(), "no address found: {}", result);
+        error!("no address found: {}", result);
         return Ok("".to_string());
     }
 
@@ -146,14 +129,14 @@ impl LndRest {
         node_command: &NodeCommand,
     ) -> Result<(), Error> {
         let _ = node.connect(options, node_command).map_err(|e| {
-            debug!(options.global_logger(), "failed to connect: {}", e);
+            debug!("failed to connect: {}", e);
         });
         let to_node = options.get_l2_by_name(node_command.to.as_str())?;
         let to_pubkey = to_node.get_cached_pubkey();
         let amt = node_command.amt.unwrap_or(100000).to_string();
 
         let url = self.build_url("/v1/channels");
-        info!(options.global_logger(), "pubkey {}", to_pubkey);
+        info!("pubkey {}", to_pubkey);
         let to_pubkey_base64 = byte_base64_encoding(&to_pubkey)?;
         let body = json!({
             "node_pubkey":to_pubkey_base64,
@@ -163,7 +146,6 @@ impl LndRest {
         let mut open_channel_response = None;
         while retries > 0 {
             let response = self.send_request(
-                options,
                 "openchannel".to_owned(),
                 Method::POST,
                 url.clone(),
@@ -171,11 +153,7 @@ impl LndRest {
                 None,
             )?;
             if !response.status().is_success() {
-                debug!(
-                    options.global_logger(),
-                    "trying to open channel again {}",
-                    response.text()?
-                );
+                debug!("trying to open channel again {}", response.text()?);
                 thread::sleep(Duration::from_secs(2));
                 retries -= 1;
             } else {
@@ -187,7 +165,6 @@ impl LndRest {
         if let Some(result) = open_channel_response {
             if !result.status().is_success() {
                 error!(
-                    options.global_logger(),
                     "failed to open channel from {} to {}: {}",
                     node.get_name(),
                     to_node.get_name(),
@@ -195,7 +172,6 @@ impl LndRest {
                 );
             } else {
                 info!(
-                    options.global_logger(),
                     "successfully opened channel from {} to {}",
                     node.get_name(),
                     to_node.get_name()
@@ -203,7 +179,6 @@ impl LndRest {
             }
         } else {
             error!(
-                options.global_logger(),
                 "failed to open channel from {} to {}",
                 node.get_name(),
                 to_node.get_name(),
@@ -221,7 +196,6 @@ impl LndRest {
     ) -> Result<(), Error> {
         let to_node = options.get_l2_by_name(node_command.to.as_str())?;
         info!(
-            options.global_logger(),
             "to_node {} {} {} ",
             to_node.get_cached_pubkey(),
             to_node.get_p2p_port(),
@@ -235,7 +209,6 @@ impl LndRest {
             },
         });
         let result = self.send_request(
-            options,
             "connect".to_owned(),
             Method::POST,
             url,
@@ -245,7 +218,6 @@ impl LndRest {
 
         if result.status().is_success() {
             info!(
-                options.global_logger(),
                 "successfully connected from {} to {}",
                 node.get_name(),
                 to_node.get_name()
@@ -255,14 +227,12 @@ impl LndRest {
         let result_text = result.text()?;
         if result_text.contains("already connected to peer") {
             info!(
-                options.global_logger(),
                 "successfully connected from {} to {}",
                 node.get_name(),
                 to_node.get_name()
             );
         } else {
             error!(
-                options.global_logger(),
                 "failed to connect from {} to {}: {}",
                 node.get_name(),
                 to_node.get_name(),
@@ -284,24 +254,16 @@ impl LndRest {
         let to_node = options.get_l2_by_name(node_command.to.as_str())?;
         let sub_url = format!("/v1/channels/{}/{}", parts[0], parts[1]);
         let url = self.build_url(&sub_url);
-        let result = self.send_request(
-            options,
-            "closechannel".to_owned(),
-            Method::DELETE,
-            url,
-            None,
-            None,
-        )?;
+        let result =
+            self.send_request("closechannel".to_owned(), Method::DELETE, url, None, None)?;
         if result.status().is_success() {
             info!(
-                options.global_logger(),
                 "successfully closed channel from {} to {}",
                 node.get_name(),
                 to_node.get_name()
             );
         } else {
             error!(
-                options.global_logger(),
                 "failed to close channel from {} to {}: {}",
                 node.get_name(),
                 to_node.get_name(),
@@ -324,7 +286,6 @@ impl LndRest {
         let sub_url = format!("/v1/channels/{}/{}?local_force=true", parts[0], parts[1]);
         let url = self.build_url(&sub_url);
         let result = self.send_request(
-            options,
             "forceclosechannel".to_owned(),
             Method::DELETE,
             url,
@@ -333,14 +294,12 @@ impl LndRest {
         )?;
         if result.status().is_success() {
             info!(
-                options.global_logger(),
                 "successfully closed channel from {} to {}",
                 node.get_name(),
                 to_node.get_name()
             );
         } else {
             error!(
-                options.global_logger(),
                 "failed to close channel from {} to {}",
                 node.get_name(),
                 to_node.get_name()
@@ -358,14 +317,7 @@ impl LndRest {
         let to_pubkey = to_node.get_cached_pubkey();
         let url = self.build_url("/v1/channels");
         let result: Value = self
-            .send_request(
-                options,
-                "listchannels".to_owned(),
-                Method::GET,
-                url,
-                None,
-                None,
-            )?
+            .send_request("listchannels".to_owned(), Method::GET, url, None, None)?
             .json()?;
         let channel_points = result
             .get("channels")
@@ -399,7 +351,7 @@ impl LndRest {
     pub fn create_invoice(
         &self,
         node: &Lnd,
-        options: &Options,
+        _options: &Options,
         node_command: &NodeCommand,
     ) -> Result<String, Error> {
         let amt = node_command.amt.unwrap_or(1000).to_string();
@@ -411,7 +363,6 @@ impl LndRest {
         });
         let url = self.build_url("/v1/invoices");
         let result = self.send_request(
-            options,
             "addinvoice".to_owned(),
             Method::POST,
             url,
@@ -419,7 +370,7 @@ impl LndRest {
             None,
         )?;
         if !result.status().is_success() {
-            error!(options.global_logger(), "failed to create invoice");
+            error!("failed to create invoice");
             return Ok(String::from(""));
         }
         let response_payload: Value = result.json()?;
@@ -432,7 +383,7 @@ impl LndRest {
 
     pub fn pay_invoice(
         &self,
-        options: &Options,
+        _options: &Options,
         node_command: &NodeCommand,
         payment_request: String,
     ) -> Result<(), Error> {
@@ -442,7 +393,6 @@ impl LndRest {
         });
 
         let result = self.send_request(
-            options,
             "payinvoice".to_owned(),
             Method::POST,
             url,
@@ -451,25 +401,22 @@ impl LndRest {
         )?;
         if !result.status().is_success() {
             error!(
-                options.global_logger(),
-                "failed to make payment from {} to {}", node_command.from, node_command.to
+                "failed to make payment from {} to {}",
+                node_command.from, node_command.to
             )
         }
         let result_text: Value = result.json()?;
         if let Some(error) = result_text.get("payment_error") {
             if error.is_string() && !error.as_str().unwrap().is_empty() {
                 error!(
-                    options.global_logger(),
                     "failed to make payment from {} to {}: {}",
-                    node_command.from,
-                    node_command.to,
-                    result_text
+                    node_command.from, node_command.to, result_text
                 )
             }
         }
         debug!(
-            options.global_logger(),
-            "successful payment from {} to {}: {}", node_command.from, node_command.to, result_text
+            "successful payment from {} to {}: {}",
+            node_command.from, node_command.to, result_text
         );
         Ok(())
     }
@@ -496,7 +443,6 @@ impl LndRest {
         });
 
         let result = self.send_request(
-            options,
             "send_keysend".to_owned(),
             Method::POST,
             url,
@@ -505,7 +451,6 @@ impl LndRest {
         )?;
         if !result.status().is_success() {
             error!(
-                options.global_logger(),
                 "failed to make payment from {} to {}: {}",
                 node_command.from,
                 node_command.to,
@@ -517,24 +462,21 @@ impl LndRest {
         if let Some(error) = result_text.get("payment_error") {
             if error.is_string() && !error.as_str().unwrap().is_empty() {
                 error!(
-                    options.global_logger(),
                     "failed to make payment from {} to {}: {}",
-                    node_command.from,
-                    node_command.to,
-                    result_text
+                    node_command.from, node_command.to, result_text
                 )
             }
         }
         debug!(
-            options.global_logger(),
-            "successful payment from {} to {}: {}", node_command.from, node_command.to, result_text
+            "successful payment from {} to {}: {}",
+            node_command.from, node_command.to, result_text
         );
         Ok(())
     }
 
     pub fn pay_address(
         &self,
-        options: &Options,
+        _options: &Options,
         node_command: &NodeCommand,
         address: &str,
     ) -> Result<String, Error> {
@@ -545,7 +487,6 @@ impl LndRest {
                 "amount": amt
         });
         let result = self.send_request(
-            options,
             "sendcoins".to_owned(),
             Method::POST,
             url,
@@ -554,8 +495,8 @@ impl LndRest {
         )?;
         if !result.status().is_success() {
             error!(
-                options.global_logger(),
-                "failed to make chain-on payment from {} to {}", node_command.from, node_command.to
+                "failed to make chain-on payment from {} to {}",
+                node_command.from, node_command.to
             )
         }
         let response_payload: Value = result.json()?;
@@ -564,10 +505,7 @@ impl LndRest {
             .and_then(Value::as_str)
             .map(|txid| txid.to_owned());
         if found_tx_id.is_none() {
-            error!(
-                options.global_logger(),
-                "no tx id found: {}", response_payload
-            );
+            error!("no tx id found: {}", response_payload);
             return Ok("".to_owned());
         }
 
@@ -579,15 +517,11 @@ impl LndRest {
         Ok(mac_as_hex)
     }
 
-    pub fn get_rhash(&self, options: &Options) -> Result<String, Error> {
+    pub fn get_rhash(&self, _options: &Options) -> Result<String, Error> {
         let url: String = self.build_url("/v1/invoices");
-        let result =
-            self.send_request(options, "rhash".to_owned(), Method::POST, url, None, None)?;
+        let result = self.send_request("rhash".to_owned(), Method::POST, url, None, None)?;
         if !result.status().is_success() {
-            error!(
-                options.global_logger(),
-                "failed to get rhash from empty invoice"
-            )
+            error!("failed to get rhash from empty invoice")
         }
         let response_payload: Value = result.json()?;
         let found_rhash_base64: Option<String> = response_payload
@@ -596,30 +530,19 @@ impl LndRest {
             .map(|rhash| rhash.to_owned());
 
         if found_rhash_base64.is_none() {
-            error!(options.global_logger(), "no r_hash found");
+            error!("no r_hash found");
             return Ok("".to_owned());
         }
         let rhash_hex = hex_encoding(&found_rhash_base64.unwrap())?;
         Ok(rhash_hex)
     }
 
-    pub fn get_preimage(&self, options: &Options, rhash: String) -> Result<String, Error> {
+    pub fn get_preimage(&self, _options: &Options, rhash: String) -> Result<String, Error> {
         let sub_url = format!("/v1/invoice/{}", rhash);
         let url = self.build_url(&sub_url);
-        let result = self.send_request(
-            options,
-            "rpreimage".to_owned(),
-            Method::GET,
-            url,
-            None,
-            None,
-        )?;
+        let result = self.send_request("rpreimage".to_owned(), Method::GET, url, None, None)?;
         if !result.status().is_success() {
-            error!(
-                options.global_logger(),
-                "failed to get preimage of invoice: {}",
-                result.text()?
-            );
+            error!("failed to get preimage of invoice: {}", result.text()?);
             return Ok("".to_owned());
         }
         let response_payload: Value = result.json()?;
@@ -628,7 +551,7 @@ impl LndRest {
             .and_then(Value::as_str)
             .map(|preimage| preimage.to_owned());
         if found_preimage_base64.is_none() {
-            error!(options.global_logger(), "no preimage found");
+            error!("no preimage found");
             return Ok("".to_owned());
         }
         let preimage_hex = hex_encoding(&found_preimage_base64.unwrap())?;
@@ -637,7 +560,7 @@ impl LndRest {
 
     pub fn create_hold_invoice(
         &self,
-        options: &Options,
+        _options: &Options,
         node_command: &NodeCommand,
         rhash: String,
     ) -> Result<String, Error> {
@@ -649,7 +572,6 @@ impl LndRest {
             "hash": base64_url_safe(&rhash_base64)
         });
         let result = self.send_request(
-            options,
             "addholdinvoice".to_owned(),
             Method::POST,
             url,
@@ -657,7 +579,7 @@ impl LndRest {
             None,
         )?;
         if !result.status().is_success() {
-            error!(options.global_logger(), "failed to create invoice");
+            error!("failed to create invoice");
             return Ok(String::from(""));
         }
         let response_payload: Value = result.json()?;
@@ -668,14 +590,13 @@ impl LndRest {
         Ok(found_payment_request.unwrap())
     }
 
-    pub fn settle_hold_invoice(&self, options: &Options, preimage: &String) -> Result<(), Error> {
+    pub fn settle_hold_invoice(&self, _options: &Options, preimage: &String) -> Result<(), Error> {
         let url = self.build_url("/v2/invoices/settle");
         let preimage_base64 = byte_base64_encoding(&preimage)?;
         let body = json!({
             "preimage": base64_url_safe(&preimage_base64)
         });
         let result = self.send_request(
-            options,
             "settleinvoice".to_owned(),
             Method::POST,
             url,
@@ -683,28 +604,17 @@ impl LndRest {
             None,
         )?;
         if result.status().is_success() {
-            info!(options.global_logger(), "successfully settled invoice");
+            info!("successfully settled invoice");
         } else {
-            error!(options.global_logger(), "failed to settle invoice",);
+            error!("failed to settle invoice",);
         }
         Ok(())
     }
-    pub fn get_current_block(&self, options: &Options) -> Result<i64, Error> {
+    pub fn get_current_block(&self, _options: &Options) -> Result<i64, Error> {
         let url = self.build_url("/v2/chainkit/bestblock");
-        let result = self.send_request(
-            options,
-            "getbestblock".to_owned(),
-            Method::GET,
-            url,
-            None,
-            None,
-        )?;
+        let result = self.send_request("getbestblock".to_owned(), Method::GET, url, None, None)?;
         if !result.status().is_success() {
-            error!(
-                options.global_logger(),
-                "failed to get getbestblock: {}",
-                result.text()?
-            );
+            error!("failed to get getbestblock: {}", result.text()?);
             return Ok(0);
         }
         let response_payload: Value = result.json()?;

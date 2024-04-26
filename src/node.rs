@@ -1,8 +1,8 @@
 use crate::{run_command, Bitcoind, NodeKind, Options};
 use anyhow::Error;
+use log::info;
 use rand::Rng;
 use serde_yaml::{from_slice, Value};
-use slog::info;
 use std::{any::Any, process::Output};
 
 pub trait L2Node: Any {
@@ -84,10 +84,7 @@ pub trait L2Node: Any {
         let to_node = options.get_l2_by_name(&node_command.to)?;
         let on_chain_address_from = to_node.create_on_chain_address(options)?;
         let tx_id = self.pay_address(options, node_command, on_chain_address_from.as_str())?;
-        info!(
-            options.global_logger(),
-            "on chain transaction created: {}", tx_id
-        );
+        info!("on chain transaction created: {}", tx_id);
         Ok(())
     }
     fn fund_node(&self, options: &Options, miner: &Bitcoind) -> Result<(), Error> {

@@ -3,7 +3,7 @@ use crate::{
     create_ui_config_files, get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options,
 };
 use anyhow::{anyhow, Error};
-use slog::{debug, error, info};
+use log::{debug, error, info};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::os::unix::prelude::PermissionsExt;
@@ -20,12 +20,9 @@ pub fn load_options_from_external_nodes(
 ) -> Result<(), Error> {
     //Skips any docker setup/calls, using external nodes instead
     options.load_external_nodes(external_nodes_folder_path)?;
-    debug!(
-        options.global_logger(),
-        "loaded {} file", external_nodes_folder_path
-    );
+    debug!("loaded {} file", external_nodes_folder_path);
     options.load_lnds()?;
-    debug!(options.global_logger(), "loaded lnds");
+    debug!("loaded lnds");
     let network = options.external_nodes.clone().unwrap()[0].network.clone();
     create_ui_config_files(&options, &network)?;
     Ok(())
@@ -34,18 +31,15 @@ pub fn load_options_from_external_nodes(
 pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> Result<(), Error> {
     options.compose_path = Some(compose_path.to_owned());
     options.load_compose()?;
-    debug!(
-        options.global_logger(),
-        "loaded {} file", options.docker_command
-    );
+    debug!("loaded {} file", options.docker_command);
     options.load_bitcoinds()?;
-    debug!(options.global_logger(), "loaded bitcoinds");
+    debug!("loaded bitcoinds");
     options.load_lnds()?;
-    debug!(options.global_logger(), "loaded lnds");
+    debug!("loaded lnds");
     options.load_eclairs()?;
-    debug!(options.global_logger(), "loaded eclairs");
+    debug!("loaded eclairs");
     options.load_coreln()?;
-    debug!(options.global_logger(), "loaded corelsn");
+    debug!("loaded corelsn");
     Ok(())
 }
 
@@ -67,7 +61,6 @@ pub fn run_command(
     let commands = add_commands(options.docker_command.clone(), commands);
 
     info!(
-        options.global_logger(),
         "({}): {} {}",
         command_name,
         options.docker_command,
@@ -78,7 +71,6 @@ pub fn run_command(
         .output()?;
 
     debug!(
-        options.global_logger(),
         "output.stdout: {}, output.stderr: {}",
         from_utf8(&output.stdout)?,
         from_utf8(&output.stderr)?
@@ -99,12 +91,12 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
                 err
             )
         })?;
-    debug!(options.global_logger(), "saved cluster config");
+    debug!("saved cluster config");
 
     start_docker_compose(options)?;
     create_ui_config_files(options, &options.network)?;
 
-    debug!(options.global_logger(), "started cluster");
+    debug!("started cluster");
     //simple wait for docker-compose to spin up
     thread::sleep(Duration::from_secs(6));
     pair_bitcoinds(options)?;
@@ -161,13 +153,11 @@ fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
     //TODO: add faucet call here instead of miner for signet
     if options.network == "regtest" {
         connect_l2_nodes(options)?;
-
-        let logger = options.global_logger();
         options.get_l2_nodes().into_iter().for_each(|node| {
             let found_miner = miner.unwrap();
             match node.fund_node(&options.clone(), found_miner) {
-                Ok(_) => info!(logger, "container: {} funded", node.get_container_name()),
-                Err(e) => error!(logger, "failed to start/fund node: {}", e),
+                Ok(_) => info!("container: {} funded", node.get_container_name()),
+                Err(e) => error!("failed to start/fund node: {}", e),
             }
         });
     }
@@ -247,15 +237,11 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
         .create(true)
         .open(full_path.clone())?;
     file.write_all(script_content.as_bytes())?;
-    debug!(
-        options.global_logger(),
-        "wrote aliases script @ {}",
-        full_path.display()
-    );
+    debug!("wrote aliases script @ {}", full_path.display());
     let mut permissions = file.metadata()?.permissions();
     permissions.set_mode(0o755);
     file.set_permissions(permissions)?;
-    debug!(options.global_logger(), "wrote aliases script");
+    debug!("wrote aliases script");
 
     Ok(())
 }
@@ -286,11 +272,7 @@ pub fn update_bash_alias_external(options: &Options) -> Result<(), Error> {
     let mut permissions = file.metadata()?.permissions();
     permissions.set_mode(0o755);
     file.set_permissions(permissions)?;
-    debug!(
-        options.global_logger(),
-        "wrote aliases script @ {}",
-        full_path.display()
-    );
+    debug!("wrote aliases script @ {}", full_path.display());
 
     Ok(())
 }

@@ -3,8 +3,8 @@ use clap::{Args, Subcommand, ValueEnum};
 use conf_parser::processer::FileConf;
 use docker_compose_types::{Compose, ComposeNetworks, MapOrEmpty, Service, Services};
 use indexmap::map::IndexMap;
+use log::{debug, error};
 use rusqlite::Connection;
-use slog::{debug, error, Logger};
 use std::{
     fs::{create_dir_all, OpenOptions},
     io::{self, ErrorKind, Read, Write},
@@ -72,7 +72,6 @@ pub struct Options {
     pub services: IndexMap<String, Option<Service>>,
     pub main_thread_active: ThreadController,
     pub main_thread_paused: ThreadController,
-    global_logger: Logger,
     thread_handlers: Arc<Mutex<Vec<Thread>>>,
     pub aliases: bool,
     pub shell_type: Option<ShellType>,
@@ -118,7 +117,6 @@ impl ThreadController {
 
 impl Options {
     pub fn new(
-        logger: Logger,
         docker_dash: bool,
         ui_config_path: String,
         app_sub_commands: Option<AppSubCommands>,
@@ -167,7 +165,6 @@ impl Options {
             services: indexmap::IndexMap::new(),
             main_thread_active: ThreadController::new(true),
             main_thread_paused: ThreadController::new(false),
-            global_logger: logger,
             thread_handlers: Arc::new(Mutex::new(Vec::new())),
             aliases,
             shell_type,
@@ -179,7 +176,7 @@ impl Options {
             external_nodes_path: external_nodes_path,
             external_nodes: None,
             ui_config_path,
-            network
+            network,
         }
     }
     pub fn get_image(&self, name: &str) -> Option<ImageInfo> {
@@ -194,9 +191,6 @@ impl Options {
             None => panic!("error no default images found!"),
         }
         .clone()
-    }
-    pub fn global_logger(&self) -> Logger {
-        self.global_logger.clone()
     }
     pub fn add_thread(&self, thread_handler: Thread) {
         self.thread_handlers.lock().unwrap().push(thread_handler);
@@ -226,11 +220,7 @@ impl Options {
     ) -> Result<(), io::Error> {
         let full_path =
             get_absolute_path(file_path).map_err(|e| io::Error::new(ErrorKind::NotFound, e))?;
-        debug!(
-            self.global_logger(),
-            "path to new compose: {}",
-            full_path.display()
-        );
+        debug!("path to new compose: {}", full_path.display());
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -238,10 +228,7 @@ impl Options {
             .create(true)
             .open(full_path)
             .map_err(|e| {
-                error!(
-                    self.global_logger(),
-                    "Failed to open {} file.: {}", docker_command, e
-                );
+                error!("Failed to open {} file.: {}", docker_command, e);
                 io::Error::new(ErrorKind::NotFound, e)
             })?;
         let mut networks = IndexMap::new();
@@ -276,20 +263,20 @@ impl Options {
             .write(true)
             .open(target_file)
             .map_err(|e| {
-                error!(self.global_logger(), "Failed to open compose file.: {}", e);
+                error!("Failed to open compose file.: {}", e);
                 io::Error::new(ErrorKind::NotFound, e)
             })?;
         let mut file_content = String::new();
         let doppler_content = file
             .read_to_string(&mut file_content)
             .map_err(|e| {
-                error!(self.global_logger(), "Failed to read file.: {}", e);
+                error!("Failed to read file.: {}", e);
                 io::Error::new(ErrorKind::NotFound, e)
             })
             .map(|_| file_content)?;
         let doppler_compose: Compose =
             serde_yaml::from_str::<Compose>(&doppler_content).map_err(|e| {
-                error!(self.global_logger(), "Failed to parse compose file.: {}", e);
+                error!("Failed to parse compose file.: {}", e);
                 io::Error::new(ErrorKind::InvalidData, e)
             })?;
         let Services(inner_index_map) = doppler_compose.services;
@@ -304,10 +291,7 @@ impl Options {
             .write(true)
             .open(target_file)
             .map_err(|e| {
-                error!(
-                    self.global_logger(),
-                    "Failed to open external nodes file.: {}", e
-                );
+                error!("Failed to open external nodes file.: {}", e);
                 io::Error::new(ErrorKind::NotFound, e)
             })?;
         let mut external_nodes: Vec<ExternalNode> = vec![];

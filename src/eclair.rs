@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
+use log::{debug, error, info};
 use serde_json::{from_slice, Value};
-use slog::{debug, error, info};
 use std::{
     fs::{File, OpenOptions},
     str::from_utf8,
@@ -164,10 +164,7 @@ pub fn build_eclair(
     pair: &NodePair,
 ) -> Result<()> {
     let mut eclair_conf = build_and_save_config(options, name, pair).unwrap();
-    debug!(
-        options.global_logger(),
-        "{} volume: {}", name, eclair_conf.path_vol
-    );
+    debug!("{} volume: {}", name, eclair_conf.path_vol);
 
     let rest_port = options.new_port();
     let grpc_port = options.new_port();
@@ -192,11 +189,8 @@ pub fn build_eclair(
         .insert(eclair_conf.container_name.clone(), Some(eclair));
     eclair_conf.server_url = format!("http://localhost:{}", rest_port.to_string());
     info!(
-        options.global_logger(),
         "connect to {} via rest using {} and via grpc using localhost:{}",
-        eclair_conf.container_name,
-        eclair_conf.server_url,
-        grpc_port,
+        eclair_conf.container_name, eclair_conf.server_url, grpc_port,
     );
     eclair_conf.grpc_port = grpc_port.to_string();
     eclair_conf.rest_port = rest_port.to_string();
@@ -370,14 +364,10 @@ fn add_pubkey(node: &mut Eclair, options: &Options) {
     match result {
         Ok(pubkey) => {
             node.pubkey = Some(pubkey);
-            info!(
-                options.global_logger(),
-                "container: {} found",
-                node.get_name()
-            );
+            info!("container: {} found", node.get_name());
         }
         Err(e) => {
-            error!(options.global_logger(), "failed to find node: {}", e);
+            error!("failed to find node: {}", e);
         }
     }
 }
@@ -402,10 +392,7 @@ fn get_node_pubkey(node: &Eclair, options: &Options) -> Result<String, Error> {
     while retries > 0 {
         let output = run_command(options, "pubkey".to_owned(), commands.clone())?;
         if from_utf8(&output.stderr)?.contains("is not running container") {
-            debug!(
-                options.global_logger(),
-                "restarting service and trying to get pubkey again"
-            );
+            debug!("restarting service and trying to get pubkey again");
             restart_service(options, node.container_name.clone())?;
             thread::sleep(Duration::from_secs(4));
             retries -= 1;
@@ -424,7 +411,7 @@ fn get_node_pubkey(node: &Eclair, options: &Options) -> Result<String, Error> {
             if let Some(pubkey) = node.get_property("nodeId", output) {
                 return Ok(pubkey);
             } else {
-                error!(options.global_logger(), "no pubkey found");
+                error!("no pubkey found");
             }
         }
     }
@@ -474,14 +461,12 @@ fn connect(node: &Eclair, options: &Options, node_command: &NodeCommand) -> Resu
     let output = run_command(options, "connect".to_owned(), commands)?;
     if output.status.success() || from_utf8(&output.stderr)?.contains("already connected") {
         info!(
-            options.global_logger(),
             "successfully connected from {} to {}",
             node.get_name(),
             to_node.get_name()
         );
     } else {
         error!(
-            options.global_logger(),
             "failed to connect from {} to {}",
             node.get_name(),
             to_node.get_name()
@@ -518,14 +503,12 @@ fn close_channel(
     let output = run_command(options, "close channel".to_owned(), commands)?;
     if output.status.success() {
         info!(
-            options.global_logger(),
             "successfully closed channel from {} to {}",
             node.get_name(),
             to_node.get_name()
         );
     } else {
         error!(
-            options.global_logger(),
             "failed to close channel from {} to {}",
             node.get_name(),
             to_node.get_name()
@@ -563,14 +546,12 @@ fn force_close_channel(
     let output = run_command(options, "close channel".to_owned(), commands)?;
     if output.status.success() {
         info!(
-            options.global_logger(),
             "successfully closed channel from {} to {}",
             node.get_name(),
             to_node.get_name()
         );
     } else {
         error!(
-            options.global_logger(),
             "failed to close channel from {} to {}",
             node.get_name(),
             to_node.get_name()
@@ -619,7 +600,7 @@ fn get_peers_channel_id(
 
 fn open_channel(node: &Eclair, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     let _ = node.connect(options, node_command).map_err(|e| {
-        debug!(options.global_logger(), "failed to connect: {}", e);
+        debug!("failed to connect: {}", e);
     });
     let to_node = options.get_l2_by_name(node_command.to.as_str())?;
     let amt = node_command.amt.unwrap_or(100000);
@@ -645,14 +626,12 @@ fn open_channel(node: &Eclair, options: &Options, node_command: &NodeCommand) ->
     let output = run_command(options, "open channel".to_owned(), commands)?;
     if output.status.success() {
         info!(
-            options.global_logger(),
             "successfully opened channel from {} to {}",
             node.get_name(),
             to_node.get_name()
         );
     } else {
         error!(
-            options.global_logger(),
             "failed to open channel from {} to {}",
             node.get_name(),
             to_node.get_name()
@@ -689,7 +668,7 @@ fn create_invoice(
     let output = run_command(options, "createinvoice".to_owned(), commands)?;
     let found_payment_request: Option<String> = node.get_property("serialized", output);
     if found_payment_request.is_none() {
-        error!(options.global_logger(), "no payment requests found");
+        error!("no payment requests found");
     }
     Ok(found_payment_request.unwrap())
 }
@@ -718,12 +697,11 @@ fn pay_invoice(
     let output = run_command(options, "payinvoice".to_owned(), commands)?;
     if !output.status.success() {
         error!(
-            options.global_logger(),
-            "failed to make payment from {} to {}", node_command.from, node_command.to
+            "failed to make payment from {} to {}",
+            node_command.from, node_command.to
         )
     }
     debug!(
-        options.global_logger(),
         "output.stdout: {}, output.stderr: {}",
         from_utf8(&output.stdout)?,
         from_utf8(&output.stderr)?
@@ -759,7 +737,7 @@ fn pay_address(
     ];
     let output = run_command(options, "sendonchain".to_owned(), commands)?;
     if !output.status.success() {
-        error!(options.global_logger(), "failed to pay on chain tx");
+        error!("failed to pay on chain tx");
         return Ok("".to_owned());
     }
     let found_tx_id = from_utf8(&output.stdout)?.trim();
@@ -784,12 +762,12 @@ fn get_rhash(node: &Eclair, options: &Options) -> Result<String, Error> {
     ];
     let output = run_command(options, "get_rhash".to_owned(), commands)?;
     if !output.status.success() {
-        error!(options.global_logger(), "failed to get rhash");
+        error!("failed to get rhash");
         return Ok("".to_owned());
     }
     let found_rhash = node.get_property("paymentHash", output);
     if found_rhash.is_none() {
-        error!(options.global_logger(), "no r_hash found");
+        error!("no r_hash found");
         return Ok("".to_owned());
     }
     Ok(found_rhash.unwrap())

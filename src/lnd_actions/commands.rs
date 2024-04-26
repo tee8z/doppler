@@ -5,7 +5,7 @@ use crate::{
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
-use slog::{debug, error, info};
+use log::{debug, error, info};
 use std::{
     fs::{File, OpenOptions},
     thread::sleep,
@@ -103,7 +103,7 @@ impl L2Node for Lnd {
     fn add_pubkey(&mut self, options: &Options) {
         if options.rest {
             if let Some(lnd_rest) = self.lnd_rest.clone() {
-                info!(options.global_logger(), "rest {:?}", lnd_rest);
+                info!("rest {:?}", lnd_rest);
 
                 self.lnd_rest = Some(add_rest_client(lnd_rest).unwrap());
             }
@@ -112,20 +112,16 @@ impl L2Node for Lnd {
         match result {
             Ok(pubkey) => {
                 self.pubkey = Some(pubkey);
-                info!(
-                    options.global_logger(),
-                    "container: {} found",
-                    self.get_name()
-                );
+                info!("container: {} found", self.get_name());
             }
             Err(e) => {
-                error!(options.global_logger(), "failed to find node: {}", e);
+                error!("failed to find node: {}", e);
             }
         }
     }
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error> {
         if let Some(rest) = self.lnd_rest.clone() {
-            info!(options.global_logger(), "rest {:?}", rest);
+            info!("rest {:?}", rest);
             rest.get_node_pubkey(options)
         } else {
             self.lnd_cli.get_node_pubkey(self, options)
@@ -273,8 +269,8 @@ impl L2Node for Lnd {
                 current_height = match rest.get_current_block(&options) {
                     Err(e) => {
                         error!(
-                            options.global_logger(),
-                            "failed to get block height, will try again in {}s: {}", e, 30
+                            "failed to get block height, will try again in {}s: {}",
+                            e, 30
                         );
                         current_height
                     }
@@ -284,8 +280,8 @@ impl L2Node for Lnd {
                 current_height = match self.lnd_cli.get_current_block(&self, &options) {
                     Err(e) => {
                         error!(
-                            options.global_logger(),
-                            "failed to get block height, will try again in {}s: {}", e, 30
+                            "failed to get block height, will try again in {}s: {}",
+                            e, 30
                         );
                         current_height
                     }
@@ -297,8 +293,8 @@ impl L2Node for Lnd {
             }
         }
         info!(
-            options.global_logger(),
-            "reached block height {} current height {}", ending_height, current_height
+            "reached block height {} current height {}",
+            ending_height, current_height
         );
 
         Ok(())
@@ -312,10 +308,7 @@ pub fn build_lnd(
     pair: &NodePair,
 ) -> Result<()> {
     let mut lnd_conf = build_and_save_config(options, name, image, pair).unwrap();
-    debug!(
-        options.global_logger(),
-        "{} volume: {}", name, lnd_conf.path_vol
-    );
+    debug!("{} volume: {}", name, lnd_conf.path_vol);
 
     let rest_port = options.new_port();
     let grpc_port = options.new_port();
@@ -350,7 +343,6 @@ pub fn build_lnd(
         lnd_conf.lnd_rest = None;
     }
     info!(
-        options.global_logger(),
         "connect to {} via rest using {} and via grpc using {} with admin.macaroon found at localhost:{}",
         lnd_conf.container_name,
         lnd_conf.server_url,

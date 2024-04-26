@@ -1,6 +1,6 @@
 use crate::{run_command, L2Node, Lnd, NodeCommand, Options};
 use anyhow::{anyhow, Error, Result};
-use slog::{debug, error, info};
+use log::{debug, error, info};
 use std::{fs::OpenOptions, io::Read, str::from_utf8, thread, time::Duration};
 
 #[derive(Default, Debug, Clone)]
@@ -34,7 +34,7 @@ impl LndCli {
             if from_utf8(&output.stderr)?.contains(
             "the RPC server is in the process of starting up, but not yet ready to accept calls",
         ) {
-            debug!(options.global_logger(), "trying to get pubkey again");
+            debug!("trying to get pubkey again");
             thread::sleep(Duration::from_secs(2));
             retries -= 1;
         } else {
@@ -47,7 +47,7 @@ impl LndCli {
                 if let Some(pubkey) = lnd.get_property("identity_pubkey", output) {
                     return Ok(pubkey);
                 } else {
-                    error!(options.global_logger(), "no pubkey found");
+                    error!("no pubkey found");
                 }
             }
         }
@@ -78,7 +78,7 @@ impl LndCli {
         let output = run_command(options, "newaddress".to_owned(), commands)?;
         let found_address: Option<String> = lnd.get_property("address", output);
         if found_address.is_none() {
-            error!(options.global_logger(), "no addess found");
+            error!("no addess found");
             return Ok("".to_string());
         }
         Ok(found_address.unwrap())
@@ -91,7 +91,7 @@ impl LndCli {
         node_command: &NodeCommand,
     ) -> Result<(), Error> {
         let _ = node.connect(options, node_command).map_err(|e| {
-            debug!(options.global_logger(), "failed to connect: {}", e);
+            debug!("failed to connect: {}", e);
         });
         let to_node = options.get_l2_by_name(node_command.to.as_str())?;
         let amt = node_command.amt.unwrap_or(100000).to_string();
@@ -120,14 +120,12 @@ impl LndCli {
         let output = run_command(options, "openchannel".to_owned(), commands)?;
         if output.status.success() {
             info!(
-                options.global_logger(),
                 "successfully opened channel from {} to {}",
                 node.get_name(),
                 to_node.get_name()
             );
         } else {
             error!(
-                options.global_logger(),
                 "failed to open channel from {} to {}",
                 node.get_name(),
                 to_node.get_name()
@@ -144,7 +142,6 @@ impl LndCli {
     ) -> Result<(), Error> {
         let to_node = options.get_l2_by_name(node_command.to.as_str())?;
         info!(
-            options.global_logger(),
             "to_node {} {} {} ",
             to_node.get_cached_pubkey(),
             to_node.get_p2p_port(),
@@ -176,7 +173,7 @@ impl LndCli {
         while retries > 0 {
             let output = run_command(options, "connect".to_owned(), commands.clone())?;
             if from_utf8(&output.stderr)?.contains("server is still in the process of starting") {
-                debug!(options.global_logger(), "trying to connect again");
+                debug!("trying to connect again");
                 thread::sleep(Duration::from_secs(5));
                 retries -= 1;
             } else {
@@ -189,14 +186,12 @@ impl LndCli {
                 || from_utf8(&output.stderr)?.contains("already connected to peer")
             {
                 info!(
-                    options.global_logger(),
                     "successfully connected from {} to {}",
                     node.get_name(),
                     to_node.get_name()
                 );
             } else {
                 error!(
-                    options.global_logger(),
                     "failed to connect from {} to {}",
                     node.get_name(),
                     to_node.get_name()
@@ -204,7 +199,6 @@ impl LndCli {
             }
         } else {
             error!(
-                options.global_logger(),
                 "failed to connect from {} to {}",
                 node.get_name(),
                 to_node.get_name()
@@ -247,14 +241,12 @@ impl LndCli {
 
         if output.status.success() {
             info!(
-                options.global_logger(),
                 "successfully closed channel from {} to {}",
                 node.get_name(),
                 to_node.get_name()
             );
         } else {
             error!(
-                options.global_logger(),
                 "failed to close channel from {} to {}",
                 node.get_name(),
                 to_node.get_name()
@@ -298,14 +290,12 @@ impl LndCli {
 
         if output.status.success() {
             info!(
-                options.global_logger(),
                 "successfully force closed channel from {} to {}",
                 node.get_name(),
                 to_node.get_name()
             );
         } else {
             error!(
-                options.global_logger(),
                 "failed to force close channel from {} to {}",
                 node.get_name(),
                 to_node.get_name()
@@ -385,7 +375,7 @@ impl LndCli {
         let output = run_command(options, "addinvoice".to_owned(), commands)?;
         let found_payment_request: Option<String> = node.get_property("payment_request", output);
         if found_payment_request.is_none() {
-            error!(options.global_logger(), "no payment request found");
+            error!("no payment request found");
         }
         Ok(found_payment_request.unwrap())
     }
@@ -439,12 +429,11 @@ impl LndCli {
         let output = run_command(options, "payinvoice".to_owned(), commands)?;
         if !output.status.success() {
             error!(
-                options.global_logger(),
-                "failed to make payment from {} to {}", node_command.from, node_command.to
+                "failed to make payment from {} to {}",
+                node_command.from, node_command.to
             )
         }
         debug!(
-            options.global_logger(),
             "output.stdout: {}, output.stderr: {}",
             from_utf8(&output.stdout)?,
             from_utf8(&output.stderr)?
@@ -487,12 +476,11 @@ impl LndCli {
         let output = run_command(options, "send_keysend".to_owned(), commands)?;
         if !output.status.success() {
             error!(
-                options.global_logger(),
-                "failed to make payment from {} to {}", node_command.from, node_command.to
+                "failed to make payment from {} to {}",
+                node_command.from, node_command.to
             )
         }
         debug!(
-            options.global_logger(),
             "output.stdout: {}, output.stderr: {}",
             from_utf8(&output.stdout)?,
             from_utf8(&output.stderr)?
@@ -535,7 +523,7 @@ impl LndCli {
         let output = run_command(options, "sendcoins".to_owned(), commands)?;
         let found_tx_id: Option<String> = node.get_property("txid", output);
         if found_tx_id.is_none() {
-            error!(options.global_logger(), "no tx id found");
+            error!("no tx id found");
             return Ok("".to_owned());
         }
 
@@ -574,7 +562,7 @@ impl LndCli {
         let output = run_command(options, "rhash".to_owned(), commands)?;
         let found_rhash: Option<String> = node.get_property("r_hash", output);
         if found_rhash.is_none() {
-            error!(options.global_logger(), "no r_hash found");
+            error!("no r_hash found");
             return Ok("".to_owned());
         }
         Ok(found_rhash.unwrap())
@@ -609,7 +597,7 @@ impl LndCli {
         let output = run_command(options, "rpreimage".to_owned(), commands)?;
         let found_preimage: Option<String> = node.get_property("r_preimage", output);
         if found_preimage.is_none() {
-            error!(options.global_logger(), "no preimage found");
+            error!("no preimage found");
             return Ok("".to_owned());
         }
         Ok(found_preimage.unwrap())
@@ -647,7 +635,7 @@ impl LndCli {
         let output = run_command(options, "addholdinvoice".to_owned(), commands)?;
         let found_payment_request: Option<String> = node.get_property("payment_request", output);
         if found_payment_request.is_none() {
-            error!(options.global_logger(), "no payment_request found");
+            error!("no payment_request found");
             return Ok("".to_owned());
         }
         Ok(found_payment_request.unwrap())
@@ -681,9 +669,9 @@ impl LndCli {
         ];
         let output = run_command(options, "settleinvoice".to_owned(), commands)?;
         if output.status.success() {
-            info!(options.global_logger(), "successfully settled invoice");
+            info!("successfully settled invoice");
         } else {
-            error!(options.global_logger(), "failed to settle invoice",);
+            error!("failed to settle invoice",);
         }
         Ok(())
     }
@@ -711,13 +699,13 @@ impl LndCli {
         ];
         let output = run_command(options, "getbestblock".to_owned(), commands)?;
         if output.status.success() {
-            info!(options.global_logger(), "successfully got getbestblock");
+            info!("successfully got getbestblock");
         } else {
-            error!(options.global_logger(), "failed to got getbestblock");
+            error!("failed to got getbestblock");
         }
         let found_block_height: Option<i64> = node.get_property_num("block_height", output);
         if found_block_height.is_none() {
-            error!(options.global_logger(), "failed to get getbestblock");
+            error!("failed to get getbestblock");
             return Ok(0);
         }
         Ok(found_block_height.unwrap())
