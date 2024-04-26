@@ -7,3 +7,4 @@ doppler.db
 external_nodes/info.conf
 external_nodes/*/*
 /ui/config/info.conf
+/ui/static/doppler_files/*

@@ -56,6 +56,8 @@ pub fn run_workflow_until_stop(
     options: &mut Options,
     contents: std::string::String,
 ) -> Result<(), std::io::Error> {
+    options.main_thread_active.set(true);
+
     let parsed = DopplerParser::parse(Rule::page, &contents)
         .expect("parse error")
         .next()
@@ -480,18 +482,22 @@ fn handle_up(options: &mut Options) -> Result<(), Error> {
         e
     })?;
 
-    //pause until input
-    info!(
-        options.global_logger(),
-        "doppler cluster has been created, please press enter to continue the script"
-    );
-    options.main_thread_paused.set(true);
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .expect("Failed to read line");
-    options.main_thread_paused.set(false);
-    debug!(options.global_logger(), "read in user input, continuing");
+    if !options.skip_pause {
+        //pause until input
+        info!(
+            options.global_logger(),
+            "doppler cluster has been created, please press enter to continue the script"
+        );
+        options.main_thread_paused.set(true);
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .expect("Failed to read line");
+        options.main_thread_paused.set(false);
+        debug!(options.global_logger(), "read in user input, continuing");
+    } else {
+        options.main_thread_paused.set(false);
+    }
     Ok(())
 }
 

@@ -1,14 +1,19 @@
 use clap::{arg, command, Parser};
-use doppler::{create_db, get_absolute_path, run_workflow_until_stop, AppSubCommands, Options};
+use doppler::{create_db, get_absolute_path, run_workflow_until_stop, watch, AppSubCommands, Options};
+use notify::{RecursiveMode, Watcher};
 use slog::{debug, info, o, Drain, Level, Logger};
-use std::{env, fs, io::Error, path::PathBuf};
+use std::{env, fs, io::Error, option, path::{Path, PathBuf}};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     /// Sets path to doppler file
     #[arg(short, long, value_name = "FILE")]
-    file: PathBuf,
+    file: Option<PathBuf>,
+
+    /// Path to watch for files being dropped and to run in order based on time they were added
+    #[arg(short, long, default_value = "./ui/static/doppler_files")]
+    watch_folder: String,
 
     /// Set the log level
     #[arg(short, long)]
@@ -40,17 +45,14 @@ pub struct Cli {
     /// Path to ui config file, used to connect to the nodes via the browser
     #[arg(short, long, default_value = "./ui/config/info.conf")]
     ui_config_path: String,
+
 }
 
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
     let logger = setup_logger(&cli);
-
-    let doppler_file_path = get_doppler_file_path(&cli)?;
-    debug!(logger, "reading doppler file: {}", doppler_file_path);
-    let contents = fs::read_to_string(doppler_file_path).expect("file read error");
+    let conn = create_db(cli.storage_path.clone()).expect("failed to create doppler.db file");
     debug!(logger, "doppler.db location: {}", cli.storage_path);
-    let conn = create_db(cli.storage_path).expect("failed to create doppler.db file");
     info!(logger, "rest {}", cli.rest);
     let mut options = Options::new(
         logger.clone(),
@@ -61,8 +63,16 @@ fn main() -> Result<(), Error> {
         cli.rest,
         cli.external_nodes,
         cli.network,
+        cli.file.is_none()
     );
-    run_workflow_until_stop(&mut options, contents)?;
+    if let Some(file) = cli.file {
+        let doppler_file_path = get_doppler_file_path(&file.to_string_lossy())?;
+        debug!(logger, "reading doppler file: {}", doppler_file_path);
+        let contents = fs::read_to_string(doppler_file_path).map_err(Error::other)?;
+        run_workflow_until_stop(&mut options, contents)?;
+    } else {
+        watch(&mut options, &cli.watch_folder).map_err(Error::other)?;
+    }
     info!(logger, "successfully cleaned up processes, shutting down");
     Ok(())
 }
@@ -98,8 +108,7 @@ fn setup_logger(cli: &Cli) -> Logger {
     log
 }
 
-pub fn get_doppler_file_path(cli: &Cli) -> Result<String, Error> {
-    let file_path = cli.file.to_string_lossy();
-    let full_path = get_absolute_path(&file_path).unwrap();
+pub fn get_doppler_file_path(file_path: &str) -> Result<String, Error> {
+    let full_path = get_absolute_path(file_path).unwrap();
     Ok(full_path.to_string_lossy().to_string())
 }

@@ -12,6 +12,7 @@ mod polar_default_images;
 mod simple_storage;
 mod visualizer;
 mod workflow;
+mod file_watcher;
 
 pub use bitcoind::*;
 pub use cln::*;
@@ -27,3 +28,4 @@ pub use polar_default_images::*;
 pub use simple_storage::*;
 pub use visualizer::*;
 pub use workflow::*;
+pub use file_watcher::*;

@@ -36,16 +36,6 @@ export function initBlocks() {
 		}
 	};
 
-	Blockly.Blocks['visualizer'] = {
-		init: function () {
-			this.jsonInit(visualizer);
-
-			this.setTooltip(() => {
-				return 'Add a number to variable "%1".'.replace('%1', this.getFieldValue('VAR'));
-			});
-		}
-	};
-
 	Blockly.Blocks['up'] = {
 		init: function () {
 			this.jsonInit(up);

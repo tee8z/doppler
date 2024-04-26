@@ -9,11 +9,12 @@
 	import { initBlocks } from '$lib/blocks';
 	import { initGenerators } from '$lib/generators';
 	import { toolbox } from '$lib/toolbox';
-    
+
 	export let blocklyTheme: any;
 	let workspace: WorkspaceSvg;
 	let code = '';
 	let copied = false;
+	let name = '';
 
 	$: browser && Blockly.getMainWorkspace() && workspace && workspace.setTheme(blocklyTheme);
 
@@ -21,19 +22,52 @@
 		code = javascriptGenerator.workspaceToCode(workspace);
 	}
 
-	function copy() {
-		navigator.clipboard.writeText(code);
-		copied = true;
-		setTimeout(() => (copied = false), 2000);
-	}
-
 	function download() {
 		const blob = new Blob([code], { type: 'text/plain' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = 'custom.doppler';
+		a.download = `${name}.doppler`;
 		a.click();
+	}
+
+	async function runFile() {
+		console.log(code);
+		const blob = new Blob([code], { type: 'text/plain' });
+		const formData = new FormData();
+		formData.append('dopplerFile', blob, `${name}.doppler`);
+		try {
+			const response = await fetch('/api/upload', {
+				method: 'POST',
+				body: formData
+			});
+
+			if (!response.ok) {
+				throw new Error('Network response was not ok');
+			}
+
+			const result = await response.json();
+			console.log(result);
+		} catch (error) {
+			console.error('There was a problem with the fetch operation:', error);
+		}
+	}
+
+	async function resetCluster() {
+		try {
+			const response = await fetch('/api/reset', {
+				method: 'POST'
+			});
+
+			if (!response.ok) {
+				throw new Error('Network response was not ok');
+			}
+
+			const result = await response.json();
+			console.log(result);
+		} catch (error) {
+			console.error('There was a problem with the fetch operation:', error);
+		}
 	}
 
 	$: console.log({ blocklyTheme });
@@ -46,26 +80,23 @@
 	});
 </script>
 
-<div id="blockly" class="w-2/3" />
+<!--<div id="blockly" class="w-2/3" />-->
 <div class="flex flex-col gap-2 flex-1">
 	<div class="flex gap-2">
-		<Button wide on:click={copy}>
-			<div class="flex justify-center items-center gap-2">
-				{#if copied}
-					<Icon name="check" />
-				{:else}
-					<Icon name="copy" />
-				{/if}
-			</div>
-		</Button>
+		<input bind:value={name} placeholder="Enter custom file name" />
 		<Button wide on:click={download}>
-			<div class="flex justify-center items-center gap-2">
-				<Icon name="download" />
-			</div>
+			<div class="flex justify-center items-center gap-2">Download</div>
+		</Button>
+		<Button wide on:click={runFile}>
+			<div class="flex justify-center items-center gap-2">Run</div>
+		</Button>
+		<Button wide on:click={resetCluster}>
+			<div class="flex justify-center items-center gap-2">Reset</div>
 		</Button>
 	</div>
 	<textarea
 		class="w-full h-full bg-green-100 dark:bg-gray-900 outline-1 outline-green-500 rounded-lg"
-		id="code">{code}</textarea
-	>
+		id="code"
+		bind:value={code}
+	/>
 </div>
