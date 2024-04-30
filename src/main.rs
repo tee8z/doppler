@@ -10,7 +10,7 @@ use time::{format_description::well_known::Iso8601, OffsetDateTime};
 pub struct Cli {
     /// Sets path to doppler file
     #[arg(short, long, value_name = "FILE")]
-    file: PathBuf,
+    file: Option<PathBuf>,
 
     /// Set the log level
     #[arg(short, long)]
@@ -47,13 +47,9 @@ pub struct Cli {
 fn main() -> Result<(), Error> {
     let cli = Cli::parse();
     setup_logger(&cli).map_err(|e| Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-
-    let doppler_file_path = get_doppler_file_path(&cli)?;
-    debug!("reading doppler file: {}", doppler_file_path);
-    let contents = fs::read_to_string(doppler_file_path).expect("file read error");
+    let conn = create_db(cli.storage_path.clone()).expect("failed to create doppler.db file");
     debug!("doppler.db location: {}", cli.storage_path);
-    let conn = create_db(cli.storage_path).expect("failed to create doppler.db file");
-    info!("rest {}", cli.rest);
+    info!("using rest communication {}", cli.rest);
     let mut options = Options::new(
         cli.docker_dash,
         cli.ui_config_path,
@@ -63,7 +59,14 @@ fn main() -> Result<(), Error> {
         cli.external_nodes,
         cli.network,
     );
-    run_workflow_until_stop(&mut options, contents)?;
+    if let Some(file) = cli.file {
+        let doppler_file_path = get_doppler_file_path(&file.to_string_lossy())?;
+        debug!("reading doppler file: {}", doppler_file_path);
+        let contents = fs::read_to_string(doppler_file_path).map_err(Error::other)?;
+        run_workflow_until_stop(&mut options, contents)?;
+    } else {
+        //run as WASM
+    }
     info!("successfully cleaned up processes, shutting down");
     Ok(())
 }
@@ -117,8 +120,7 @@ fn get_log_level(cli: &Cli) -> LevelFilter {
     }
 }
 
-pub fn get_doppler_file_path(cli: &Cli) -> Result<String, Error> {
-    let file_path = cli.file.to_string_lossy();
-    let full_path = get_absolute_path(&file_path).unwrap();
+pub fn get_doppler_file_path(file_path: &str) -> Result<String, Error> {
+    let full_path = get_absolute_path(file_path).unwrap();
     Ok(full_path.to_string_lossy().to_string())
 }

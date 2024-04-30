@@ -6,22 +6,26 @@ use indexmap::map::IndexMap;
 use log::{debug, error};
 use rusqlite::Connection;
 use std::{
+    any::Any,
+    collections::BTreeMap,
     fs::{create_dir_all, OpenOptions},
+    future::Future,
     io::{self, ErrorKind, Read, Write},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicI64, Ordering},
+        atomic::{AtomicBool, AtomicI64},
         Arc, Mutex,
     },
-    thread::Thread,
-    vec,
 };
 
 use crate::{
     add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_external_lnd_nodes, add_lnd_nodes,
-    get_latest_polar_images, get_polar_images, new, update_bash_alias_external, Bitcoind, Cln,
+    get_latest_polar_images, get_polar_images, new, Bitcoind, Cln,
     CloneableHashMap, Eclair, ImageInfo, L1Node, L2Node, Lnd, NodeKind, Tag, Tags, NETWORK,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::update_bash_alias_external;
 
 #[derive(Subcommand)]
 pub enum AppSubCommands {
@@ -70,9 +74,11 @@ pub struct Options {
     ports: Vec<i64>,
     pub compose_path: Option<String>,
     pub services: IndexMap<String, Option<Service>>,
-    pub main_thread_active: ThreadController,
-    pub main_thread_paused: ThreadController,
-    thread_handlers: Arc<Mutex<Vec<Thread>>>,
+    command_stack: Arc<
+        Mutex<
+            BTreeMap<String, Vec<Box<dyn Future<Output = Box<dyn Any + Send + Sync + 'static>>>>>,
+        >,
+    >,
     pub aliases: bool,
     pub shell_type: Option<ShellType>,
     pub docker_command: String,
@@ -93,26 +99,6 @@ pub struct ExternalNode {
     pub api_endpoint: String,
     pub tls_cert_path: String,
     pub network: String,
-}
-
-#[derive(Default, Debug, Clone)]
-pub struct ThreadController {
-    active: Arc<AtomicBool>,
-}
-
-impl ThreadController {
-    fn new(val: bool) -> Self {
-        ThreadController {
-            active: Arc::new(AtomicBool::new(val)),
-        }
-    }
-    pub fn set(&self, val: bool) {
-        self.active.store(val, Ordering::Relaxed);
-    }
-
-    pub fn val(&self) -> bool {
-        self.active.load(Ordering::Relaxed)
-    }
 }
 
 impl Options {
@@ -155,17 +141,14 @@ impl Options {
         Self {
             default_images: latest_polar_images,
             known_polar_images: all_polar_images,
-            images: vec::Vec::new(),
-            bitcoinds: vec::Vec::new(),
-            lnd_nodes: vec::Vec::new(),
-            eclair_nodes: vec::Vec::new(),
-            cln_nodes: vec::Vec::new(),
+            images: Vec::new(),
+            bitcoinds: Vec::new(),
+            lnd_nodes: Vec::new(),
+            eclair_nodes: Vec::new(),
+            cln_nodes: Vec::new(),
             ports: starting_port,
             compose_path: None,
             services: indexmap::IndexMap::new(),
-            main_thread_active: ThreadController::new(true),
-            main_thread_paused: ThreadController::new(false),
-            thread_handlers: Arc::new(Mutex::new(Vec::new())),
             aliases,
             shell_type,
             docker_command: docker_command.to_owned(),
@@ -176,6 +159,7 @@ impl Options {
             external_nodes_path: external_nodes_path,
             external_nodes: None,
             ui_config_path,
+            command_stack: Arc::new(Mutex::new(BTreeMap::new())),
             network,
         }
     }
@@ -191,12 +175,6 @@ impl Options {
             None => panic!("error no default images found!"),
         }
         .clone()
-    }
-    pub fn add_thread(&self, thread_handler: Thread) {
-        self.thread_handlers.lock().unwrap().push(thread_handler);
-    }
-    pub fn get_thread_handlers(&self) -> Arc<Mutex<Vec<Thread>>> {
-        self.thread_handlers.clone()
     }
     pub fn new_port(&mut self) -> i64 {
         let last_port = self.ports.last().unwrap();
@@ -309,9 +287,9 @@ impl Options {
             })
         }
         self.external_nodes = Some(external_nodes);
-        if self.aliases {
+        /*if  self.aliases {
             update_bash_alias_external(self)?;
-        }
+        }*/
         Ok(())
     }
 
@@ -399,6 +377,28 @@ impl Options {
     }
     pub fn get_tag_by_name(&self, name: String) -> Tag {
         self.tags.lock().unwrap().get_by_name(name)
+    }
+    pub fn add_command_task(
+        &self,
+        name: String,
+        task: Box<dyn Future<Output = Box<dyn Any + Send + Sync + 'static>>>,
+    ) -> Result<(), Error> {
+        let mut stack = self
+            .command_stack
+            .lock()
+            .map_err(|e| anyhow!("error getting lock for command stack: {}", e))?;
+        if let Some(commands) = stack.get_mut(&name) {
+            commands.push(task);
+        } else {
+            stack.insert(name, vec![task]);
+        }
+        Ok(())
+    }
+
+    pub fn run_commands(&self) -> Result<(), Error> {
+        let stack = self.command_stack.lock().map_err(|e| anyhow!("error getting lock for command stack: {}", e))?;
+        
+        Ok(())
     }
 }
 

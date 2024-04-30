@@ -214,7 +214,7 @@ impl LndCli {
         node_command: &NodeCommand,
     ) -> Result<(), Error> {
         //TODO: add a user defined tag to channels to specify which channel to close, right now we just grab a random one for this peer
-        let peer_channel_point = node.get_peers_channel_point(options, node_command)?;
+        let peer_channel_point = self.get_peers_channel_point(node, options, node_command)?;
         let to_node = options.get_l2_by_name(node_command.to.as_str())?;
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();
@@ -262,7 +262,7 @@ impl LndCli {
         node_command: &NodeCommand,
     ) -> Result<(), Error> {
         //TODO: add a user defined tag to channels to specify which channel to close, right now we just grab a random one for this peer
-        let peer_channel_point = node.get_peers_channel_point(options, node_command)?;
+        let peer_channel_point =self.get_peers_channel_point(node, options, node_command)?;
         let to_node = options.get_l2_by_name(node_command.to.as_str())?;
         let rpc_command = node.get_rpc_server_command();
         let macaroon_path = node.get_macaroon_path();

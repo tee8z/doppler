@@ -6,11 +6,13 @@ use anyhow::{anyhow, Error};
 use log::{debug, error, info};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
-use std::os::unix::prelude::PermissionsExt;
 use std::process::{Command, Output};
 use std::str::from_utf8;
 use std::thread;
 use std::time::Duration;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::os::unix::prelude::PermissionsExt;
 
 pub const NETWORK: &str = "doppler";
 
@@ -104,9 +106,11 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
         mine_initial_blocks(options)?;
     }
     setup_l2_nodes(options)?;
-    if options.aliases && options.external_nodes.is_none() {
-        update_bash_alias(options)?;
-    }
+    /*if cfg!(not(target_arch = "wasm32")) {
+        if options.aliases && options.external_nodes.is_none() {
+            update_bash_alias(options)?;
+        }
+    }*/
 
     Ok(())
 }
@@ -164,6 +168,7 @@ fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn update_bash_alias(options: &Options) -> Result<(), Error> {
     let docker_command = if options.docker_command.contains('-') {
         options.docker_command.to_owned()
@@ -246,6 +251,7 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn update_bash_alias_external(options: &Options) -> Result<(), Error> {
     let mut script_content = String::new();
     script_content.push_str(&format!("{}", options.shell_type.unwrap_or_default()));

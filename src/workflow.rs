@@ -61,41 +61,7 @@ pub fn run_workflow_until_stop(
         .next()
         .unwrap();
 
-    let main_thread_active = options.main_thread_active.clone();
-    let all_threads = options.get_thread_handlers();
     run_workflow(options, parsed).unwrap();
-    // if we have no child threads, this must be a script we just want to run through
-    if all_threads.lock().unwrap().is_empty()
-        && options.loop_count.as_ref().load(Ordering::SeqCst) == 0
-    {
-        main_thread_active.set(false);
-        return Ok(());
-    }
-    let terminate = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&terminate))?;
-    let mut current_loop_count = options.loop_count.as_ref().load(Ordering::SeqCst);
-    let mut read_end_of_doppler_file = options
-        .read_end_of_doppler_file
-        .as_ref()
-        .load(Ordering::SeqCst);
-    while current_loop_count > 0 || !read_end_of_doppler_file {
-        if terminate.load(Ordering::Relaxed) {
-            break;
-        }
-        current_loop_count = options.clone().loop_count.as_ref().load(Ordering::SeqCst);
-        read_end_of_doppler_file = options
-            .read_end_of_doppler_file
-            .as_ref()
-            .load(Ordering::SeqCst);
-        thread::sleep(Duration::from_secs(1));
-    }
-    main_thread_active.set(false);
-    // wait for all child processes to be killed
-    let mut handles = all_threads.lock().unwrap();
-    // collect handles to release the lock
-    let handles: Vec<_> = handles.drain(..).collect();
-    // drop the collected handles to ensure they're joined
-    drop(handles);
     Ok(())
 }
 
@@ -227,6 +193,8 @@ fn run_loop(
         loop_options.name,
         loop_command_stack.len()
     );
+    /*
+    TODO: determine how to handle loops
     spawn(move || {
         debug!("in child thread for loop: {}", loop_options.name);
         let thread_handle = thread::current();
@@ -296,7 +264,7 @@ fn run_loop(
             }
             iter_count -= 1;
         }
-    });
+    });*/
     Ok(())
 }
 
@@ -458,16 +426,6 @@ fn handle_up(options: &mut Options) -> Result<(), Error> {
         error!("Failed to start cluster from generated compose file: {}", e);
         e
     })?;
-
-    //pause until input
-    info!("doppler cluster has been created, please press enter to continue the script");
-    options.main_thread_paused.set(true);
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .expect("Failed to read line");
-    options.main_thread_paused.set(false);
-    debug!("read in user input, continuing");
     Ok(())
 }
 

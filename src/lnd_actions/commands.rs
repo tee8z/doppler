@@ -6,6 +6,7 @@ use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
 use log::{debug, error, info};
+use pollster::FutureExt;
 use std::{
     fs::{File, OpenOptions},
     thread::sleep,
@@ -35,7 +36,7 @@ pub struct Lnd {
 impl Lnd {
     pub fn get_admin_macaroon(&self) -> Option<String> {
         if let Some(rest) = self.lnd_rest.clone() {
-            rest.get_admin_macaroon(self).ok()
+            rest.get_admin_macaroon(self).block_on().ok()
         } else {
             self.lnd_cli.get_admin_macaroon(self).ok()
         }
@@ -50,19 +51,6 @@ impl Lnd {
     }
     pub fn get_rpc_server_command(&self) -> String {
         "--rpcserver=localhost:10000".to_owned()
-    }
-    /// A channel point is the outpoint (txid:index) of the funding transaction.
-    pub fn get_peers_channel_point(
-        &self,
-        options: &Options,
-        node_command: &NodeCommand,
-    ) -> Result<String, Error> {
-        if let Some(rest) = self.lnd_rest.clone() {
-            rest.get_peers_channel_point(options, node_command)
-        } else {
-            self.lnd_cli
-                .get_peers_channel_point(self, options, node_command)
-        }
     }
 }
 
@@ -122,28 +110,87 @@ impl L2Node for Lnd {
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error> {
         if let Some(rest) = self.lnd_rest.clone() {
             info!("rest {:?}", rest);
-            rest.get_node_pubkey(options)
+            rest.get_node_pubkey(options).block_on()
         } else {
             self.lnd_cli.get_node_pubkey(self, options)
         }
     }
+    fn create_on_chain_address(&self, options: &Options) -> Result<String, Error> {
+        if let Some(rest) = self.lnd_rest.clone() {
+            rest.create_lnd_address(options).block_on()
+        } else {
+            self.lnd_cli.create_lnd_address(self, options)
+        }
+    }
+    fn pay_address(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+        address: &str,
+    ) -> Result<String, Error> {
+        if let Some(rest) = self.lnd_rest.clone() {
+            rest.pay_address(options, node_command, address).block_on()
+        } else {
+            self.lnd_cli
+                .pay_address(self, options, node_command, address)
+        }
+    }
+    fn get_rhash(&self, options: &Options) -> Result<String, Error> {
+        if let Some(rest) = self.lnd_rest.clone() {
+            rest.get_rhash(options).block_on()
+        } else {
+            self.lnd_cli.get_rhash(self, options)
+        }
+    }
+    fn get_preimage(&self, options: &Options, rhash: String) -> Result<String, Error> {
+        if let Some(rest) = self.lnd_rest.clone() {
+            rest.get_preimage(options, rhash).block_on()
+        } else {
+            self.lnd_cli.get_preimage(self, options, rhash)
+        }
+    }
+    fn create_hold_invoice(
+        &self,
+        option: &Options,
+        node_command: &NodeCommand,
+        rhash: String,
+    ) -> Result<String, Error> {
+        if let Some(rest) = self.lnd_rest.clone() {
+            rest.create_hold_invoice(option, node_command, rhash)
+                .block_on()
+        } else {
+            self.lnd_cli
+                .create_hold_invoice(self, option, node_command, rhash)
+        }
+    }
+    fn create_invoice(
+        &self,
+        options: &Options,
+        node_command: &NodeCommand,
+    ) -> Result<String, Error> {
+        if let Some(rest) = self.lnd_rest.clone() {
+            rest.create_invoice(self, options, node_command).block_on()
+        } else {
+            self.lnd_cli.create_invoice(self, options, node_command)
+        }
+    }
     fn open_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         if let Some(rest) = self.lnd_rest.clone() {
-            rest.open_channel(self, options, node_command)
+            rest.open_channel(self, options, node_command).block_on()
         } else {
             self.lnd_cli.open_channel(self, options, node_command)
         }
     }
     fn connect(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         if let Some(rest) = self.lnd_rest.clone() {
-            rest.connect(self, options, node_command)
+            rest.connect(self, options, node_command).block_on()
         } else {
             self.lnd_cli.connect(self, options, node_command)
         }
     }
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         if let Some(rest) = self.lnd_rest.clone() {
-            rest.close_channel(self, options, node_command)
+            rest.close_channel(self, options, node_command).block_on()
         } else {
             self.lnd_cli.close_channel(self, options, node_command)
         }
@@ -155,20 +202,10 @@ impl L2Node for Lnd {
     ) -> std::result::Result<(), Error> {
         if let Some(rest) = self.lnd_rest.clone() {
             rest.force_close_channel(self, options, node_command)
+                .block_on()
         } else {
             self.lnd_cli
                 .force_close_channel(self, options, node_command)
-        }
-    }
-    fn create_invoice(
-        &self,
-        options: &Options,
-        node_command: &NodeCommand,
-    ) -> Result<String, Error> {
-        if let Some(rest) = self.lnd_rest.clone() {
-            rest.create_invoice(self, options, node_command)
-        } else {
-            self.lnd_cli.create_invoice(self, options, node_command)
         }
     }
     fn pay_invoice(
@@ -179,6 +216,7 @@ impl L2Node for Lnd {
     ) -> Result<(), Error> {
         if let Some(rest) = self.lnd_rest.clone() {
             rest.pay_invoice(options, node_command, payment_request)
+                .block_on()
         } else {
             self.lnd_cli
                 .pay_invoice(self, options, node_command, payment_request)
@@ -193,62 +231,16 @@ impl L2Node for Lnd {
     ) -> Result<(), Error> {
         if let Some(rest) = self.lnd_rest.clone() {
             rest.send_keysend(options, node_command, to_pubkey)
+                .block_on()
         } else {
             self.lnd_cli
                 .send_keysend(self, options, node_command, to_pubkey)
         }
     }
 
-    fn create_on_chain_address(&self, options: &Options) -> Result<String, Error> {
-        if let Some(rest) = self.lnd_rest.clone() {
-            rest.create_lnd_address(options)
-        } else {
-            self.lnd_cli.create_lnd_address(self, options)
-        }
-    }
-    fn pay_address(
-        &self,
-        options: &Options,
-        node_command: &NodeCommand,
-        address: &str,
-    ) -> Result<String, Error> {
-        if let Some(rest) = self.lnd_rest.clone() {
-            rest.pay_address(options, node_command, address)
-        } else {
-            self.lnd_cli
-                .pay_address(self, options, node_command, address)
-        }
-    }
-    fn get_rhash(&self, options: &Options) -> Result<String, Error> {
-        if let Some(rest) = self.lnd_rest.clone() {
-            rest.get_rhash(options)
-        } else {
-            self.lnd_cli.get_rhash(self, options)
-        }
-    }
-    fn get_preimage(&self, options: &Options, rhash: String) -> Result<String, Error> {
-        if let Some(rest) = self.lnd_rest.clone() {
-            rest.get_preimage(options, rhash)
-        } else {
-            self.lnd_cli.get_preimage(self, options, rhash)
-        }
-    }
-    fn create_hold_invoice(
-        &self,
-        option: &Options,
-        node_command: &NodeCommand,
-        rhash: String,
-    ) -> Result<String, Error> {
-        if let Some(rest) = self.lnd_rest.clone() {
-            rest.create_hold_invoice(option, node_command, rhash)
-        } else {
-            self.lnd_cli
-                .create_hold_invoice(self, option, node_command, rhash)
-        }
-    }
     fn settle_hold_invoice(&self, options: &Options, preimage: String) -> Result<(), Error> {
         if let Some(rest) = self.lnd_rest.clone() {
-            rest.settle_hold_invoice(options, &preimage)
+            rest.settle_hold_invoice(options, &preimage).block_on()
         } else {
             self.lnd_cli.settle_hold_invoice(self, options, &preimage)
         }
@@ -256,7 +248,7 @@ impl L2Node for Lnd {
 
     fn wait_for_block(&self, options: &Options, num_of_blocks: i64) -> Result<(), Error> {
         let mut current_height = if let Some(rest) = self.lnd_rest.clone() {
-            rest.get_current_block(options)
+            rest.get_current_block(options).block_on()
         } else {
             self.lnd_cli.get_current_block(self, options)
         }?;
@@ -266,7 +258,7 @@ impl L2Node for Lnd {
         let sleep_time = Duration::from_secs(30);
         while current_height < ending_height {
             if let Some(rest) = self.lnd_rest.clone() {
-                current_height = match rest.get_current_block(&options) {
+                current_height = match rest.get_current_block(&options).block_on() {
                     Err(e) => {
                         error!(
                             "failed to get block height, will try again in {}s: {}",
