@@ -1,5 +1,6 @@
-use crate::{run_command, L2Node, Lnd, NodeCommand, Options};
+use crate::{run_command, Lnd};
 use anyhow::{anyhow, Error, Result};
+use doppler_core::{NodeCommand, Options};
 use log::{debug, error, info};
 use std::{fs::OpenOptions, io::Read, str::from_utf8, thread, time::Duration};
 

@@ -1,23 +1,43 @@
 extern crate ini;
+use crate::docker_configure::{handle_conf, handle_up};
 use crate::{
-    create_ui_config_files, get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options,
+    create_ui_config_files, pair_bitcoinds, Daemon,
 };
 use anyhow::{anyhow, Error};
-use log::{debug, error, info};
+use doppler_core::{handle_btc_action, handle_ln_action, handle_loop, handle_skip_conf, NodeCommand, OptionLoad, Options};
+use doppler_parser::{get_absolute_path, DopplerParser, Rule};
+use log::{debug, error, info, warn};
+use pest::iterators::Pair;
+use pest::Parser;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Output};
 use std::str::from_utf8;
+use std::sync::atomic::Ordering;
 use std::thread;
 use std::time::Duration;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::os::unix::prelude::PermissionsExt;
-
 pub const NETWORK: &str = "doppler";
 
+pub trait ContainerCommands {
+    fn start(&self, options: &Daemon) -> std::prelude::v1::Result<(), Error> {
+        let container_name = self.get_container_name();
+        let compose_path = options.compose_path.as_ref().unwrap();
+        let commands = vec!["-f", &compose_path, "start", &container_name];
+        run_command(options, String::from("start"), commands).map(|_| ())
+    }
+    fn stop(&self, options: &Options) -> std::prelude::v1::Result<(), Error> {
+        let container_name = self.get_container_name();
+        let compose_path = options.compose_path.as_ref().unwrap();
+        let commands = vec!["-f", &compose_path, "stop", &container_name];
+        run_command(options, String::from("stop"), commands).map(|_| ())
+    }
+}
+
+
 pub fn load_options_from_external_nodes(
-    options: &mut Options,
+    options: &mut Daemon,
     external_nodes_folder_path: &str,
 ) -> Result<(), Error> {
     //Skips any docker setup/calls, using external nodes instead
@@ -25,12 +45,12 @@ pub fn load_options_from_external_nodes(
     debug!("loaded {} file", external_nodes_folder_path);
     options.load_lnds()?;
     debug!("loaded lnds");
-    let network = options.external_nodes.clone().unwrap()[0].network.clone();
+    let network = options.options.external_nodes.clone().unwrap()[0].network.clone();
     create_ui_config_files(&options, &network)?;
     Ok(())
 }
 
-pub fn load_options_from_compose(options: &mut Options, compose_path: &str) -> Result<(), Error> {
+pub fn load_options_from_compose(options: &mut Daemon, compose_path: &str) -> Result<(), Error> {
     options.compose_path = Some(compose_path.to_owned());
     options.load_compose()?;
     debug!("loaded {} file", options.docker_command);
@@ -56,19 +76,19 @@ pub fn add_commands(docker_command: String, additional_commands: Vec<&str>) -> V
 }
 
 pub fn run_command(
-    options: &Options,
+    docker_command: String,
     command_name: String,
     commands: Vec<&str>,
 ) -> Result<Output, Error> {
-    let commands = add_commands(options.docker_command.clone(), commands);
+    let commands = add_commands(docker_command, commands);
 
     info!(
         "({}): {} {}",
         command_name,
-        options.docker_command,
+        docker_command,
         commands.clone().join(" "),
     );
-    let output = Command::new(options.docker_command.clone())
+    let output = Command::new(docker_command)
         .args(commands)
         .output()?;
 
@@ -80,42 +100,42 @@ pub fn run_command(
     Ok(output)
 }
 
-pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Error> {
-    options.compose_path = Some(compose_path.to_owned());
+pub fn run_cluster(daemon_settings: &mut Daemon, compose_path: &str) -> Result<(), Error> {
+    daemon_settings.compose_path = Some(compose_path.to_owned());
 
-    options
-        .save_compose(options.docker_command.clone(), compose_path)
+    daemon_settings
+        .save_compose(daemon_settings.docker_command.clone(), compose_path)
         .map_err(|err| {
             anyhow!(
                 "Failed to save {} file @ {}: {}",
-                options.docker_command,
+                daemon_settings.docker_command,
                 compose_path,
                 err
             )
         })?;
     debug!("saved cluster config");
 
-    start_docker_compose(options)?;
-    create_ui_config_files(options, &options.network)?;
+    start_docker_compose(daemon_settings)?;
+    create_ui_config_files(daemon_settings, &daemon_settings.options.network)?;
 
     debug!("started cluster");
     //simple wait for docker-compose to spin up
     thread::sleep(Duration::from_secs(6));
-    pair_bitcoinds(options)?;
-    if options.network == "regtest" {
-        mine_initial_blocks(options)?;
+    pair_bitcoinds(&daemon_settings.options)?;
+    if daemon_settings.options.network == "regtest" {
+        mine_initial_blocks(&daemon_settings.options)?;
     }
-    setup_l2_nodes(options)?;
-    /*if cfg!(not(target_arch = "wasm32")) {
-        if options.aliases && options.external_nodes.is_none() {
-            update_bash_alias(options)?;
+    setup_l2_nodes(&mut daemon_settings.options)?;
+   
+        if daemon_settings.aliases && daemon_settings.options.external_nodes.is_none() {
+            update_bash_alias(&daemon_settings)?;
         }
-    }*/
+   
 
     Ok(())
 }
 
-fn start_docker_compose(options: &Options) -> Result<(), Error> {
+fn start_docker_compose(options: &Daemon) -> Result<(), Error> {
     let commands: Vec<&str> = vec![
         "-f",
         options.compose_path.as_ref().unwrap().as_ref(),
@@ -168,15 +188,15 @@ fn setup_l2_nodes(options: &mut Options) -> Result<(), Error> {
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn update_bash_alias(options: &Options) -> Result<(), Error> {
+fn update_bash_alias(options: &Daemon) -> Result<(), Error> {
+
     let docker_command = if options.docker_command.contains('-') {
         options.docker_command.to_owned()
     } else {
         "docker compose".to_owned()
     };
     let mut script_content = String::new();
-    script_content.push_str(&format!("{}", options.shell_type.unwrap_or_default()));
+    script_content.push_str(&format!("{}", options.shell_type.as_ref().unwrap_or(&String::from(""))));
     options.lnd_nodes.iter().for_each(|lnd| {
         let name = lnd.get_container_name().split('-').last().unwrap();
         script_content.push_str(&format!(
@@ -251,7 +271,6 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 pub fn update_bash_alias_external(options: &Options) -> Result<(), Error> {
     let mut script_content = String::new();
     script_content.push_str(&format!("{}", options.shell_type.unwrap_or_default()));
@@ -316,4 +335,47 @@ pub fn restart_service(options: &Options, service_name: String) -> Result<Output
     let commands = vec!["-f", compose_path, "restart", &service_name];
     let output = run_command(options, "restart service".to_owned(), commands.clone())?;
     Ok(output)
+}
+
+
+pub fn run_workflow(options: &mut Options, parsed: Pair<'_, Rule>) -> Result<(), Error> {
+    for pair in parsed.into_inner() {
+        match pair.as_rule() {
+            Rule::loop_content => handle_loop(options, pair).expect("invalid loop block"),
+            Rule::conf => handle_conf(options, pair).expect("invalid conf line"),
+            Rule::up => handle_up(options).expect("failed to start the cluster"),
+            Rule::skip_conf => {
+                handle_skip_conf(options).expect("failed load current cluster into options")
+            }
+            Rule::ln_node_action => {
+                handle_ln_action(options, pair).expect("invalid node action line")
+            }
+            Rule::btc_node_action => {
+                handle_btc_action(options, pair).expect("invalid node action line")
+            }
+            Rule::EOI => {
+                options
+                    .clone()
+                    .read_end_of_doppler_script
+                    .as_ref()
+                    .swap(true, Ordering::SeqCst);
+                break;
+            }
+            _ => warn!("command not supported"),
+        }
+    }
+    Ok(())
+}
+
+pub fn run_workflow_until_stop(
+    options: &mut Options,
+    contents: std::string::String,
+) -> Result<(), std::io::Error> {
+    let parsed = DopplerParser::parse(Rule::page, &contents)
+        .expect("parse error")
+        .next()
+        .unwrap();
+
+    run_workflow(options, parsed).unwrap();
+    Ok(())
 }

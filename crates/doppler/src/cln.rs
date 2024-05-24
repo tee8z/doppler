@@ -1,18 +1,15 @@
 use crate::{
-    copy_file, create_folder, get_absolute_path, run_command, ImageInfo, L1Node, L2Node,
-    NodeCommand, NodePair, Options, NETWORK,
+    docker_configure::NodePair, run_command, ContainerCommands, NETWORK
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{Command, DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
+use doppler_core::{copy_file, create_folder, ImageInfo, L1Node, L2Node, NodeCommand, Options};
+use doppler_parser::get_absolute_path;
 use log::{debug, error, info};
 use serde_json::{from_slice, Value};
 use std::{
-    fmt::Debug,
-    fs::{File, OpenOptions},
-    str::from_utf8,
-    thread,
-    time::Duration,
+    any::Any, fmt::Debug, fs::{File, OpenOptions}, str::from_utf8, thread, time::Duration
 };
 use uuid::Uuid;
 
@@ -51,8 +48,11 @@ impl Cln {
         get_peers_short_channel_id(self, options, node_command, "source")
     }
 }
-
+impl ContainerCommands for Cln {}
 impl L2Node for Cln {
+    fn as_any(&self) -> &dyn Any{
+        self
+    }
     fn get_connection_url(&self) -> String {
         if let Some(pubkey) = self.pubkey.as_ref() {
             format!(
@@ -86,7 +86,7 @@ impl L2Node for Cln {
     fn get_starting_wallet_balance(&self) -> i64 {
         self.wallet_starting_balance
     }
-    fn add_pubkey(&mut self, options: &Options) {
+    fn add_pubkey(&self, options: &Options) {
         add_pubkey(self, options)
     }
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error> {
@@ -352,7 +352,7 @@ pub fn add_coreln_nodes(options: &mut Options) -> Result<()> {
     Ok(())
 }
 
-fn add_pubkey(node: &mut Cln, options: &Options) {
+fn add_pubkey(node: &Cln, options: &Options) {
     let result = node.get_node_pubkey(options);
     match result {
         Ok(pubkey) => {

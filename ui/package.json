@@ -3,14 +3,16 @@
 	"version": "0.0.1",
 	"private": true,
 	"scripts": {
-		"dev": "vite dev",
-		"build": "vite build",
+		"dev": "npm run wasm && vite dev",
+		"build": "npm run wasm && vite build",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "vitest",
 		"lint": "prettier --plugin-search-dir . --check . && eslint .",
-		"format": "prettier --plugin-search-dir . --write ."
+		"format": "prettier --plugin-search-dir . --write .",
+		"modulize-wasm": "node ./wasm-test/modulize.js",
+		"wasm": "wasm-pack build ./wasm-test--target web && npm run modulize-wasm",
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^2.0.0",
@@ -38,8 +40,11 @@
 		"@types/d3": "^7.4.0",
 		"blockly": "^10.1.3",
 		"d3": "^7.9.0",
+		"fs": "^0.0.1-security",
 		"https": "^1.0.0",
 		"ini": "^4.1.2",
-		"node-fetch": "^3.3.2"
+		"node-fetch": "^3.3.2",
+		"vite-plugin-wasm-pack": "^0.1.12",
+		"wasm-pack": "^0.12.1"
 	}
 }

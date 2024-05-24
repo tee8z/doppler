@@ -1,7 +1,6 @@
 use std::{fs, io::Error, path::PathBuf};
-
 use clap::{arg, Parser as CliParser};
-use doppler::{get_absolute_path, DopplerParser, Rule};
+use doppler_parser::{get_absolute_path, DopplerParser, Rule};
 use pest::Parser;
 
 #[derive(CliParser)]

@@ -1,0 +1,10 @@
+[package]
+edition = "2021"
+name = "doppler_parser_test"
+version = "0.1.0"
+
+[dependencies]
+pest = "2.6.0"
+pest_derive = "2.6.0"
+clap = { version = "4.3.23", features = ["derive", "env"] }
+doppler_parser = { path = "../doppler_parser" }

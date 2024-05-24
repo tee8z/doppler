@@ -1,4 +1,3 @@
-use crate::{generate_memo, L2Node, Lnd, NodeCommand, Options};
 use anyhow::{anyhow, Error, Result};
 use base64::{prelude::BASE64_STANDARD, Engine};
 use hex::FromHex;
@@ -9,16 +8,14 @@ use reqwest::{
 };
 
 use serde_json::{json, Value};
-use std::{fs::OpenOptions, io::Read, thread, time::Duration};
+use std::{fs::OpenOptions, io::Read, sync::Arc, thread, time::Duration};
 
-#[cfg(not(target_arch = "wasm32"))]
-use reqwest::Certificate;
+use crate::{generate_memo, L2Node, NodeCommand, Options};
 
 #[derive(Debug, Clone)]
 pub struct LndRest {
     base_url: String,
     macaroon_path: String,
-    tls_path: String,
     pub client: Client,
 }
 
@@ -27,18 +24,16 @@ impl Default for LndRest {
         Self {
             base_url: String::from("http://localhost:8080"),
             macaroon_path: String::from(""),
-            tls_path: String::from(""),
             client: Client::default(),
         }
     }
 }
 
 impl LndRest {
-    pub fn new(base_url: &str, macaroon_path: String, tls_path: String) -> Result<Self, Error> {
+    pub fn new(base_url: &str, macaroon_path: String) -> Result<Self, Error> {
         Ok(Self {
             base_url: base_url.to_owned(),
             macaroon_path: macaroon_path.to_owned(),
-            tls_path: tls_path.to_owned(),
             client: Client::default(),
         })
     }
@@ -51,24 +46,13 @@ impl LndRest {
         method: Method,
         url: String,
         body: Option<String>,
-        timeout: Option<u64>,
     ) -> Result<Response, Error> {
         //TODO: cleanup the nested if statements
         match method {
             Method::POST => {
                 if let Some(body) = body {
                     info!("({}): {} {}", command_name, url, body);
-                    if let Some(timeout) = timeout {
-                        Ok(self
-                            .client
-                            .post(url)
-                            //.timeout(Duration::from_secs(timeout))
-                            .body(body)
-                            .send()
-                            .await?)
-                    } else {
-                        Ok(self.client.post(url).body(body).send().await?)
-                    }
+                    Ok(self.client.post(url).body(body).send().await?)
                 } else {
                     info!("({}): {}", command_name, url);
                     Ok(self.client.post(url).send().await?)
@@ -91,7 +75,7 @@ impl LndRest {
         let mut get_info_response = None;
         while retries > 0 {
             let response = self
-                .send_request("pubkey".to_owned(), Method::GET, url.clone(), None, None)
+                .send_request("pubkey".to_owned(), Method::GET, url.clone(), None)
                 .await?;
             if !response.status().is_success() {
                 debug!("trying to get pubkey again");
@@ -118,7 +102,7 @@ impl LndRest {
     pub async fn create_lnd_address(&self, _options: &Options) -> Result<String, Error> {
         let url = self.build_url("/v1/newaddress?type=UNUSED_TAPROOT_PUBKEY");
         let result: Value = self
-            .send_request("newaddress".to_owned(), Method::GET, url, None, None)
+            .send_request("newaddress".to_owned(), Method::GET, url, None)
             .await?
             .json()
             .await?;
@@ -131,7 +115,7 @@ impl LndRest {
 
     pub async fn open_channel(
         &self,
-        node: &Lnd,
+        node: impl L2Node,
         options: &Options,
         node_command: &NodeCommand,
     ) -> Result<(), Error> {
@@ -158,7 +142,6 @@ impl LndRest {
                     Method::POST,
                     url.clone(),
                     Some(body.to_string()),
-                    None,
                 )
                 .await?;
             if !response.status().is_success() {
@@ -199,7 +182,7 @@ impl LndRest {
 
     pub async fn connect(
         &self,
-        node: &Lnd,
+        node: Arc<dyn L2Node>,
         options: &Options,
         node_command: &NodeCommand,
     ) -> Result<(), Error> {
@@ -223,7 +206,6 @@ impl LndRest {
                 Method::POST,
                 url,
                 Some(body.to_string()),
-                None,
             )
             .await?;
 
@@ -255,7 +237,7 @@ impl LndRest {
 
     pub async fn close_channel(
         &self,
-        node: &Lnd,
+        node: Arc<dyn L2Node>,
         options: &Options,
         node_command: &NodeCommand,
     ) -> Result<(), Error> {
@@ -266,7 +248,7 @@ impl LndRest {
         let sub_url = format!("/v1/channels/{}/{}", parts[0], parts[1]);
         let url = self.build_url(&sub_url);
         let result = self
-            .send_request("closechannel".to_owned(), Method::DELETE, url, None, None)
+            .send_request("closechannel".to_owned(), Method::DELETE, url, None)
             .await?;
         if result.status().is_success() {
             info!(
@@ -287,7 +269,7 @@ impl LndRest {
 
     pub async fn force_close_channel(
         &self,
-        node: &Lnd,
+        node: Arc<dyn L2Node>,
         options: &Options,
         node_command: &NodeCommand,
     ) -> Result<(), Error> {
@@ -302,7 +284,6 @@ impl LndRest {
                 "forceclosechannel".to_owned(),
                 Method::DELETE,
                 url,
-                None,
                 None,
             )
             .await?;
@@ -331,7 +312,7 @@ impl LndRest {
         let to_pubkey = to_node.get_cached_pubkey();
         let url = self.build_url("/v1/channels");
         let result: Value = self
-            .send_request("listchannels".to_owned(), Method::GET, url, None, None)
+            .send_request("listchannels".to_owned(), Method::GET, url, None)
             .await?
             .json()
             .await?;
@@ -366,7 +347,7 @@ impl LndRest {
 
     pub async fn create_invoice(
         &self,
-        node: &Lnd,
+        node: Arc<dyn L2Node>,
         _options: &Options,
         node_command: &NodeCommand,
     ) -> Result<String, Error> {
@@ -384,7 +365,6 @@ impl LndRest {
                 Method::POST,
                 url,
                 Some(body.to_string()),
-                None,
             )
             .await?;
         if !result.status().is_success() {
@@ -416,7 +396,6 @@ impl LndRest {
                 Method::POST,
                 url,
                 Some(body.to_string()),
-                node_command.timeout,
             )
             .await?;
         if !result.status().is_success() {
@@ -468,7 +447,6 @@ impl LndRest {
                 Method::POST,
                 url,
                 Some(body.to_string()),
-                node_command.timeout,
             )
             .await?;
         if !result.status().is_success() {
@@ -514,7 +492,6 @@ impl LndRest {
                 Method::POST,
                 url,
                 Some(body.to_string()),
-                None,
             )
             .await?;
         if !result.status().is_success() {
@@ -536,15 +513,10 @@ impl LndRest {
         Ok(found_tx_id.unwrap())
     }
 
-    pub async fn get_admin_macaroon(&self, node: &Lnd) -> Result<String, Error> {
-        let mac_as_hex = get_admin_macaroon(node.macaroon_path.clone())?;
-        Ok(mac_as_hex)
-    }
-
     pub async fn get_rhash(&self, _options: &Options) -> Result<String, Error> {
         let url: String = self.build_url("/v1/invoices");
         let result = self
-            .send_request("rhash".to_owned(), Method::POST, url, None, None)
+            .send_request("rhash".to_owned(), Method::POST, url, None)
             .await?;
         if !result.status().is_success() {
             error!("failed to get rhash from empty invoice")
@@ -567,7 +539,7 @@ impl LndRest {
         let sub_url = format!("/v1/invoice/{}", rhash);
         let url = self.build_url(&sub_url);
         let result = self
-            .send_request("rpreimage".to_owned(), Method::GET, url, None, None)
+            .send_request("rpreimage".to_owned(), Method::GET, url, None)
             .await?;
         if !result.status().is_success() {
             error!(
@@ -608,7 +580,6 @@ impl LndRest {
                 Method::POST,
                 url,
                 Some(body.to_string()),
-                None,
             )
             .await?;
         if !result.status().is_success() {
@@ -639,7 +610,6 @@ impl LndRest {
                 Method::POST,
                 url,
                 Some(body.to_string()),
-                None,
             )
             .await?;
         if result.status().is_success() {
@@ -652,7 +622,7 @@ impl LndRest {
     pub async fn get_current_block(&self, _options: &Options) -> Result<i64, Error> {
         let url = self.build_url("/v2/chainkit/bestblock");
         let result = self
-            .send_request("getbestblock".to_owned(), Method::GET, url, None, None)
+            .send_request("getbestblock".to_owned(), Method::GET, url, None)
             .await?;
         if !result.status().is_success() {
             error!("failed to get getbestblock: {}", result.text().await?);
@@ -673,14 +643,6 @@ fn get_admin_macaroon(macaroon_path: String) -> Result<String, Error> {
     Ok(mac_as_hex)
 }
 
-/*
-fn get_tls_cert(tls_path: String) -> Result<Certificate, Error> {
-    let mut file = OpenOptions::new().read(true).open(tls_path)?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-    Certificate::from_pem(&buffer).map_err(|e| e.into())
-}*/
-
 pub fn add_rest_client(rest_client: LndRest) -> Result<LndRest, Error> {
     let mut rest_client_cpy = rest_client.clone();
     let macaroon_hex = get_admin_macaroon(rest_client.macaroon_path)?;
@@ -688,12 +650,8 @@ pub fn add_rest_client(rest_client: LndRest) -> Result<LndRest, Error> {
     auth_value.set_sensitive(true);
     let mut headers = HeaderMap::new();
     headers.insert("Grpc-Metadata-macaroon", auth_value);
-    let mut client_builder = reqwest::Client::builder().default_headers(headers);
+    let client_builder = reqwest::Client::builder().default_headers(headers);
 
-    /*if !rest_client.tls_path.is_empty() && cfg!(not(target_arch = "wasm32")) {
-        let cert = get_tls_cert(rest_client.tls_path)?;
-        client_builder = client_builder.add_root_certificate(cert);
-    }*/
     rest_client_cpy.client = client_builder.build()?;
     Ok(rest_client_cpy)
 }

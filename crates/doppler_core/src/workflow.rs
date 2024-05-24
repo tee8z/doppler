@@ -1,69 +1,12 @@
-use crate::{
-    build_bitcoind, build_cln, build_eclair, build_lnd, load_options_from_compose,
-    load_options_from_external_nodes, run_cluster, DopplerParser, ImageInfo, L1Node, MinerTime,
-    NodeCommand, NodeKind, Options, Rule, Tag,
-};
+use crate::{NodeCommand, Options, Tag};
 use anyhow::{Error, Result};
-use log::{debug, error, info};
-use pest::{
-    iterators::{Pair, Pairs},
-    Parser,
-};
-use std::{
-    io,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    thread::{self, spawn},
-    time::Duration,
-    vec,
-};
+use doppler_parser::Rule;
+use log::{debug, error};
+use pest::iterators::{Pair, Pairs};
+use std::{sync::atomic::Ordering, vec};
 use uuid::Uuid;
 
-const COMPOSE_PATH: &str = "doppler-cluster.yaml";
-
-pub fn run_workflow(options: &mut Options, parsed: Pair<'_, Rule>) -> Result<(), Error> {
-    for pair in parsed.into_inner() {
-        match pair.as_rule() {
-            Rule::loop_content => handle_loop(options, pair).expect("invalid loop block"),
-            Rule::conf => handle_conf(options, pair).expect("invalid conf line"),
-            Rule::up => handle_up(options).expect("failed to start the cluster"),
-            Rule::skip_conf => {
-                handle_skip_conf(options).expect("failed load current cluster into options")
-            }
-            Rule::ln_node_action => {
-                handle_ln_action(options, pair).expect("invalid node action line")
-            }
-            Rule::btc_node_action => {
-                handle_btc_action(options, pair).expect("invalid node action line")
-            }
-            Rule::EOI => {
-                options
-                    .clone()
-                    .read_end_of_doppler_file
-                    .as_ref()
-                    .swap(true, Ordering::SeqCst);
-                break;
-            }
-            _ => continue,
-        }
-    }
-    Ok(())
-}
-
-pub fn run_workflow_until_stop(
-    options: &mut Options,
-    contents: std::string::String,
-) -> Result<(), std::io::Error> {
-    let parsed = DopplerParser::parse(Rule::page, &contents)
-        .expect("parse error")
-        .next()
-        .unwrap();
-
-    run_workflow(options, parsed).unwrap();
-    Ok(())
-}
+//NOTE: for WASM, assume we have access to l1 and l2 nodes directly to their apis (ie. assume skip_conf)
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 struct LoopOptions {
@@ -144,7 +87,7 @@ fn process_loop_sleep(
     raw_loop_options
 }
 
-fn handle_loop(options: &mut Options, line: Pair<'_, Rule>) -> Result<()> {
+pub fn handle_loop(options: &mut Options, line: Pair<'_, Rule>) -> Result<()> {
     let line_inner = line.clone().into_inner();
 
     let mut command_stack = vec![];
@@ -194,7 +137,7 @@ fn run_loop(
         loop_command_stack.len()
     );
     /*
-    TODO: determine how to handle loops
+    TODO: determine how to handle loops in WASM
     spawn(move || {
         debug!("in child thread for loop: {}", loop_options.name);
         let thread_handle = thread::current();
@@ -268,168 +211,8 @@ fn run_loop(
     Ok(())
 }
 
-fn get_image(options: &mut Options, node_kind: NodeKind, possible_name: &str) -> ImageInfo {
-    let image_info = if !possible_name.is_empty() {
-        if let Some(image) = options.get_image(possible_name) {
-            image
-        } else {
-            options.get_default_image(node_kind)
-        }
-    } else {
-        options.get_default_image(node_kind)
-    };
-    image_info
-}
 
-fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
-    let mut line_inner = line.into_inner();
-    let command = line_inner.next().expect("invalid command");
-    let mut inner = command.clone().into_inner();
-
-    match command.clone().as_rule() {
-        Rule::node_image => {
-            let kind: NodeKind = inner
-                .next()
-                .expect("node")
-                .try_into()
-                .expect("invalid node kind");
-            if options.external_nodes.is_some() && kind != NodeKind::Lnd {
-                unimplemented!("can only support LND nodes at the moment for remote nodes");
-            }
-            let image_name = inner.next().expect("image name").as_str();
-            let tag_or_path = inner.next().expect("image version").as_str();
-            handle_image_command(options, kind, image_name, tag_or_path)?;
-        }
-        Rule::node_def => {
-            let kind: NodeKind = inner
-                .next()
-                .expect("node")
-                .try_into()
-                .expect("invalid node kind");
-            if options.external_nodes.is_some() && kind != NodeKind::Lnd {
-                unimplemented!("can only support LND nodes at the moment for remote nodes");
-            }
-            let node_name = inner.next().expect("node name").as_str();
-            let image: ImageInfo = match inner.next() {
-                Some(image) => get_image(options, kind.clone(), image.as_str()),
-                None => options.get_default_image(kind.clone()),
-            };
-            handle_build_command(options, node_name, kind, &image, None)?;
-        }
-        Rule::node_pair => {
-            let kind: NodeKind = inner
-                .next()
-                .expect("node")
-                .try_into()
-                .expect("invalid node kind");
-            if options.external_nodes.is_some() && kind != NodeKind::Lnd {
-                unimplemented!("can only support LND nodes at the moment for remote nodes");
-            }
-            let name = inner.next().expect("ident").as_str();
-            let image = match inner.peek().unwrap().as_rule() {
-                Rule::image_name => {
-                    let image_name = inner.next().expect("image name").as_str();
-                    get_image(options, kind.clone(), image_name)
-                }
-                _ => options.get_default_image(kind.clone()),
-            };
-            let to_pair = inner.next().expect("invalid layer 1 node name").as_str();
-            let amount = match inner.peek().is_some() {
-                true => inner
-                    .next()
-                    .expect("invalid amount")
-                    .as_str()
-                    .parse()
-                    .unwrap(),
-                false => 100000000,
-            };
-            handle_build_command(
-                options,
-                name,
-                kind,
-                &image,
-                BuildDetails::new_pair(to_pair.to_owned(), amount),
-            )?;
-        }
-        _ => (),
-    }
-
-    Ok(())
-}
-
-#[derive(Debug, Default)]
-pub struct BuildDetails {
-    pub pair: Option<NodePair>,
-    pub miner_time: Option<MinerTime>,
-}
-
-#[derive(Debug, Default)]
-pub struct NodePair {
-    pub name: String,
-    pub wallet_starting_balance: i64,
-}
-
-impl BuildDetails {
-    pub fn new_pair(pair: String, amount: i64) -> Option<BuildDetails> {
-        Some(BuildDetails {
-            pair: Some(NodePair {
-                name: pair,
-                wallet_starting_balance: amount,
-            }),
-            miner_time: None,
-        })
-    }
-    pub fn new_miner_time(miner_time: MinerTime) -> Option<BuildDetails> {
-        Some(BuildDetails {
-            pair: None,
-            miner_time: Some(miner_time),
-        })
-    }
-}
-
-fn handle_image_command(
-    option: &mut Options,
-    kind: NodeKind,
-    name: &str,
-    tag_or_path: &str,
-) -> Result<()> {
-    let is_known_image = option.is_known_polar_image(kind.clone(), name, tag_or_path);
-
-    let image = ImageInfo::new(
-        tag_or_path.to_owned(),
-        name.to_owned(),
-        !is_known_image,
-        kind,
-    );
-    option.images.push(image);
-    Ok(())
-}
-
-fn handle_build_command(
-    options: &mut Options,
-    name: &str,
-    kind: NodeKind,
-    image: &ImageInfo,
-    details: Option<BuildDetails>,
-) -> Result<()> {
-    match kind {
-        NodeKind::Bitcoind => build_bitcoind(options, name, image, false),
-        NodeKind::BitcoindMiner => build_bitcoind(options, name, image, true),
-        NodeKind::Lnd => build_lnd(options, name, image, &details.unwrap().pair.unwrap()),
-        NodeKind::Eclair => build_eclair(options, name, image, &details.unwrap().pair.unwrap()),
-        NodeKind::Coreln => build_cln(options, name, image, &details.unwrap().pair.unwrap()),
-    }
-}
-
-fn handle_up(options: &mut Options) -> Result<(), Error> {
-    run_cluster(options, COMPOSE_PATH).map_err(|e| {
-        error!("Failed to start cluster from generated compose file: {}", e);
-        e
-    })?;
-    Ok(())
-}
-
-fn handle_ln_action(options: &mut Options, line: Pair<Rule>) -> Result<()> {
+pub fn handle_ln_action(options: &mut Options, line: Pair<Rule>) -> Result<()> {
     let command = process_ln_action(line);
     match command.name.as_str() {
         "OPEN_CHANNEL" => open_channel(options, &command),
@@ -437,8 +220,6 @@ fn handle_ln_action(options: &mut Options, line: Pair<Rule>) -> Result<()> {
         "SEND_ON_CHAIN" => send_on_chain(options, &command),
         "CLOSE_CHANNEL" => close_channel(options, &command),
         "FORCE_CLOSE_CHANNEL" => force_close_channel(options, &command),
-        "STOP_LN" => stop_l2_node(options, &command),
-        "START_LN" => start_l2_node(options, &command),
         "SEND_HOLD_LN" => send_hold_invoice(options, &command),
         "SETTLE_HOLD_LN" => settle_hold_invoice(options, &command),
         "WAIT" => wait_number_of_blocks(options, &command),
@@ -449,7 +230,7 @@ fn handle_ln_action(options: &mut Options, line: Pair<Rule>) -> Result<()> {
     }
 }
 
-fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
+pub fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
     let line_inner = line.into_inner();
     let mut node_command = NodeCommand {
         ..Default::default()
@@ -512,12 +293,10 @@ fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
     node_command
 }
 
-fn handle_btc_action(options: &Options, line: Pair<Rule>) -> Result<()> {
+pub fn handle_btc_action(options: &Options, line: Pair<Rule>) -> Result<()> {
     let command = process_btc_action(line);
     match command.name.as_str() {
         "MINE_BLOCKS" => node_mine_bitcoin(options, command.to.to_owned(), command.amt.unwrap()),
-        "STOP_BTC" => stop_l1_node(options, &command),
-        "START_BTC" => start_l1_node(options, &command),
         "SEND_COINS" => send_to_l2(options, &command),
         _ => {
             error!("command not supported yet! {:?}", command.name);
@@ -526,7 +305,7 @@ fn handle_btc_action(options: &Options, line: Pair<Rule>) -> Result<()> {
     }
 }
 
-fn process_btc_action(line: Pair<Rule>) -> NodeCommand {
+pub fn process_btc_action(line: Pair<Rule>) -> NodeCommand {
     let line_inner = line.into_inner();
     let mut line_inner = line_inner.clone().peekable();
     let btc_node = line_inner.next().expect("invalid input").as_str();
@@ -571,50 +350,36 @@ fn process_btc_action(line: Pair<Rule>) -> NodeCommand {
     }
 }
 
-fn handle_skip_conf(options: &mut Options) -> Result<(), Error> {
-    if let Some(external_nodes_path) = options.external_nodes_path.clone() {
-        //TODO: add reading from external nodes config and build nodes from there
+pub fn handle_skip_conf(options: &mut Options) -> Result<(), Error> {
+    //TODO: take in configuration from UI passing values into WASM or docker-compose file
+   /* if let Some(external_nodes_path) = options.external_nodes_path.clone() {
+        //TODO: assume external when WASM
         load_options_from_external_nodes(options, &external_nodes_path)?;
         info!("external nodes have been found and loaded, continuing with script");
     } else {
+        #[cfg(not(target_arch = "wasm32"))]
         load_options_from_compose(options, COMPOSE_PATH)?;
         info!("doppler cluster has been found and loaded, continuing with script");
-    }
+    }*/
+    unimplemented!();
     Ok(())
 }
 
-fn node_mine_bitcoin(options: &Options, miner_name: String, amt: i64) -> Result<(), Error> {
+pub fn node_mine_bitcoin(options: &Options, miner_name: String, amt: i64) -> Result<(), Error> {
     if options.external_nodes.is_some() {
         unimplemented!("command can only be used in a local docker compose network");
     }
-    let bitcoind = options.get_bitcoind_by_name(&miner_name)?;
+    let bitcoind = options.get_l1_by_name(&miner_name)?;
     let _ = bitcoind.mine_bitcoin(options, amt);
     Ok(())
 }
 
-fn stop_l1_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    if options.external_nodes.is_some() {
-        unimplemented!("command can only be used in a local docker compose network");
-    }
-    let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
-    let _ = bitcoind.stop(options);
-    Ok(())
-}
-
-fn start_l1_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    if options.external_nodes.is_some() {
-        unimplemented!("command can only be used in a local docker compose network");
-    }
-    let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
-    let _ = bitcoind.start(options);
-    Ok(())
-}
 fn send_to_l2(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     if options.external_nodes.is_some() {
         unimplemented!("command can only be used in a local docker compose network");
     }
-    let bitcoind = options.get_bitcoind_by_name(&node_command.from)?;
-    let _ = bitcoind.clone().send_to_l2(options, node_command);
+    let bitcoind = options.get_l1_by_name(&node_command.from)?;
+    let _ = bitcoind.send_to_l2(options, node_command);
     Ok(())
 }
 
@@ -641,22 +406,6 @@ fn close_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Err
 fn force_close_channel(option: &Options, node_command: &NodeCommand) -> Result<(), Error> {
     let from = option.get_l2_by_name(&node_command.from)?;
     from.force_close_channel(option, node_command)
-}
-
-fn stop_l2_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    if options.external_nodes.is_some() {
-        unimplemented!("command can only be used in a local docker compose network");
-    }
-    let ln_node = options.get_l2_by_name(&node_command.from)?;
-    ln_node.stop(options)
-}
-
-fn start_l2_node(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    if options.external_nodes.is_some() {
-        unimplemented!("command can only be used in a local docker compose network");
-    }
-    let ln_node = options.get_l2_by_name(&node_command.from)?;
-    ln_node.start(options)
 }
 
 fn send_hold_invoice(options: &Options, node_command: &NodeCommand) -> Result<(), Error> {

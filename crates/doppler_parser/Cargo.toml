@@ -1,0 +1,8 @@
+[package]
+edition = "2021"
+name = "doppler_parser"
+version = "0.1.0"
+
+[dependencies]
+pest = "2.6.0"
+pest_derive = "2.6.0"

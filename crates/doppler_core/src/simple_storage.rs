@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+//TODO: implement with rusqlite or gluesql depending on binary type
 use rusqlite::{params, Connection, Result};
 
 pub fn create_db(db_file: String) -> Result<Connection> {
@@ -15,7 +16,7 @@ pub fn create_db(db_file: String) -> Result<Connection> {
              name TEXT NOT NULL UNIQUE,
              val TEXT NOT NULL
          )",
-        (),
+        [],
     )?;
 
     Ok(conn)
@@ -49,7 +50,7 @@ fn get_tags(protected: Arc<Mutex<Connection>>) -> Result<Vec<Tag>> {
     let connection = protected.lock().unwrap();
     let mut stmt = connection.prepare("SELECT name, val FROM tags")?;
 
-    let mut rows = stmt.query(())?;
+    let mut rows = stmt.query([])?;
     let mut tags: Vec<Tag> = Vec::new();
 
     while let Some(row) = rows.next()? {

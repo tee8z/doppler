@@ -1,0 +1,11 @@
+[package]
+edition = "2021"
+name = "doppler_wasm"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+doppler_parser = { path = "../doppler_parser"}
+doppler_core = { path = "../doppler_core"}

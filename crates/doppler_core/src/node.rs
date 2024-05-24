@@ -1,23 +1,12 @@
-use crate::{run_command, Bitcoind, NodeKind, Options};
+use crate::{NodeKind, Options};
 use anyhow::Error;
 use log::info;
 use rand::Rng;
 use serde_yaml::{from_slice, Value};
-use std::{any::Any, process::Output};
+use std::{any::Any, process::Output, sync::Arc};
 
-pub trait L2Node: Any {
-    fn stop(&self, options: &Options) -> Result<(), Error> {
-        let container_name = self.get_container_name();
-        let compose_path = options.compose_path.as_ref().unwrap();
-        let commands = vec!["-f", &compose_path, "stop", &container_name];
-        run_command(options, String::from("stop"), commands).map(|_| ())
-    }
-    fn start(&self, options: &Options) -> Result<(), Error> {
-        let container_name = self.get_container_name();
-        let compose_path = options.compose_path.as_ref().unwrap();
-        let commands = vec!["-f", &compose_path, "start", &container_name];
-        run_command(options, String::from("start"), commands).map(|_| ())
-    }
+pub trait L2Node: Any + Send + Sync + 'static {
+    fn as_any(&self) -> &dyn Any;
     fn get_connection_url(&self) -> String;
     fn get_p2p_port(&self) -> &str;
     fn get_name(&self) -> &str;
@@ -25,7 +14,7 @@ pub trait L2Node: Any {
     fn get_server_url(&self) -> &str;
     fn get_container_name(&self) -> &str;
     fn get_cached_pubkey(&self) -> String;
-    fn add_pubkey(&mut self, option: &Options);
+    fn add_pubkey(&self, option: &Options);
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error>;
     fn open_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
     fn connect(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
@@ -87,10 +76,9 @@ pub trait L2Node: Any {
         info!("on chain transaction created: {}", tx_id);
         Ok(())
     }
-    fn fund_node(&self, options: &Options, miner: &Bitcoind) -> Result<(), Error> {
+    fn fund_node(&self, options: &Options, miner: Arc<dyn L1Node>) -> Result<(), Error> {
         let address = self.create_on_chain_address(options)?;
         miner
-            .clone()
             .send_to_address(options, 1, self.get_starting_wallet_balance(), address)
     }
     fn get_property(&self, name: &str, output: Output) -> Option<String> {
@@ -113,19 +101,7 @@ pub trait L2Node: Any {
     fn wait_for_block(&self, options: &Options, num_of_blocks: i64) -> Result<(), Error>;
 }
 
-pub trait L1Node: Any {
-    fn stop(&self, options: &Options) -> Result<(), Error> {
-        let container_name = self.get_container_name();
-        let compose_path = options.compose_path.as_ref().unwrap();
-        let commands = vec!["-f", &compose_path, "stop", &container_name];
-        run_command(options, String::from("stop"), commands).map(|_| ())
-    }
-    fn start(&self, options: &Options) -> Result<(), Error> {
-        let container_name = self.get_container_name();
-        let compose_path = options.compose_path.as_ref().unwrap();
-        let commands = vec!["-f", &compose_path, "start", &container_name];
-        run_command(options, String::from("start"), commands).map(|_| ())
-    }
+pub trait L1Node: Any + Send + Sync + 'static {
     fn mine_bitcoin(&self, options: &Options, num_blocks: i64) -> Result<String, Error>;
     fn create_wallet(&self, options: &Options) -> Result<(), Error>;
     fn load_wallet(&self, options: &Options) -> Result<(), Error>;
@@ -147,13 +123,13 @@ pub trait L1Node: Any {
         address: String,
     ) -> Result<(), Error>;
     fn send_to_address(
-        self,
+        &self,
         options: &Options,
         num_blocks: i64,
         amt: i64,
         address: String,
     ) -> Result<(), Error>;
-    fn send_to_l2(self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
+    fn send_to_l2(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error>;
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]

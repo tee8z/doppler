@@ -1,16 +1,14 @@
 use crate::{
-    add_rest_client, copy_file, get_absolute_path, ExternalNode, ImageInfo, L1Node, L2Node, LndCli,
-    LndRest, NodeCommand, NodePair, Options, NETWORK,
+    docker_configure::NodePair, LndCli, NETWORK
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
+use doppler_core::{add_rest_client, copy_file, ImageInfo, L1Node, L2Node, LndRest, NodeCommand, Options};
+use doppler_parser::get_absolute_path;
 use log::{debug, error, info};
-use pollster::FutureExt;
 use std::{
-    fs::{File, OpenOptions},
-    thread::sleep,
-    time::Duration,
+    any::Any, fs::{File, OpenOptions}, thread::sleep, time::Duration
 };
 #[derive(Default, Debug, Clone)]
 pub struct Lnd {
@@ -55,6 +53,9 @@ impl Lnd {
 }
 
 impl L2Node for Lnd {
+    fn as_any(&self) -> &dyn Any{
+        self
+    }
     fn get_connection_url(&self) -> String {
         if let Some(pubkey) = self.pubkey.clone() {
             format!(
@@ -88,7 +89,7 @@ impl L2Node for Lnd {
     fn get_starting_wallet_balance(&self) -> i64 {
         self.wallet_starting_balance
     }
-    fn add_pubkey(&mut self, options: &Options) {
+    fn add_pubkey(&self, options: &Options) {
         if options.rest {
             if let Some(lnd_rest) = self.lnd_rest.clone() {
                 info!("rest {:?}", lnd_rest);
@@ -183,7 +184,7 @@ impl L2Node for Lnd {
     }
     fn connect(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         if let Some(rest) = self.lnd_rest.clone() {
-            rest.connect(self, options, node_command).block_on()
+            rest.connect(self, options, node_command)
         } else {
             self.lnd_cli.connect(self, options, node_command)
         }

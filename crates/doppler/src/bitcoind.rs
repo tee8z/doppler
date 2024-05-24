@@ -1,9 +1,9 @@
-use crate::{
-    copy_file, get_absolute_path, run_command, ImageInfo, L1Node, NodeCommand, Options, NETWORK,
-};
+use crate::{run_command, ContainerCommands, NETWORK};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
 use docker_compose_types::{EnvFile, Networks, Ports, Service, Volumes};
+use doppler_core::{copy_file, ImageInfo, L1Node, NodeCommand, Options};
+use doppler_parser::get_absolute_path;
 use log::{error, info};
 use std::{
     fs::{File, OpenOptions},
@@ -29,7 +29,7 @@ pub struct Bitcoind {
 pub enum L1Enum {
     L1Node(Bitcoind),
 }
-
+impl ContainerCommands for Bitcoind {}
 impl L1Node for Bitcoind {
     fn get_name(&self) -> String {
         self.name.clone()
@@ -81,7 +81,7 @@ impl L1Node for Bitcoind {
     ) -> Result<(), Error> {
         mine_to_address(self, options, num_blocks, address)
     }
-    fn send_to_l2(self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
+    fn send_to_l2(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
         let to = options.get_l2_by_name(&node_command.to)?;
         let address = to.create_on_chain_address(options)?;
 
@@ -90,7 +90,7 @@ impl L1Node for Bitcoind {
         Ok(())
     }
     fn send_to_address(
-        self,
+        &self,
         options: &Options,
         num_blocks: i64,
         amt: i64,

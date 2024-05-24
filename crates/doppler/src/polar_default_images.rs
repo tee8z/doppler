@@ -1,9 +1,7 @@
 use anyhow::{anyhow, Error};
-use pollster::FutureExt;
-use reqwest::get;
+use doppler_core::{CloneableHashMap, ImageInfo, NodeKind};
+use reqwest::blocking::get;
 use serde::Deserialize;
-
-use crate::{CloneableHashMap, ImageInfo, NodeKind};
 
 #[derive(Debug, Deserialize)]
 struct Image {
@@ -32,9 +30,9 @@ struct Payload {
 pub fn get_latest_polar_images() -> Result<CloneableHashMap<NodeKind, ImageInfo>, Error> {
     let url = "https://raw.githubusercontent.com/jamaljsr/polar/master/docker/nodes.json";
 
-    let response = get(url).block_on().map_err(|err| anyhow!("error getting polar images: {}", err))?;
+    let response = get(url).map_err(|err| anyhow!("error getting polar images: {}", err))?;
     if response.status().is_success() {
-        let payload: Payload = response.json::<Payload>().block_on().expect("Failed to parse JSON");
+        let payload: Payload = response.json::<Payload>().expect("Failed to parse JSON");
         let mut hash_map = CloneableHashMap::new();
         // NOTE: safe to use * as name since the grammar of the parse wont allow for special characters for the image name, only for the image tag
         hash_map.insert(
@@ -94,9 +92,9 @@ pub fn get_latest_polar_images() -> Result<CloneableHashMap<NodeKind, ImageInfo>
 pub fn get_polar_images() -> Result<CloneableHashMap<NodeKind, Vec<ImageInfo>>, Error> {
     let url = "https://raw.githubusercontent.com/jamaljsr/polar/master/docker/nodes.json";
 
-    let response = get(url).block_on().map_err(|err| anyhow!("error getting polar images: {}", err))?;
+    let response = get(url).map_err(|err| anyhow!("error getting polar images: {}", err))?;
     if response.status().is_success() {
-        let payload: Payload = response.json::<Payload>().block_on().expect("Failed to parse JSON");
+        let payload: Payload = response.json::<Payload>().expect("Failed to parse JSON");
         let mut hash_map: CloneableHashMap<NodeKind, Vec<ImageInfo>> = CloneableHashMap::new();
         // NOTE: safe to use * as name since the grammar of the parse wont allow for special characters for the image name, only for the image tag
 

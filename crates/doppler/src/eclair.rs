@@ -1,19 +1,16 @@
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
+use doppler_core::{copy_file, create_folder, ImageInfo, L1Node, L2Node, NodeCommand, Options};
+use doppler_parser::get_absolute_path;
 use log::{debug, error, info};
 use serde_json::{from_slice, Value};
 use std::{
-    fs::{File, OpenOptions},
-    str::from_utf8,
-    thread,
-    time::Duration,
-    vec,
+    any::Any, fs::{File, OpenOptions}, str::from_utf8, sync::Arc, thread, time::Duration, vec
 };
 
 use crate::{
-    copy_file, create_folder, get_absolute_path, restart_service, run_command, ImageInfo, L1Node,
-    L2Node, NodeCommand, NodePair, Options, NETWORK,
+    docker_configure::NodePair, restart_service, run_command, ContainerCommands, Daemon, NETWORK,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -42,8 +39,11 @@ impl Eclair {
         get_peers_channel_id(self, options, node_command)
     }
 }
-
+impl ContainerCommands for Eclair {}
 impl L2Node for Eclair {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
     fn get_connection_url(&self) -> String {
         if let Some(pubkey) = self.pubkey.as_ref() {
             format!(
@@ -77,7 +77,7 @@ impl L2Node for Eclair {
     fn get_starting_wallet_balance(&self) -> i64 {
         self.wallet_starting_balance
     }
-    fn add_pubkey(&mut self, option: &Options) {
+    fn add_pubkey(&self, option: &Options) {
         add_pubkey(self, option)
     }
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error> {
@@ -158,17 +158,17 @@ impl L2Node for Eclair {
 }
 
 pub fn build_eclair(
-    options: &mut Options,
+    daemon_settings: &mut Daemon,
     name: &str,
     image: &ImageInfo,
     pair: &NodePair,
 ) -> Result<()> {
-    let mut eclair_conf = build_and_save_config(options, name, pair).unwrap();
+    let mut eclair_conf = build_and_save_config(&daemon_settings.options, name, pair).unwrap();
     debug!("{} volume: {}", name, eclair_conf.path_vol);
 
-    let rest_port = options.new_port();
-    let grpc_port = options.new_port();
-    let p2p_port = options.new_port();
+    let rest_port = daemon_settings.new_port();
+    let grpc_port = daemon_settings.new_port();
+    let p2p_port = daemon_settings.new_port();
     let bitcoind = vec![eclair_conf.bitcoind_node_container_name.clone()];
     let eclair = Service {
         depends_on: DependsOnOptions::Simple(bitcoind),
@@ -184,7 +184,7 @@ pub fn build_eclair(
         networks: Networks::Simple(vec![NETWORK.to_owned()]),
         ..Default::default()
     };
-    options
+    daemon_settings
         .services
         .insert(eclair_conf.container_name.clone(), Some(eclair));
     eclair_conf.server_url = format!("http://localhost:{}", rest_port.to_string());
@@ -194,7 +194,7 @@ pub fn build_eclair(
     );
     eclair_conf.grpc_port = grpc_port.to_string();
     eclair_conf.rest_port = rest_port.to_string();
-    options.eclair_nodes.push(eclair_conf);
+    daemon_settings.options.eclair_nodes.push(eclair_conf);
     Ok(())
 }
 
@@ -303,8 +303,8 @@ fn set_values(
     Ok(())
 }
 
-pub fn add_eclair_nodes(options: &mut Options) -> Result<(), Error> {
-    let mut node_l2: Vec<_> = options
+pub fn add_eclair_nodes(daemon_settings: &mut Daemon) -> Result<(), Error> {
+    let mut node_l2: Vec<_> = daemon_settings
         .services
         .iter()
         .filter(|service| service.0.contains("eclair"))
@@ -325,12 +325,12 @@ pub fn add_eclair_nodes(options: &mut Options) -> Result<(), Error> {
     let nodes: Vec<_> = node_l2
         .iter_mut()
         .map(|node| {
-            node.add_pubkey(options);
-            node.clone()
+            node.add_pubkey(&daemon_settings.options);
+            Arc::new(node.clone()) as Arc<dyn L2Node>
         })
         .collect();
 
-    options.eclair_nodes = nodes;
+    daemon_settings.options.eclair_nodes = nodes;
 
     Ok(())
 }
@@ -359,7 +359,7 @@ fn load_config(
     })
 }
 
-fn add_pubkey(node: &mut Eclair, options: &Options) {
+fn add_pubkey(node: &Eclair, options: &Options) {
     let result = node.get_node_pubkey(options);
     match result {
         Ok(pubkey) => {
@@ -372,8 +372,8 @@ fn add_pubkey(node: &mut Eclair, options: &Options) {
     }
 }
 
-fn get_node_pubkey(node: &Eclair, options: &Options) -> Result<String, Error> {
-    let compose_path = options.compose_path.as_ref().unwrap();
+fn get_node_pubkey(node: &Eclair, daemon_settings: &mut Daemon) -> Result<String, Error> {
+    let compose_path = daemon_settings.compose_path.as_ref().unwrap();
 
     let commands = vec![
         "-f",
@@ -390,10 +390,10 @@ fn get_node_pubkey(node: &Eclair, options: &Options) -> Result<String, Error> {
     let mut retries = 3;
     let mut output_found = None;
     while retries > 0 {
-        let output = run_command(options, "pubkey".to_owned(), commands.clone())?;
+        let output = run_command(daemon_settings.docker_command, "pubkey".to_owned(), commands.clone())?;
         if from_utf8(&output.stderr)?.contains("is not running container") {
             debug!("restarting service and trying to get pubkey again");
-            restart_service(options, node.container_name.clone())?;
+            restart_service(&daemon_settings.options, node.container_name.clone())?;
             thread::sleep(Duration::from_secs(4));
             retries -= 1;
         } else if from_utf8(&output.stderr)?

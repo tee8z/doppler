@@ -1,8 +1,7 @@
 use anyhow::bail;
+use doppler_parser::Rule;
 use pest::iterators::Pair;
 use std::convert::TryFrom;
-
-use crate::Rule;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
 pub enum NodeKind {
