@@ -47,3 +47,7 @@ targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-
 pr-run-mode = "plan"
 # Whether to install an updater program
 install-updater = false
+# Tarball includes doppler_files/*
+include = ["./doppler_files/"]
+# Set installation target dir, allow override w/env var DOPPLER_HOME
+install-path = ["$DOPPLER_HOME/", "~/.doppler/"]
