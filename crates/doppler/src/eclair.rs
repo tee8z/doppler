@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
-use doppler_core::{copy_file, create_folder, ImageInfo, L1Node, L2Node, NodeCommand, Options};
+use doppler_core::{copy_file, create_folder, ContainerName, ImageInfo, L1Node, L2Node, NodeCommand, Options};
 use doppler_parser::get_absolute_path;
 use log::{debug, error, info};
 use serde_json::{from_slice, Value};
@@ -33,10 +33,15 @@ pub struct Eclair {
 impl Eclair {
     pub fn get_peers_channel_id(
         &self,
-        options: &Options,
+        daemon_settings: &Daemon,
         node_command: &NodeCommand,
     ) -> Result<String, Error> {
-        get_peers_channel_id(self, options, node_command)
+        get_peers_channel_id(self, daemon_settings, node_command)
+    }
+}
+impl ContainerName for Eclair  {
+    fn get_container_name(&self) -> String {
+        self.container_name.clone()
     }
 }
 impl ContainerCommands for Eclair {}
@@ -68,9 +73,6 @@ impl L2Node for Eclair {
     fn get_name(&self) -> &str {
         self.name.as_str()
     }
-    fn get_container_name(&self) -> &str {
-        self.container_name.as_str()
-    }
     fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
     }
@@ -90,7 +92,7 @@ impl L2Node for Eclair {
         connect(self, options, node_command)
     }
     fn close_channel(&self, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-        close_channel(self, options, node_command)
+        close_channel(self, daemon_settings, node_command)
     }
     fn force_close_channel(
         &self,
@@ -194,7 +196,7 @@ pub fn build_eclair(
     );
     eclair_conf.grpc_port = grpc_port.to_string();
     eclair_conf.rest_port = rest_port.to_string();
-    daemon_settings.options.eclair_nodes.push(eclair_conf);
+    daemon_settings.options.eclair_nodes.push(Arc::new(eclair_conf));
     Ok(())
 }
 
@@ -260,7 +262,7 @@ fn set_values(
     conf: &mut FileConf,
     name: String,
     api_pass: String,
-    bitcoind_node: &dyn L1Node,
+    bitcoind_node: &Arc<dyn L1Node>,
 ) -> Result<(), Error> {
     if conf.sections.get("").is_none() {
         conf.sections.insert("".to_owned(), Section::new());
@@ -372,8 +374,8 @@ fn add_pubkey(node: &Eclair, options: &Options) {
     }
 }
 
-fn get_node_pubkey(node: &Eclair, daemon_settings: &mut Daemon) -> Result<String, Error> {
-    let compose_path = daemon_settings.compose_path.as_ref().unwrap();
+fn get_node_pubkey(node: &Eclair, options: &mut Options) -> Result<String, Error> {
+    let compose_path = options.compose_path.as_ref().unwrap();
 
     let commands = vec![
         "-f",
@@ -390,10 +392,10 @@ fn get_node_pubkey(node: &Eclair, daemon_settings: &mut Daemon) -> Result<String
     let mut retries = 3;
     let mut output_found = None;
     while retries > 0 {
-        let output = run_command(daemon_settings.docker_command, "pubkey".to_owned(), commands.clone())?;
+        let output = run_command(options.docker_command, "pubkey".to_owned(), commands.clone())?;
         if from_utf8(&output.stderr)?.contains("is not running container") {
             debug!("restarting service and trying to get pubkey again");
-            restart_service(&daemon_settings.options, node.container_name.clone())?;
+            restart_service(&compose_path, node.container_name.clone())?;
             thread::sleep(Duration::from_secs(4));
             retries -= 1;
         } else if from_utf8(&output.stderr)?
@@ -476,16 +478,16 @@ fn connect(node: &Eclair, options: &Options, node_command: &NodeCommand) -> Resu
 }
 fn close_channel(
     node: &Eclair,
-    options: &Options,
+    daemon_settings: &mut Daemon,
     node_command: &NodeCommand,
 ) -> Result<(), Error> {
-    let compose_path = options.compose_path.as_ref().unwrap();
+    let compose_path = daemon_settings.compose_path.as_ref().unwrap();
     //TODO: find a way to specify which channel to close, right now we just grab a random one for this peer
     let peer_channel_id = format!(
         "--channelId={}",
-        node.get_peers_channel_id(options, node_command)?
+        node.get_peers_channel_id(daemon_settings, node_command)?
     );
-    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+    let to_node = daemon_settings.options.get_l2_by_name(node_command.to.as_str())?;
 
     let commands = vec![
         "-f",
@@ -500,7 +502,7 @@ fn close_channel(
         "close",
         &peer_channel_id,
     ];
-    let output = run_command(options, "close channel".to_owned(), commands)?;
+    let output = run_command(daemon_settings.docker_command, "close channel".to_owned(), commands)?;
     if output.status.success() {
         info!(
             "successfully closed channel from {} to {}",
@@ -519,16 +521,16 @@ fn close_channel(
 
 fn force_close_channel(
     node: &Eclair,
-    options: &Options,
+    daemon_settings: &mut Daemon,
     node_command: &NodeCommand,
 ) -> Result<(), Error> {
-    let compose_path = options.compose_path.as_ref().unwrap();
+    let compose_path = daemon_settings.compose_path.as_ref().unwrap();
     //TODO: find a way to specify which channel to close, right now we just grab a random one for this peer
     let peer_channel_id = format!(
         "--channelId={}",
-        node.get_peers_channel_id(options, node_command)?
+        node.get_peers_channel_id(&daemon_settings.options, node_command)?
     );
-    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+    let to_node = daemon_settings.options.get_l2_by_name(node_command.to.as_str())?;
 
     let commands = vec![
         "-f",
@@ -543,7 +545,7 @@ fn force_close_channel(
         "forceclose",
         &peer_channel_id,
     ];
-    let output = run_command(options, "close channel".to_owned(), commands)?;
+    let output = run_command(daemon_settings.docker_command, "close channel".to_owned(), commands)?;
     if output.status.success() {
         info!(
             "successfully closed channel from {} to {}",
@@ -562,11 +564,11 @@ fn force_close_channel(
 
 fn get_peers_channel_id(
     node: &Eclair,
-    options: &Options,
+    daemon_settings: &Daemon,
     node_command: &NodeCommand,
 ) -> Result<String, Error> {
-    let compose_path = options.compose_path.as_ref().unwrap();
-    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+    let compose_path = daemon_settings.compose_path.as_ref().unwrap();
+    let to_node = daemon_settings.options.get_l2_by_name(node_command.to.as_str())?;
     let to_pubkey = format!("--nodeId={}", to_node.get_cached_pubkey());
     let commands = vec![
         "-f",
@@ -581,7 +583,7 @@ fn get_peers_channel_id(
         "channels",
         &to_pubkey,
     ];
-    let output = run_command(options, "channels".to_owned(), commands)?;
+    let output = run_command(daemon_settings.docker_command, "channels".to_owned(), commands)?;
     if output.status.success() {
         let response: Value = from_slice(&output.stdout).expect("failed to parse JSON");
         match response
@@ -598,13 +600,13 @@ fn get_peers_channel_id(
     Ok(String::from(""))
 }
 
-fn open_channel(node: &Eclair, options: &Options, node_command: &NodeCommand) -> Result<(), Error> {
-    let _ = node.connect(options, node_command).map_err(|e| {
+fn open_channel(node: &Eclair, daemon_settings: &Daemon, node_command: &NodeCommand) -> Result<(), Error> {
+    let _ = node.connect(&daemon_settings.options, node_command).map_err(|e| {
         debug!("failed to connect: {}", e);
     });
-    let to_node = options.get_l2_by_name(node_command.to.as_str())?;
+    let to_node = daemon_settings.options.get_l2_by_name(node_command.to.as_str())?;
     let amt = node_command.amt.unwrap_or(100000);
-    let compose_path = options.compose_path.as_ref().unwrap();
+    let compose_path = daemon_settings.compose_path.as_ref().unwrap();
     let to_pubkey = format!("--nodeId={}", to_node.get_cached_pubkey());
     let funding_command = format!("--fundingSatoshis={}", amt);
     let funding_fee_budget = format!("--fundingFeeBudgetSatoshis={}", amt as f64 * 0.10);
@@ -623,7 +625,7 @@ fn open_channel(node: &Eclair, options: &Options, node_command: &NodeCommand) ->
         &funding_command,
         &funding_fee_budget,
     ];
-    let output = run_command(options, "open channel".to_owned(), commands)?;
+    let output = run_command(daemon_settings.docker_command, "open channel".to_owned(), commands)?;
     if output.status.success() {
         info!(
             "successfully opened channel from {} to {}",

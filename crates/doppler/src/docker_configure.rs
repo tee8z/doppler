@@ -41,6 +41,7 @@ impl BuildDetails {
 
 pub fn handle_build_command(
     options: &mut Options,
+    daemon_options: &mut Daemon,
     name: &str,
     kind: NodeKind,
     image: &ImageInfo,
@@ -51,13 +52,13 @@ pub fn handle_build_command(
         NodeKind::Bitcoind => build_bitcoind(options, name, image, false),
         NodeKind::BitcoindMiner => build_bitcoind(options, name, image, true),
         NodeKind::Lnd => build_lnd(options, name, image, &details.unwrap().pair.unwrap()),
-        NodeKind::Eclair => build_eclair(options, name, image, &details.unwrap().pair.unwrap()),
+        NodeKind::Eclair => build_eclair(daemon_options, name, image, &details.unwrap().pair.unwrap()),
         NodeKind::Coreln => build_cln(options, name, image, &details.unwrap().pair.unwrap()),
     }
 }
 
-pub fn handle_up(options: &mut Options) -> Result<(), Error> {
-    run_cluster(options, COMPOSE_PATH).map_err(|e| {
+pub fn handle_up(daemon_options: &mut Daemon) -> Result<(), Error> {
+    run_cluster(daemon_options, COMPOSE_PATH).map_err(|e| {
         error!("Failed to start cluster from generated compose file: {}", e);
         e
     })?;
@@ -98,7 +99,7 @@ pub fn get_image(options: &mut Daemon, node_kind: NodeKind, possible_name: &str)
 }
 
 
-pub fn handle_conf(options: &mut Daemon, line: Pair<Rule>) -> Result<()> {
+pub fn handle_conf(options: &mut Options, daemon_options: &mut Daemon, line: Pair<Rule>) -> Result<()> {
     let mut line_inner = line.into_inner();
     let command = line_inner.next().expect("invalid command");
     let mut inner = command.clone().into_inner();
@@ -115,7 +116,7 @@ pub fn handle_conf(options: &mut Daemon, line: Pair<Rule>) -> Result<()> {
             }
             let image_name = inner.next().expect("image name").as_str();
             let tag_or_path = inner.next().expect("image version").as_str();
-            handle_image_command(options, kind, image_name, tag_or_path)?;
+            handle_image_command(daemon_options, kind, image_name, tag_or_path)?;
         }
         Rule::node_def => {
             let kind: NodeKind = inner
@@ -128,10 +129,10 @@ pub fn handle_conf(options: &mut Daemon, line: Pair<Rule>) -> Result<()> {
             }
             let node_name = inner.next().expect("node name").as_str();
             let image: ImageInfo = match inner.next() {
-                Some(image) => get_image(options, kind.clone(), image.as_str()),
-                None => options.get_default_image(kind.clone()),
+                Some(image) => get_image(daemon_options, kind.clone(), image.as_str()),
+                None => daemon_options.get_default_image(kind.clone()),
             };
-            handle_build_command(options, node_name, kind, &image, None)?;
+            handle_build_command(options, daemon_options, node_name, kind, &image, None)?;
         }
         Rule::node_pair => {
             let kind: NodeKind = inner
@@ -146,9 +147,9 @@ pub fn handle_conf(options: &mut Daemon, line: Pair<Rule>) -> Result<()> {
             let image = match inner.peek().unwrap().as_rule() {
                 Rule::image_name => {
                     let image_name = inner.next().expect("image name").as_str();
-                    get_image(options, kind.clone(), image_name)
+                    get_image(daemon_options, kind.clone(), image_name)
                 }
-                _ => options.get_default_image(kind.clone()),
+                _ => daemon_options.get_default_image(kind.clone()),
             };
             let to_pair = inner.next().expect("invalid layer 1 node name").as_str();
             let amount = match inner.peek().is_some() {
@@ -162,6 +163,7 @@ pub fn handle_conf(options: &mut Daemon, line: Pair<Rule>) -> Result<()> {
             };
             handle_build_command(
                 options,
+                daemon_options,
                 name,
                 kind,
                 &image,

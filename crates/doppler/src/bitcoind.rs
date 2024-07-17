@@ -1,13 +1,14 @@
-use crate::{run_command, ContainerCommands, NETWORK};
+use crate::{run_command, ContainerCommands, Daemon, NETWORK};
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
 use docker_compose_types::{EnvFile, Networks, Ports, Service, Volumes};
-use doppler_core::{copy_file, ImageInfo, L1Node, NodeCommand, Options};
+use doppler_core::{copy_file, ContainerName, ImageInfo, L1Node, NodeCommand, Options};
 use doppler_parser::get_absolute_path;
 use log::{error, info};
+use sha2::digest::typenum::bit;
 use std::{
     fs::{File, OpenOptions},
-    str::from_utf8,
+    str::from_utf8, sync::Arc,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -29,13 +30,17 @@ pub struct Bitcoind {
 pub enum L1Enum {
     L1Node(Bitcoind),
 }
-impl ContainerCommands for Bitcoind {}
+impl ContainerCommands for Bitcoind { }
+
+impl ContainerName for Bitcoind  {
+    fn get_container_name(&self) -> String {
+        self.container_name.clone()
+    }
+}
+
 impl L1Node for Bitcoind {
     fn get_name(&self) -> String {
         self.name.clone()
-    }
-    fn get_container_name(&self) -> String {
-        self.container_name.clone()
     }
     fn get_data_dir(&self) -> String {
         self.data_dir.clone()
@@ -108,18 +113,18 @@ pub fn add_config(name: &str, network: &str, container_name: &str) -> Result<Bit
 }
 
 pub fn build_bitcoind(
-    options: &mut Options,
+    daemon_options: &mut Daemon,
     name: &str,
     image: &ImageInfo,
     is_miner: bool,
 ) -> Result<()> {
-    let bitcoind_conf = get_config(options, name, is_miner).unwrap();
+    let bitcoind_conf = get_config(daemon_options, name, is_miner).unwrap();
     let bitcoind = Service {
         image: Some(image.get_image()),
         container_name: Some(bitcoind_conf.container_name.clone()),
         ports: Ports::Short(vec![
-            format!("{}:{}", options.new_port(), bitcoind_conf.p2pport),
-            format!("{}:{}", options.new_port(), bitcoind_conf.rpcport),
+            format!("{}:{}", daemon_options.new_port(), bitcoind_conf.p2pport),
+            format!("{}:{}", daemon_options.new_port(), bitcoind_conf.rpcport),
         ]),
         volumes: Volumes::Simple(vec![format!(
             "{}:/home/bitcoin/.bitcoin:rw",
@@ -129,30 +134,30 @@ pub fn build_bitcoind(
         networks: Networks::Simple(vec![NETWORK.to_owned()]),
         ..Default::default()
     };
-    options
+    daemon_options
         .services
         .insert(bitcoind_conf.container_name.clone(), Some(bitcoind));
-    options.bitcoinds.push(bitcoind_conf);
+    daemon_options.options.bitcoinds.push(Arc::new(bitcoind_conf));
     Ok(())
 }
 
-pub fn add_bitcoinds(options: &mut Options) -> Result<()> {
-    let bitcoinds: Vec<_> = options
+pub fn add_bitcoinds(daemon_options: &mut Daemon,) -> Result<()> {
+    let bitcoinds: Vec<_> = daemon_options
         .services
         .iter_mut()
         .filter(|service| service.0.contains("bitcoind"))
         .map(|service| {
             let container_name = service.0;
             let bitcoind_name = container_name.split('-').last().unwrap();
-            load_config(bitcoind_name, container_name.as_str(), &options.network)
+            load_config(bitcoind_name, container_name.as_str(), &daemon_options.options.network)
         })
         .filter_map(|res| res.ok())
         .collect();
-    options.bitcoinds = bitcoinds;
+    daemon_options.options.bitcoinds = bitcoinds;
     Ok(())
 }
 
-fn load_config(name: &str, container_name: &str, network: &str) -> Result<Bitcoind, Error> {
+fn load_config(name: &str, container_name: &str, network: &str) -> Result<Arc<dyn L1Node>, Error> {
     let bitcoind_config: &String = &format!("data/{}/.bitcoin/bitcoin.conf", name);
     let full_path = get_absolute_path(bitcoind_config)?
         .to_str()
@@ -174,7 +179,7 @@ fn load_config(name: &str, container_name: &str, network: &str) -> Result<Bitcoi
         e
     })?;
 
-    Ok(Bitcoind {
+    Ok(Arc::new(Bitcoind {
         conf: conf.to_owned(),
         name: name.to_owned(),
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
@@ -202,7 +207,7 @@ fn load_config(name: &str, container_name: &str, network: &str) -> Result<Bitcoi
             .last()
             .unwrap()
             .to_owned(),
-    })
+    }))
 }
 
 fn get_bitcoind_config(
@@ -257,14 +262,14 @@ fn get_bitcoind_config(
     })
 }
 
-fn set_network_section(conf: &mut FileConf, options: &mut Options) -> Result<Section, Error> {
-    if conf.sections.get(&options.network).is_none() {
+fn set_network_section(conf: &mut FileConf, daemon_options: &mut Daemon) -> Result<Section, Error> {
+    if conf.sections.get(&daemon_options.options.network).is_none() {
         conf.sections
-            .insert(options.network.clone(), Section::new());
+            .insert(daemon_options.options.network.clone(), Section::new());
     }
-    let bitcoin = conf.sections.get_mut(&options.network).unwrap();
-    let port = options.new_port();
-    let rpc_port = options.new_port();
+    let bitcoin = conf.sections.get_mut(&daemon_options.options.network).unwrap();
+    let port = daemon_options.new_port();
+    let rpc_port = daemon_options.new_port();
     bitcoin.set_property("bind", "0.0.0.0");
     bitcoin.set_property("port", &port.to_string());
     bitcoin.set_property("rpcport", &rpc_port.to_string());
@@ -272,17 +277,17 @@ fn set_network_section(conf: &mut FileConf, options: &mut Options) -> Result<Sec
     bitcoin.set_property("rpcpassword", "1234");
     bitcoin.set_property(
         "zmqpubrawblock",
-        &format!("tcp://0.0.0.0:{}", options.new_port()),
+        &format!("tcp://0.0.0.0:{}", daemon_options.new_port()),
     );
     bitcoin.set_property(
         "zmqpubrawtx",
-        &format!("tcp://0.0.0.0:{}", options.new_port()),
+        &format!("tcp://0.0.0.0:{}", daemon_options.new_port()),
     );
     bitcoin.set_property(
         "zmqpubhashblock",
-        &format!("tcp://0.0.0.0:{}", options.new_port()),
+        &format!("tcp://0.0.0.0:{}", daemon_options.new_port()),
     );
-    let network_section = get_network_section(conf, &options.network)?;
+    let network_section = get_network_section(conf, &daemon_options.options.network)?;
     Ok(network_section)
 }
 

@@ -31,7 +31,7 @@ RUN chmod a+x /entrypoint.sh
 
 VOLUME ["/home/bitcoin/.bitcoin"]
 
-EXPOSE 18443 18444 28334 28335
+EXPOSE 18443 18444 28334 28335 38332 38333 38334
 
 ENTRYPOINT ["/entrypoint.sh"]
 

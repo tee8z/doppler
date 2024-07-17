@@ -4,7 +4,7 @@ use crate::{
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
-use doppler_core::{add_rest_client, copy_file, ImageInfo, L1Node, L2Node, LndRest, NodeCommand, Options};
+use doppler_core::{add_rest_client, copy_file, ContainerName, ImageInfo, L1Node, L2Node, LndRest, NodeCommand, Options};
 use doppler_parser::get_absolute_path;
 use log::{debug, error, info};
 use std::{
@@ -52,6 +52,13 @@ impl Lnd {
     }
 }
 
+impl ContainerName for Lnd {
+    fn get_container_name(&self) -> String {
+        self.container_name.clone()
+    }
+}
+
+
 impl L2Node for Lnd {
     fn as_any(&self) -> &dyn Any{
         self
@@ -79,9 +86,6 @@ impl L2Node for Lnd {
     }
     fn get_name(&self) -> &str {
         self.name.as_str()
-    }
-    fn get_container_name(&self) -> &str {
-        self.container_name.as_str()
     }
     fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())
@@ -111,14 +115,14 @@ impl L2Node for Lnd {
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error> {
         if let Some(rest) = self.lnd_rest.clone() {
             info!("rest {:?}", rest);
-            rest.get_node_pubkey(options).block_on()
+            rest.get_node_pubkey(options)
         } else {
             self.lnd_cli.get_node_pubkey(self, options)
         }
     }
     fn create_on_chain_address(&self, options: &Options) -> Result<String, Error> {
         if let Some(rest) = self.lnd_rest.clone() {
-            rest.create_lnd_address(options).block_on()
+            rest.create_lnd_address(options)
         } else {
             self.lnd_cli.create_lnd_address(self, options)
         }

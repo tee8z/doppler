@@ -4,7 +4,7 @@ use crate::{
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{read_to_file_conf, FileConf, Section};
 use docker_compose_types::{Command, DependsOnOptions, EnvFile, Networks, Ports, Service, Volumes};
-use doppler_core::{copy_file, create_folder, ImageInfo, L1Node, L2Node, NodeCommand, Options};
+use doppler_core::{copy_file, create_folder, ContainerName, ImageInfo, L1Node, L2Node, NodeCommand, Options};
 use doppler_parser::get_absolute_path;
 use log::{debug, error, info};
 use serde_json::{from_slice, Value};
@@ -48,6 +48,11 @@ impl Cln {
         get_peers_short_channel_id(self, options, node_command, "source")
     }
 }
+impl ContainerName for Cln  {
+    fn get_container_name(&self) -> String {
+        self.container_name.clone()
+    }
+}
 impl ContainerCommands for Cln {}
 impl L2Node for Cln {
     fn as_any(&self) -> &dyn Any{
@@ -76,9 +81,6 @@ impl L2Node for Cln {
     }
     fn get_alias(&self) -> &str {
         &self.alias
-    }
-    fn get_container_name(&self) -> &str {
-        self.container_name.as_str()
     }
     fn get_cached_pubkey(&self) -> String {
         self.pubkey.clone().unwrap_or("".to_string())

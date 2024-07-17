@@ -5,8 +5,8 @@ set -e
 # assigning the same uid/gid from the host user
 # ensures that the files can be read/write from both sides
 if ! id bitcoin > /dev/null 2>&1; then
-  USERID=${USERID:-1000}
-  GROUPID=${GROUPID:-1000}
+  USERID=${USERID:-101}
+  GROUPID=${GROUPID:-101}
 
   echo "adding user bitcoin ($USERID:$GROUPID)"
   groupadd -f -g $GROUPID bitcoin

@@ -5,14 +5,13 @@ use rand::Rng;
 use serde_yaml::{from_slice, Value};
 use std::{any::Any, process::Output, sync::Arc};
 
-pub trait L2Node: Any + Send + Sync + 'static {
+pub trait L2Node: Any + Send + ContainerName + Sync + 'static {
     fn as_any(&self) -> &dyn Any;
     fn get_connection_url(&self) -> String;
     fn get_p2p_port(&self) -> &str;
     fn get_name(&self) -> &str;
     fn get_alias(&self) -> &str;
     fn get_server_url(&self) -> &str;
-    fn get_container_name(&self) -> &str;
     fn get_cached_pubkey(&self) -> String;
     fn add_pubkey(&self, option: &Options);
     fn get_node_pubkey(&self, options: &Options) -> Result<String, Error>;
@@ -101,12 +100,15 @@ pub trait L2Node: Any + Send + Sync + 'static {
     fn wait_for_block(&self, options: &Options, num_of_blocks: i64) -> Result<(), Error>;
 }
 
-pub trait L1Node: Any + Send + Sync + 'static {
+pub trait ContainerName: Any + Send + Sync + 'static {
+    fn get_container_name(&self) -> String;
+}
+
+pub trait L1Node: Any + Send + Sync + ContainerName + 'static {
     fn mine_bitcoin(&self, options: &Options, num_blocks: i64) -> Result<String, Error>;
     fn create_wallet(&self, options: &Options) -> Result<(), Error>;
     fn load_wallet(&self, options: &Options) -> Result<(), Error>;
     fn get_name(&self) -> String;
-    fn get_container_name(&self) -> String;
     fn get_data_dir(&self) -> String;
     fn get_zmqpubrawblock(&self) -> String;
     fn get_zmqpubhashblock(&self) -> String;
