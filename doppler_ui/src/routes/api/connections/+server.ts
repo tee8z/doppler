@@ -16,7 +16,7 @@ export interface Connections {
 
 export const GET: RequestHandler = async function () {
     try {
-        const filePath = resolve('config/info.conf');
+        const filePath = resolve('ui_config/info.conf');
         const fileContent = fs.readFileSync(filePath, 'utf8');
         const parsedConfig = parse(fileContent);
         const connections: Connections = {};

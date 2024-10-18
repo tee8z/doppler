@@ -24,7 +24,7 @@ Additionally, this DSL can be used against a cluster of remote LND nodes (more i
 - [x] CLOSE_CHANNEL
 - [X] support multiple node implementations (supports LND, CoreLN, Eclair)
 - [x] add a cluster level UI to see how all the nodes connect (comes from https://github.com/litch/lightning-conformance/tree/master/operator)
-- [x] SETTLE_HOLD_LN -- only works for LND nodes 
+- [x] SETTLE_HOLD_LN -- only works for LND nodes
 - [x] SEND_HOLD_LN -- only works for LND nodes
 - [x] SEND_COINS --  to send from a btc miner to any of the L2 node types (helpful in making sure there are enough funds for channels to open)
 - [x] FORCE_CLOSE_CHANNEL - forces an L2 node to close a give channel
@@ -36,10 +36,10 @@ Additionally, this DSL can be used against a cluster of remote LND nodes (more i
 - [x] WAIT BLOCKS - uses one of the hooked up LND nodes and waits to proceed in the script until a certain block height is reached
 
 ### Interesting Simulations
-- Chain of force closures due to an inflight htlc: [force_closures](./doppler_files/force_close/README.md)
-- Executing a successful hodl invoice in LND nodes: [hodl_invoice](./doppler_files/hold_invoices/README.md)
-- Using external LND nodes and generating payment activity: [external_nodes](./doppler_files/external_nodes/README.md)
-- Running with multiple versions of lightning implementations: [different_versions](./doppler_files/different_images/different_images.doppler)
+- Chain of force closures due to an inflight htlc: [force_closures](./examples/doppler_files/force_close/README.md)
+- Executing a successful hodl invoice in LND nodes: [hodl_invoice](./examples/doppler_files/hold_invoices/README.md)
+- Using external LND nodes and generating payment activity: [external_nodes](./examples/doppler_files/external_nodes/README.md)
+- Running with multiple versions of lightning implementations: [different_versions](./examples/doppler_files/different_images/different_images.doppler)
 
 ### Acknowledgments
 * Thank you [polar](https://github.com/jamaljsr/polar) for having such easy docker images to work with
