@@ -40,7 +40,7 @@ pub struct Cli {
     app_sub_commands: Option<AppSubCommands>,
 
     /// Path to ui config file, used to connect to the nodes via the browser
-    #[arg(short, long, default_value = "./ui/config/info.conf")]
+    #[arg(short, long, default_value = "./doppler_ui/ui_config/info.conf")]
     ui_config_path: String,
 }
 

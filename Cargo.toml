@@ -1,53 +1,8 @@
-[package]
-edition = "2021"
-name = "doppler"
-version = "0.1.0"
-repository = "https://github.com/tee8z/doppler.git"
-
-[dependencies]
-anyhow = "1.0.71"
-reqwest = { version = "0.12",  features = ["blocking", "json"] }
-base64 = "0.22.0"
-hex = "0.4.3"
-rust-ini = "0.19"
-log = "0.4.20"
-fern = { version = "0.6.2", features = ["colored"] }
-pest = "2.6.0"
-pest_derive = "2.6.0"
-sha2 = "0.10.6"
-conf_parser = "0.2.0"
-docker-compose-types = "0.5.1"
-serde_yaml = "0.9.23"
-indexmap = "1.9.3"
-rand = "0.8.5"
-serde = "1.0"
-serde_json = "1.0"
-uuid = {version = "1.4.1", features = ["v4"] }
-rusqlite = { version = "0.29.0", features = ["bundled"] }
-clap = { version = "4.3.23", features = ["derive", "env"] }
-time = { version = "0.3.25", features = ["formatting"] }
-signal-hook = "0.3.17"
+[workspace]
+resolver = "2"
+members = ["doppler"]
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
 inherits = "release"
 lto = "thin"
-
-# Config for 'cargo dist'
-[workspace.metadata.dist]
-# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.16.0"
-# CI backends to support
-ci = "github"
-# The installers to generate for each app
-installers = ["shell"]
-# Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
-# Publish jobs to run in CI
-pr-run-mode = "plan"
-# Whether to install an updater program
-install-updater = false
-# Tarball includes doppler_files/*
-include = ["./doppler_files/"]
-# Set installation target dir, allow override w/env var DOPPLER_HOME
-install-path = ["$DOPPLER_HOME/", "~/.doppler/"]

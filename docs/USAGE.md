@@ -3,16 +3,16 @@
 populate config files
 ```
 # run from root of this git repo
-REPO_DIR=$(pwd) envsubst < ui/config/info.conf.env > ui/config/info.conf
+REPO_DIR=$(pwd) envsubst < doppler_ui/ui_config/info.conf.env > doppler_ui/ui_config/info.conf
 ```
 
 if using docker-compose
 ```
-cargo run --bin doppler -- -f "doppler_files/many_lnd_channels/only_setup_network.doppler" -d
+cargo run --bin doppler -- -f "examples/doppler_files/many_lnd_channels/only_setup_network.doppler" -d
 ```
 if using docker compose
 ```
-cargo run --bin doppler -- -f "doppler_files/many_lnd_channels/only_setup_network.doppler"
+cargo run --bin doppler -- -f "examples/doppler_files/many_lnd_channels/only_setup_network.doppler"
 ```
 - add a new .doppler file to create the cluster how you want
 - examples of the possible valid grammar for the doppler files can be found in [doppler_files](../doppler_files/)
@@ -22,7 +22,7 @@ cargo run --bin doppler -- -f "doppler_files/many_lnd_channels/only_setup_networ
 2) Then run the following to start the UI, requires yarn installed on your machine:
 
 ```
-cd ui
+cd doppler_ui
 yarn
 yarn dev
 ```
@@ -180,9 +180,9 @@ fi
 echo "$@"
 exec "$@"
 ```
-5. 
+5.
 ```
 docker build -t bitcoind-master .
 ```
 Use this doppler file as an example for using a custom image:
-[example doppler](./doppler_files/different_images.doppler)
+[example doppler](./examples/doppler_files/different_images.doppler)

@@ -6,4 +6,8 @@ doppler-cluster.yaml
 doppler.db
 external_nodes/info.conf
 external_nodes/*/*
-/ui/config/info.conf
+/doppler_ui/ui_config/info.conf
+/doppler/target
+/doppler_ui/doppler_ui
+/doppler_ui/bun.lockb
+/doppler_ui/doppler_ui
