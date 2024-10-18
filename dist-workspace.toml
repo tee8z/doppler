@@ -25,3 +25,4 @@ pr-run-mode = "upload"
 
 [workspace.metadata.dist.dependencies.apt]
 musl-tools = '*'
+libssl-dev = '*'

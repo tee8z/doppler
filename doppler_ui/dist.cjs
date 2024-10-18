@@ -20,8 +20,16 @@ if (!bunTarget) {
 }
 const binExt = distTarget.includes('windows') ? '.exe' : '';
 
+// Check if the target is Darwin (macOS)
+const isDarwin = distTarget.includes('apple-darwin');
+
 // setup bun
 execSync('bun install');
+
+if (isDarwin) {
+	console.log('Darwin detected. Installing @rollup/rollup-darwin-x64...');
+	execSync('bun add @rollup/rollup-darwin-x64', { stdio: 'inherit' });
+}
 
 // for each binary, run bun
 for (binName of Object.keys(bin)) {
