@@ -7,6 +7,7 @@ The DSL should empower developers to compose a concise script that configures an
 Additionally, this DSL can be used against a cluster of remote LND nodes (more implementations will follow) to generate activity across them. This could be payments or channel related activity at the moment, but more work can be done to further expand this to include starting and stopping the remote nodes as well as funding them from a configured faucet. Still would not recommend running these doppler files on a mainnet cluster of nodes, but we wont stop you from being reckless :wink:
 
 #### How to use:
+- Install via `export VERSION=<release tag to install> && curl --proto '=https' --tlsv1.2 -LsSf "https://github.com/tee8z/doppler/releases/download/${VERSION}/doppler-installer.sh" | sh -s -- "${VERSION}"`
 - More information on how to use this tool can be found here: [USAGE.md](./docs/USAGE.md)
 
 #### Supports:

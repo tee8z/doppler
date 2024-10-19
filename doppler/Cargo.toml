@@ -11,6 +11,7 @@ include = [
     "../scripts/",
     "../docs/",
     "../bitcoind_images",
+    "../doppler-installer.sh"
 ]
 
 [dependencies]
