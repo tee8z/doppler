@@ -1,5 +1,5 @@
 [workspace]
-members = ["cargo:doppler", "npm:doppler_ui"]
+members = ["npm:doppler_ui", "cargo:doppler"]
 
 # Config for 'cargo dist'
 [dist]
@@ -14,7 +14,6 @@ targets = [
     "aarch64-apple-darwin",
     "x86_64-apple-darwin",
     "x86_64-unknown-linux-gnu",
-    "x86_64-unknown-linux-musl",
 ]
 # Path that installers should place binaries in
 install-path = ["$DOPPLER_HOME/", "~/.doppler"]
