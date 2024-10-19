@@ -1,0 +1,2 @@
+[dist]
+include = ["./ui_config/"]

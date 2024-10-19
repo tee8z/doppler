@@ -4,6 +4,15 @@ name = "doppler"
 version = "0.2.0"
 repository = "https://github.com/tee8z/doppler.git"
 
+[package.metadata.dist]
+include = [
+    "./config/",
+    "../examples/",
+    "../scripts/",
+    "../docs/",
+    "../bitcoind_images",
+]
+
 [dependencies]
 anyhow = "1.0.71"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
@@ -27,3 +36,11 @@ rusqlite = { version = "0.29.0", features = ["bundled"] }
 clap = { version = "4.3.23", features = ["derive", "env"] }
 time = { version = "0.3.25", features = ["formatting"] }
 signal-hook = "0.3.17"
+
+[[bin]]
+name = "doppler"
+path = "src/main.rs"
+
+[[bin]]
+name = "parsetest"
+path = "src/bin/parsetest.rs"

@@ -1,14 +1,17 @@
 {
 	"name": "doppler",
 	"version": "0.2.0",
-	"repository": "https://github.com/tee8z/doppler",
+	"repository": "github:tee8z/doppler",
+	"files": [
+		"ui_config"
+	],
 	"bin": {
 		"doppler_ui": "build/index.js"
 	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
-		"dist": "npm run build --if-success && node dist.cjs",
+		"dist": "node dist.cjs",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",

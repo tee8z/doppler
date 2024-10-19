@@ -20,8 +20,29 @@ if (!bunTarget) {
 }
 const binExt = distTarget.includes('windows') ? '.exe' : '';
 
-// setup bun
-execSync('bun install');
+// Check if the target is Darwin (macOS)
+const isDarwin = distTarget.includes('apple-darwin');
+if (isDarwin) {
+	console.log('Darwin detected. Installing @rollup/rollup-darwin-x64...');
+	execSync('npm install @rollup/rollup-darwin-x64', { stdio: 'inherit' });
+	console.log('Removing old installed dependencies ...');
+	execSync('rm package-lock.json', { stdio: 'inherit' });
+	execSync('rm -rf node_modules', { stdio: 'inherit' });
+}
+
+// Setup npm
+
+// Setup npm
+console.log('Installing dependencies with npm...');
+execSync('npm install', { stdio: 'inherit' });
+
+// Run npm build
+console.log('Running npm build...');
+execSync('npm run build', { stdio: 'inherit' });
+
+// Setup bun
+console.log('Installing dependencies with bun...');
+execSync('bun install', { stdio: 'inherit' });
 
 // for each binary, run bun
 for (binName of Object.keys(bin)) {
