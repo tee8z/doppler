@@ -1,12 +1,51 @@
 <script lang="ts">
-	import { DarkTheme, theme, themeIcon, componentIcon, toggleDarkMode, toggleComponent } from '$lib/theme';
+	import { theme, themeIcon, componentIcon, toggleDarkMode, toggleComponent } from '$lib/theme';
 	import Icon from '../components/Icon/Icon.svelte';
-	import Scripter from '../components/Scripter.svelte';
 	import Visualizer from '../components/Visualizer.svelte';
-	import Blockly from 'blockly';
+	import LogViewer from '../components/LogViewer.svelte';
+	import ScriptBuilder from '../components/ScriptBuilder.svelte';
+	import Button from '../components/Button.svelte';
 
-	$: blocklyTheme = $theme === 'light' ? Blockly.Themes.Classic : DarkTheme;
+	let currentScriptId: string | null = null;
+	let activeTab = 'scriptBuilder';
 
+	function handleScriptSubmit(event: CustomEvent<string>) {
+		currentScriptId = event.detail;
+	}
+
+	function handleScriptRun(event: CustomEvent<string>) {
+		currentScriptId = event.detail;
+		setActiveTab('logViewer');
+	}
+
+	async function handleReset() {
+		let resetId = currentScriptId;
+		if (!currentScriptId) {
+			resetId = null;
+		}
+		try {
+			const response = await fetch('/api/reset', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ id: resetId })
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to reset script');
+			}
+
+			const result = await response.json();
+			console.log(result);
+		} catch (error) {
+			console.error('Error requesting reset:', error);
+		}
+	}
+
+	function setActiveTab(tab: string) {
+		activeTab = tab;
+	}
 </script>
 
 <main class="flex flex-col h-screen">
@@ -21,7 +60,8 @@
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<div class="flex items-center gap-2">
 			<span class="cursor-pointer h-6 w-6" on:click={toggleComponent}>
-				<Icon name={$componentIcon} class="h-6 w-6" /></span>
+				<Icon name={$componentIcon} class="h-6 w-6" /></span
+			>
 		</div>
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -31,13 +71,42 @@
 			>
 		</div>
 	</section>
-	{#if $componentIcon === 'radar'}
-		<section class="flex flex-1">
+	<section class="flex flex-1">
+		<div class="w-2/3 flex flex-col">
 			<Visualizer />
-		</section>
-	{:else}
-		<section class="flex h-full gap-2">
-			<Scripter {blocklyTheme} />
-		</section>
-	{/if}
+		</div>
+		<div class="w-1/3 flex flex-col">
+			<div class="bg-gray-200 p-4">
+				<nav class="flex mb-4">
+					<Button
+						on:click={() => setActiveTab('scriptBuilder')}
+						class={activeTab === 'scriptBuilder' ? 'bg-blue-500 text-white' : ''}
+					>
+						Script Builder
+					</Button>
+					<Button
+						on:click={() => setActiveTab('logViewer')}
+						class={activeTab === 'logViewer' ? 'bg-blue-500 text-white' : ''}
+					>
+						Script Log
+					</Button>
+					<Button
+						on:click={handleReset}
+						class={activeTab === 'reset' ? 'bg-blue-500 text-white' : ''}
+					>
+						Reset
+					</Button>
+				</nav>
+				{#if activeTab === 'scriptBuilder'}
+					<ScriptBuilder on:scriptSubmitted={handleScriptSubmit} on:scriptRun={handleScriptRun} />
+				{:else if activeTab === 'logViewer'}
+					{#if currentScriptId}
+						<LogViewer id={currentScriptId} />
+					{:else}
+						<p>Submit a script to view logs</p>
+					{/if}
+				{/if}
+			</div>
+		</div>
+	</section>
 </main>
