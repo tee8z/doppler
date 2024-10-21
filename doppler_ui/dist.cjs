@@ -3,55 +3,23 @@ const { bin } = require('./package.json');
 const execSync = require('child_process').execSync;
 const path = require('path');
 const fs = require('fs');
-const ini = require('ini');
 const { v7 } = require('uuid');
 
-// Setup npm
-console.log('Installing dependencies with npm...');
-execSync('npm install', { stdio: 'inherit' });
-
-// Setup bun
-console.log('Installing dependencies with bun...');
-execSync('bun install', { stdio: 'inherit' });
-
-// Run npm build
-console.log('Running npm build...');
-execSync('bun run build', { stdio: 'inherit' });
-
-const configPath = './ui_config/server.conf.ini';
-
-// Default configuration
-const defaultConfig = {
-	paths: {
-		dopplerScriptsFolder: '~/.doppler/doppler_scripts',
-		logsFolder: '~/.doppler/doppler_logs',
-		scriptsFolder: '~/.doppler/scripts',
-		dopplerBinaryPath: '~/.doppler/doppler',
-		currentWorkingDirectory: '~/.doppler'
+// Simple INI stringifier
+function stringifyINI(obj) {
+	let result = '';
+	for (const [key, value] of Object.entries(obj)) {
+		if (typeof value === 'object') {
+			result += `[${key}]\n`;
+			for (const [subKey, subValue] of Object.entries(value)) {
+				result += `${subKey} = ${subValue}\n`;
+			}
+		} else {
+			result += `${key} = ${value}\n`;
+		}
 	}
-};
-
-let config;
-try {
-	config = ini.parse(fs.readFileSync(configPath, 'utf-8'));
-} catch (error) {
-	console.log('Config file not found. Creating a new one with default settings.');
-	config = defaultConfig;
+	return result;
 }
-
-if (!config.paths) {
-	config.paths = {};
-}
-
-config.paths = {
-	...defaultConfig.paths,
-	...config.paths
-};
-
-// Save the updated config
-fs.writeFileSync(configPath, ini.stringify(config));
-
-console.log('Configuration file updated and saved.');
 
 // Existing code for bunTargets and platform detection...
 const bunTargets = {
@@ -71,6 +39,26 @@ if (!bunTarget) {
 }
 const binExt = distTarget.includes('windows') ? '.exe' : '';
 const isDarwin = distTarget.includes('apple-darwin');
+// Existing build process...
+if (isDarwin) {
+	console.log('Darwin detected. Installing @rollup/rollup-darwin-x64...');
+	execSync('npm install @rollup/rollup-darwin-x64', { stdio: 'inherit' });
+	console.log('Removing old installed dependencies ...');
+	execSync('rm package-lock.json', { stdio: 'inherit' });
+	execSync('rm -rf node_modules', { stdio: 'inherit' });
+}
+
+// Setup npm
+console.log('Installing dependencies with npm...');
+execSync('npm install', { stdio: 'inherit' });
+
+// Setup bun
+console.log('Installing dependencies with bun...');
+execSync('bun install', { stdio: 'inherit' });
+
+// Run npm build
+console.log('Running npm build...');
+execSync('bun run build', { stdio: 'inherit' });
 
 // Function to process Doppler scripts
 function processDopplerScripts() {
@@ -128,15 +116,6 @@ function processDopplerScripts() {
 	console.log('Doppler scripts processed and copied to doppler_scripts directory.');
 }
 
-// Existing build process...
-if (isDarwin) {
-	console.log('Darwin detected. Installing @rollup/rollup-darwin-x64...');
-	execSync('npm install @rollup/rollup-darwin-x64', { stdio: 'inherit' });
-	console.log('Removing old installed dependencies ...');
-	execSync('rm package-lock.json', { stdio: 'inherit' });
-	execSync('rm -rf node_modules', { stdio: 'inherit' });
-}
-
 //* create a bin, wont work due to issues with two tools but wont build otherwise */
 // for each binary, run bun
 for (binName of Object.keys(bin)) {
@@ -165,7 +144,22 @@ for (binName of Object.keys(bin)) {
 // Process Doppler scripts
 processDopplerScripts();
 
-const prodConf = './ui_config/server.conf.ini';
-const directory = path.dirname(prodConf);
+const configPath = './ui_config/server.conf.ini';
+
+// Default configuration
+const defaultConfig = {
+	paths: {
+		dopplerScriptsFolder: '~/.doppler/doppler_scripts',
+		logsFolder: '~/.doppler/doppler_logs',
+		scriptsFolder: '~/.doppler/scripts',
+		dopplerBinaryPath: '~/.doppler/doppler',
+		currentWorkingDirectory: '~/.doppler'
+	}
+};
+
+// Save the updated config
+const directory = path.dirname(configPath);
 fs.mkdirSync(directory, { recursive: true });
-fs.writeFileSync(prodConf, ini.stringify(config));
+fs.writeFileSync(configPath, stringifyINI(defaultConfig));
+
+console.log('Configuration file updated and saved.');
