@@ -3,6 +3,7 @@ const { bin } = require('./package.json');
 const execSync = require('child_process').execSync;
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // Simple INI stringifier
 function stringifyINI(obj) {
