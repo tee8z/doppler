@@ -18,4 +18,3 @@ external_nodes/*/*
 /doppler_scripts
 /doppler_ui/config
 /doppler_ui/ui_config/info.conf.ini
-/doppler_ui/ui_config/server.conf.ini
