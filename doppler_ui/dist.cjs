@@ -3,7 +3,6 @@ const { bin } = require('./package.json');
 const execSync = require('child_process').execSync;
 const path = require('path');
 const fs = require('fs');
-const { v7 } = require('uuid');
 
 // Simple INI stringifier
 function stringifyINI(obj) {
@@ -19,6 +18,21 @@ function stringifyINI(obj) {
 		}
 	}
 	return result;
+}
+
+function generateUUIDv4() {
+	const bytes = crypto.randomBytes(16);
+
+	// Set version (4) and variant (2) bits
+	bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+	bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 2
+
+	// Convert to hexadecimal string and insert hyphens
+	return bytes
+		.toString('hex')
+		.match(/(.{8})(.{4})(.{4})(.{4})(.{12})/)
+		.slice(1)
+		.join('-');
 }
 
 // Existing code for bunTargets and platform detection...
@@ -98,7 +112,7 @@ function processDopplerScripts() {
 
 					if (!existingFile) {
 						// If no existing file, create a new one with UUID
-						const uuid = v7();
+						const uuid = generateUUIDv4();
 						const newFileName = `${baseFileName}_${uuid}.doppler`;
 						const newPath = path.join(dopplerScriptsDir, relativePath, newFileName);
 						fs.copyFileSync(fullPath, newPath);
