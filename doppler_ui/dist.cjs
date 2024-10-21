@@ -71,13 +71,10 @@ execSync('npm install', { stdio: 'inherit' });
 console.log('Installing dependencies with bun...');
 execSync('bun install', { stdio: 'inherit' });
 
-process.env.UI_CONFIG_PATH = '/ui_config';
-
 // Run npm build
 console.log('Running npm build...');
-execSync('npm run build', {
-	stdio: 'inherit',
-	env: { ...process.env }
+execSync('UI_CONFIG_PATH=./ui_config npm run build', {
+	stdio: 'inherit'
 });
 
 // Function to process Doppler scripts
