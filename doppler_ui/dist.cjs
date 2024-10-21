@@ -6,6 +6,18 @@ const fs = require('fs');
 const ini = require('ini');
 const { v7 } = require('uuid');
 
+// Setup npm
+console.log('Installing dependencies with npm...');
+execSync('npm install', { stdio: 'inherit' });
+
+// Setup bun
+console.log('Installing dependencies with bun...');
+execSync('bun install', { stdio: 'inherit' });
+
+// Run npm build
+console.log('Running npm build...');
+execSync('bun run build', { stdio: 'inherit' });
+
 const configPath = './ui_config/server.conf.ini';
 
 // Default configuration
@@ -124,18 +136,6 @@ if (isDarwin) {
 	execSync('rm package-lock.json', { stdio: 'inherit' });
 	execSync('rm -rf node_modules', { stdio: 'inherit' });
 }
-
-// Setup npm
-console.log('Installing dependencies with npm...');
-execSync('npm install', { stdio: 'inherit' });
-
-// Setup bun
-console.log('Installing dependencies with bun...');
-execSync('bun install', { stdio: 'inherit' });
-
-// Run npm build
-console.log('Running npm build...');
-execSync('bun run build', { stdio: 'inherit' });
 
 //* create a bin, wont work due to issues with two tools but wont build otherwise */
 // for each binary, run bun
