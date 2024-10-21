@@ -156,6 +156,7 @@ for (binName of Object.keys(bin)) {
 	);
 }
 
+console.log("Starting processing doppler example files";)
 // Process Doppler scripts
 processDopplerScripts();
 
