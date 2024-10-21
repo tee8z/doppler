@@ -3,8 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import { parse } from 'ini';
 
-const configPath = path.join(process.cwd(), 'ui_config/server.conf.ini');
-const config = parse(fs.readFileSync(configPath, 'utf-8'));
+const configPath = process.env.UI_CONFIG_PATH || path.join(process.cwd(), 'ui_config');
+const config = parse(fs.readFileSync(`${configPath}/server.conf.ini`, 'utf-8'));
 
 const DOPPLER_SCRIPTS_FOLDER = path.join(process.cwd(), config.paths.dopplerScriptsFolder);
 const LOGS_FOLDER = path.join(process.cwd(), config.paths.logsFolder);

@@ -27,11 +27,13 @@ function safeReadFileSync(path: string): Buffer | null {
 	}
 }
 
+const configPath = process.env.UI_CONFIG_PATH || path.join(process.cwd(), 'ui_config');
+
 //TODO: have the info.conf be change based on the run script
 export const GET: RequestHandler = async function () {
 	let parsedConfig;
 	try {
-		const filePath = resolve('ui_config/info.conf.ini');
+		const filePath = resolve(`${configPath}/info.conf.ini`);
 		const fileContent = fs.readFileSync(filePath, 'utf8');
 		parsedConfig = parse(fileContent);
 	} catch (error) {

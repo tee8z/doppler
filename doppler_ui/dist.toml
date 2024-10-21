@@ -1,2 +1,7 @@
 [dist]
-include = ["../doppler_scripts/", "./build"]
+include = [
+    "../doppler_scripts/",
+    "./build",
+    "./package.json",
+    "./package-lock.json",
+]

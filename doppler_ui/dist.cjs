@@ -73,7 +73,7 @@ execSync('bun install', { stdio: 'inherit' });
 
 // Run npm build
 console.log('Running npm build...');
-execSync('bun run build', { stdio: 'inherit' });
+execSync('npm run build', { stdio: 'inherit' });
 
 // Function to process Doppler scripts
 function processDopplerScripts() {
@@ -173,6 +173,8 @@ const defaultConfig = {
 		currentWorkingDirectory: '~/.doppler'
 	}
 };
+
+fs.writeFileSync('package.json', '');
 
 // Save the updated config
 const directory = path.dirname(configPath);

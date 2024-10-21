@@ -6,8 +6,8 @@ import { parse } from 'ini';
 import { createLogParser } from '$lib/log_transformers';
 import { logStreamManager } from '$lib/log_stream_manager';
 
-const configPath = path.join(process.cwd(), 'ui_config/server.conf.ini');
-const config = parse(fs.readFileSync(configPath, 'utf-8'));
+const configPath = process.env.UI_CONFIG_PATH || path.join(process.cwd(), 'ui_config');
+const config = parse(fs.readFileSync(`${configPath}/server.conf.ini`, 'utf-8'));
 
 const DOPPLER_SCRIPTS_FOLDER = path.join(process.cwd(), config.paths.dopplerScriptsFolder);
 const LOGS_FOLDER = path.join(process.cwd(), config.paths.logsFolder);
@@ -53,7 +53,7 @@ export const POST: RequestHandler = async function (event: any) {
 				scriptFilename,
 				'-r',
 				'--ui-config-path',
-				'/home/teebz/repos/doppler/doppler_ui/ui_config/info.conf.ini',
+				`${configPath}/info.conf.ini`,
 				'--level',
 				'debug'
 			],
