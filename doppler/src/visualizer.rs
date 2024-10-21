@@ -31,7 +31,7 @@ pub fn create_ui_config_files(options: &Options, network: &str) -> Result<(), Er
 
     for node in options.cln_nodes.clone() {
         let header = format!("[{}] \n", node.alias);
-        let macaroon = format!("ACCESS_MACAROON_PATH={} \n", node.macaroon_path);
+        let macaroon = format!("RUNE={} \n", node.rune.unwrap_or_default());
         let api_endpoint = format!("API_ENDPOINT={} \n", node.server_url);
         let network = format!("NETWORK={} \n", network);
         let node_type = format!("TYPE={} \n", "coreln");

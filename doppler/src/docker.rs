@@ -97,9 +97,6 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     debug!("saved cluster config");
 
     start_docker_compose(options)?;
-    create_ui_config_files(options, &options.network)
-        .map_err(|e| anyhow!("error creating ui config: {}", e))?;
-
     debug!("started cluster");
     //simple wait for docker-compose to spin up
     thread::sleep(Duration::from_secs(6));
@@ -108,6 +105,8 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
         mine_initial_blocks(options)?;
     }
     setup_l2_nodes(options)?;
+    create_ui_config_files(options, &options.network)
+        .map_err(|e| anyhow!("error creating ui config: {}", e))?;
     if options.aliases && options.external_nodes.is_none() {
         update_bash_alias(options).map_err(|e| anyhow!("error creating alias: {}", e))?;
     }
