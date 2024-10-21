@@ -121,8 +121,7 @@ DEST_FOLDER="$HOME/.doppler/${VERSION}"
 mkdir -p "$DEST_FOLDER"
 
 # Download and extract the file
-#curl --proto '=https' --tlsv1.2 -LsSf "$URL" | tar -xJ --strip-components=1 -C "$DEST_FOLDER"
-cp -r "$HOME/repos/doppler/target/distrib/doppler-x86_64-unknown-linux-gnu/"* "$DEST_FOLDER"
+curl --proto '=https' --tlsv1.2 -LsSf "$URL" | tar -xJ --strip-components=1 -C "$DEST_FOLDER"
 
 # Check if the extraction was successful
 if [ $? -eq 0 ]; then
