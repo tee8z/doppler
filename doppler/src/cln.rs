@@ -178,7 +178,7 @@ pub fn build_cln(
     // Passing these args on the command line is unavoidable due to how the docker image is setup
     let command = Command::Simple(
         format!(
-            "--network={} --lightning-dir=/home/clightning",
+            "--network={} --lightning-dir=/home/clightning --developer",
             options.network
         )
         .to_string(),
