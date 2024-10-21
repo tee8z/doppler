@@ -157,10 +157,10 @@ for (binName of Object.keys(bin)) {
 }
 
 console.log('Starting processing doppler example files');
+/*
 // Process Doppler scripts
 processDopplerScripts();
 
-/*
 const configPath = './ui_config/server.conf.ini';
 
 // Default configuration
