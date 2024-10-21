@@ -11,3 +11,11 @@ external_nodes/*/*
 /doppler_ui/doppler_ui
 /doppler_ui/bun.lockb
 /doppler_ui/doppler_ui
+/doppler_ui/doppler
+/doppler_ui/data
+/doppler_ui/doppler_logs
+/doppler_ui/doppler_scripts
+/doppler_scripts
+/doppler_ui/config
+/doppler_ui/ui_config/info.conf.ini
+/doppler_ui/ui_config/server.conf.ini

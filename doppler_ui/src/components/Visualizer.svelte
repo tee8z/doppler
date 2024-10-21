@@ -10,21 +10,35 @@
 	import type { NodeRequests, Nodes } from '$lib/nodes';
 	import { CorelnRequests } from '$lib/coreln_requests';
 	import { EclairRequests } from '$lib/eclair_requests';
+	import Page from '../routes/+page.svelte';
 	let dataPromise: Promise<Nodes> | null = null;
 	let poller: ReturnType<typeof setInterval>;
 	let isPolling = false;
 	let connections: Connections;
 	let info: any = null;
 	let jsonData: any = null;
+	let uniqueNodes = new Set();
+	let uniqueChannels = new Set();
+
 	let nodeConnections: { pubkey: string; alias: string; connection: NodeRequests }[] = [];
 	function setNode(node: any) {
+		if (!node) {
+			return;
+		}
 		info = node.info;
 		jsonData = node.info;
 	}
-	//TODO: add color to channels to show active/inactive
-	//TODO: show a light or symbol when each given node sees all the channels, use graph description for this
+
 	const fetchData = async (connections: Connections) => {
+		if (!connections || Object.keys(connections).length === 0) {
+			console.log('No connections provided. Aborting fetchData.');
+			return;
+		}
 		let nodeData: Nodes = {};
+		nodeConnections = [];
+		uniqueNodes = new Set();
+		uniqueChannels = new Set();
+
 		const promises = Object.keys(connections).map(async (key) => {
 			const connectionConfig = connections[key];
 			if (connectionConfig.type === 'lnd') {
@@ -36,10 +50,10 @@
 				}
 				let balance = await requests.fetchBalance();
 				let info = await requests.fetchInfo();
-				if (!response['error']) {
+				if (!response['error'] && info && info.identity_pubkey && key) {
 					nodeConnections.push({ pubkey: info.identity_pubkey, alias: key, connection: requests });
 				}
-				if (channels && balance && info) {
+				if (channels && balance && info && key) {
 					return {
 						[key]: {
 							channels,
@@ -55,10 +69,10 @@
 				const channels = await requests.fetchChannels();
 				const balance = await requests.fetchBalance();
 				const info = await requests.fetchInfo();
-				if (!info['error']) {
+				if (!info['error'] && info && info.id && key) {
 					nodeConnections.push({ pubkey: info.id, alias: key, connection: requests });
 				}
-				if (channels && balance && info) {
+				if (channels && balance && info && key) {
 					return {
 						[key]: {
 							channels,
@@ -74,10 +88,18 @@
 				const channels = await requests.fetchChannels();
 				const balance = await requests.fetchBalance();
 				const info = await requests.fetchInfo();
-				if (!info['error']) {
+				if (!info['error'] && info && info.nodeId && key) {
 					nodeConnections.push({ pubkey: info.nodeId, alias: key, connection: requests });
 				}
-				if (channels && balance && info) {
+				if (
+					channels &&
+					!channels.error &&
+					balance &&
+					!balance.error &&
+					info &&
+					!info.error &&
+					key
+				) {
 					return {
 						[key]: {
 							channels,
@@ -93,18 +115,20 @@
 		const results = await Promise.all(promises);
 		results.forEach((result) => {
 			if (!result) {
-				console.error('issue building the requests client');
+				console.warn('issue building the requests client');
 				return;
 			}
 			const [key, data] = Object.entries(result)[0];
-			nodeData[key] = data;
+			if (key && data) {
+				nodeData[key] = data;
+			}
 		});
 		let key = Object.keys(nodeData)[0];
 		//Set starting node
 		setNode(nodeData[key]);
-
 		let cur_nodes: any[] = [];
 		let cur_edges: any[] = [];
+
 		map_lnd_channels(cur_nodes, cur_edges, nodeData);
 		map_coreln_channels(cur_nodes, cur_edges, nodeData);
 		map_eclair_channels(cur_nodes, cur_edges, nodeData);
@@ -121,11 +145,13 @@
 			if (!value.online) {
 				return;
 			}
-			if (!has_node(nodes, value.info.identity_pubkey)) {
+			if (!uniqueNodes.has(value.info.identity_pubkey)) {
+				uniqueNodes.add(value.info.identity_pubkey);
 				nodes.push({
 					id: value.info.identity_pubkey,
 					alias: key,
-					known: value.info.identity_pubkey
+					known: value.info.identity_pubkey,
+					type: value.type
 				});
 			}
 		});
@@ -141,7 +167,8 @@
 				if (!channel.remote_pubkey) {
 					return;
 				}
-				if (!has_node(nodes, channel.remote_pubkey)) {
+				if (!uniqueNodes.has(channel.remote_pubkey)) {
+					uniqueNodes.add(channel.remote_pubkey);
 					let known = nodeConnections.find((node) => node.pubkey === channel.remote_pubkey);
 					nodes.push({
 						id: channel.remote_pubkey,
@@ -152,10 +179,11 @@
 				if (!channel.initiator) {
 					return;
 				}
-				if (has_channel(edges, channel.chan_id)) {
+				if (uniqueChannels.has(channel.chan_id)) {
 					return;
 				}
 				console.log(channel);
+				uniqueChannels.add(channel.chan_id);
 				edges.push({
 					source: current_pubkey,
 					target: channel.remote_pubkey,
@@ -171,24 +199,6 @@
 		});
 	}
 
-	function has_node(nodes: any[], channel_remote: string) {
-		for (let node of nodes) {
-			if (node.id === channel_remote) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	function has_channel(channels: any[], channel_id: string) {
-		for (let channel of channels) {
-			if (channel.channel_id === channel_id) {
-				return true;
-			}
-		}
-		return false;
-	}
-
 	function map_coreln_channels(nodes: any[], edges: any[], nodeData: Nodes) {
 		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
 			if (value.type !== 'coreln') {
@@ -197,11 +207,13 @@
 			if (!value.online) {
 				return;
 			}
-			if (!has_node(nodes, value.info.id)) {
+			if (!uniqueNodes.has(value.info.id)) {
+				uniqueNodes.add(value.info.id);
 				nodes.push({
 					id: value.info.id,
 					alias: key,
-					known: value.info.id
+					known: value.info.id,
+					type: value.type
 				});
 			}
 		});
@@ -214,7 +226,8 @@
 			}
 			let current_pubkey = value.info.id;
 			value.channels.forEach((channel: any) => {
-				if (!has_node(nodes, channel.id)) {
+				if (!uniqueNodes.has(channel.id)) {
+					uniqueNodes.add(channel.id);
 					let known = nodeConnections.find((node) => node.pubkey === channel.id);
 					nodes.push({
 						id: channel.id,
@@ -225,10 +238,11 @@
 				if (!(channel.opener === 'local')) {
 					return;
 				}
-				if (has_channel(edges, channel.channel_id)) {
+				if (uniqueChannels.has(channel.channel_id)) {
 					return;
 				}
 				console.log(channel);
+				uniqueChannels.add(channel.channel_id);
 				let edge = {
 					source: current_pubkey,
 					target: channel.id,
@@ -253,11 +267,13 @@
 			if (!value.online) {
 				return;
 			}
-			if (!has_node(nodes, value.info.nodeId)) {
+			if (!uniqueNodes.has(value.info.nodeId)) {
+				uniqueNodes.add(value.info.nodeId);
 				nodes.push({
 					id: value.info.nodeId,
 					alias: key,
-					known: value.info.nodeId
+					known: value.info.nodeId,
+					type: value.type
 				});
 			}
 		});
@@ -270,7 +286,8 @@
 			}
 			let current_pubkey = value.info.nodeId;
 			value.channels.forEach((channel: any) => {
-				if (!has_node(nodes, channel.nodeId)) {
+				if (!uniqueNodes.has(channel.nodeId)) {
+					uniqueNodes.add(channel.nodeId);
 					let known = nodeConnections.find((node) => node.pubkey === channel.nodeId);
 					nodes.push({
 						id: channel.nodeId,
@@ -281,9 +298,10 @@
 				if (!channel.data.commitments.params.localParams.isInitiator) {
 					return;
 				}
-				if (has_channel(edges, channel.channelId)) {
+				if (uniqueChannels.has(channel.channelId)) {
 					return;
 				}
+				uniqueChannels.add(channel.channelId);
 				console.log(channel);
 				let edge = {
 					source: current_pubkey,
@@ -310,8 +328,6 @@
 			clearInterval(poller);
 		}
 		tick();
-		connections = await getConnections();
-		fetchData(connections);
 	});
 
 	onDestroy(() => {
@@ -320,6 +336,7 @@
 		}
 	});
 	function handleClickData(event: any) {
+		console.log(event);
 		const data = event.detail;
 		if (data.type == 'channel') {
 			jsonData = data.channel;
@@ -354,28 +371,68 @@
 		}
 	}
 
-	function start() {
-		if (connections) {
-			poller = setInterval(() => fetchData(connections), 15000); // Poll every 15 seconds
-			isPolling = true;
+	function togglePolling() {
+		if (isPolling) {
+			stop();
+		} else {
+			start();
 		}
+	}
+
+	async function fetchAndUpdateData() {
+		const connections = await getConnections();
+		await fetchData(connections);
+	}
+
+	function start() {
+		if (isPolling) {
+			console.log('Polling is already active. Fetching most recent data...');
+			fetchAndUpdateData()
+				.then(() => {
+					console.log('Got data outside of polling');
+				})
+				.catch((error) => {
+					console.error('Error in manual data fetch:', error);
+				});
+			return;
+		}
+
+		isPolling = true;
+
+		// Perform immediate call
+		fetchAndUpdateData()
+			.then(() => {
+				if (poller) {
+					clearInterval(poller);
+				}
+				poller = setInterval(fetchAndUpdateData, 15000); // Poll every 15 seconds
+			})
+			.catch((error) => {
+				console.error('Error in initial data fetch:', error);
+				isPolling = false;
+			});
 	}
 </script>
 
-{#await dataPromise}
-	<p>Loading graph...</p>
-{:then nodeData}
-	<div class="info">
-		<div>
+<div class="visualizer">
+	{#await dataPromise}
+		<p>Loading graph...</p>
+	{:then nodeData}
+		<div class="info-panel">
 			<h1>Visualize</h1>
 			<div>
 				<span>Polling</span>
 				<Button on:click={start}>Start</Button>
 				<Button on:click={stop}>Stop</Button>
 				<label class="switch">
-					<input type="checkbox" id="pollingToggle" bind:checked={isPolling} />
-					<span class="slider round" />
-				</label>
+					<input
+						type="checkbox"
+						id="pollingToggle"
+						bind:checked={isPolling}
+						on:change={togglePolling}
+					/>
+					<span class="slider round"> </span></label
+				>
 			</div>
 			<Info {info} />
 			<div>
@@ -391,28 +448,38 @@
 				{/if}
 			</div>
 		</div>
-	</div>
-	<div class="flex flex-1">
-		{#if $nodes.length > 0}
-			<Graph on:dataEvent={handleClickData} />
-		{/if}
-	</div>
-{:catch error}
-	<p>Error: {error.message}</p>
-{/await}
+		<div class="graph-container">
+			{#if $nodes && $nodes.length > 0}
+				<Graph on:dataEvent={handleClickData} />
+			{/if}
+		</div>
+	{:catch error}
+		<p>Error: {error.message}</p>
+	{/await}
+</div>
 
 <style>
-	.info {
-		flex: 0 0 30%; /* Adjust the width as needed */
+	.visualizer {
+		display: flex;
+		height: 100vh;
+		overflow: hidden;
+	}
+	.info-panel {
+		flex: 0 0 30%;
+		max-width: 400px;
 		background: rgba(0, 151, 19, 0.1);
-		margin: 15px;
 		padding: 10px;
 		font-size: large;
-		overflow-wrap: break-word;
-		white-space: pre-wrap;
-		word-break: break-all;
-		height: 100vh;
 		overflow-y: auto;
+		height: 100%;
+	}
+	.graph-container {
+		flex: 1;
+		height: 100%;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		overflow: hidden;
 	}
 	.detail {
 		font-size: small;
@@ -426,13 +493,11 @@
 		width: 60px;
 		height: 34px;
 	}
-
 	.switch input {
 		opacity: 0;
 		width: 0;
 		height: 0;
 	}
-
 	.slider {
 		position: absolute;
 		cursor: pointer;
@@ -443,7 +508,6 @@
 		background-color: #ccc;
 		transition: 0.4s;
 	}
-
 	.slider:before {
 		position: absolute;
 		content: '';
@@ -454,19 +518,15 @@
 		background-color: white;
 		transition: 0.4s;
 	}
-
 	input:checked + .slider {
 		background-color: #2196f3;
 	}
-
 	input:checked + .slider:before {
 		transform: translateX(26px);
 	}
-
 	.slider.round {
 		border-radius: 34px;
 	}
-
 	.slider.round:before {
 		border-radius: 50%;
 	}

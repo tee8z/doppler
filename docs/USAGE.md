@@ -1,37 +1,27 @@
 ### How to run the daemon
 
-populate config files
-```
-# run from root of this git repo
-REPO_DIR=$(pwd) envsubst < doppler_ui/ui_config/info.conf.env > doppler_ui/ui_config/info.conf
-```
-
 if using docker-compose
 ```
-cargo run --bin doppler -- -f "examples/doppler_files/many_lnd_channels/only_setup_network.doppler" -d
+doppler -f "examples/doppler_files/many_lnd_channels/only_setup_network.doppler" -d
 ```
 if using docker compose
 ```
-cargo run --bin doppler -- -f "examples/doppler_files/many_lnd_channels/only_setup_network.doppler"
+doppler -f "examples/doppler_files/many_lnd_channels/only_setup_network.doppler"
 ```
 - add a new .doppler file to create the cluster how you want
 - examples of the possible valid grammar for the doppler files can be found in [doppler_files](../doppler_files/)
 
 ### How to use the UI (Script builder and node visualizer)
-1) Currently the visualizer requires at least one lnd node in the cluster, that is also the only node that it will be able to operate on, the other it will be able to view in the graph
-2) Then run the following to start the UI, requires yarn installed on your machine:
 
 ```
-cd doppler_ui
-yarn
-yarn dev
+~/.doppler/doppler_ui
 ```
 
 App will be running on `localhost:5173`
 
 
 ### Example on how to hook up to remote LND nodes
-- [remote_nodes](../doppler_files/external_nodes/README.md)
+- [remote_nodes](../examples/doppler_files/external_nodes/README.md)
 
 ### How to view logs of container
 
@@ -61,7 +51,7 @@ docker logs doppler-<node name>
 ### How to test parse grammar
 
 ```
-RUST_LOG=TRACE cargo run --bin parsetest -- -f "<path>/<to>/<file.doppler>"
+RUST_LOG=TRACE parsetest -f "<path>/<to>/<file.doppler>"
 ```
 
 ### Permissions

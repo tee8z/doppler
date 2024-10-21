@@ -1,2 +1,2 @@
 [dist]
-include = ["./ui_config/"]
+include = ["../doppler_scripts/", "./build"]
