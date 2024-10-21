@@ -160,6 +160,7 @@ console.log('Starting processing doppler example files');
 // Process Doppler scripts
 processDopplerScripts();
 
+/*
 const configPath = './ui_config/server.conf.ini';
 
 // Default configuration
@@ -177,5 +178,5 @@ const defaultConfig = {
 const directory = path.dirname(configPath);
 fs.mkdirSync(directory, { recursive: true });
 fs.writeFileSync(configPath, stringifyINI(defaultConfig));
-
+*/
 console.log('Configuration file updated and saved.');
