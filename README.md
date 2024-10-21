@@ -19,13 +19,15 @@ Additionally, this DSL can be used against a cluster of remote LND nodes (more i
   chmod +x doppler_installer.sh
   doppler_installer.sh <release tag to install>
 ```
-- Run UI
+#### After install it can be run via:
+- Run with UI
 ```
-  nvm install --lts
-  cd ~/.doppler/<release tag installed> && npm ci --omit dev
-  node build
+  cd $HOME/.doppler/<release tag> && node ./build
 ```
-
+- Run as cli
+```
+  cd $HOME/.doppler && doppler -h
+```
 - More information on how to use this tool can be found here: [USAGE.md](./docs/USAGE.md)
 
 #### Supports:

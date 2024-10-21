@@ -3,11 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import { parse } from 'ini';
 
-const configPath = process.env.UI_CONFIG_PATH || path.join(process.cwd(), 'ui_config');
+const configPath = process.env.UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
 const config = parse(fs.readFileSync(`${configPath}/server.conf.ini`, 'utf-8'));
 
-const DOPPLER_SCRIPTS_FOLDER = path.join(process.cwd(), config.paths.dopplerScriptsFolder);
-const LOGS_FOLDER = path.join(process.cwd(), config.paths.logsFolder);
+const DOPPLER_SCRIPTS_FOLDER = config.paths.dopplerScriptsFolder;
+const LOGS_FOLDER = config.paths.logsFolder;
 
 interface ScriptPayload {
 	id: string;

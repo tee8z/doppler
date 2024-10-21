@@ -7,10 +7,10 @@ import { resolve } from 'path';
 import { v7 } from 'uuid';
 
 // Read and parse the INI config file
-const configPath = process.env.UI_CONFIG_PATH || path.join(process.cwd(), 'ui_config');
+const configPath = process.env.UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
 const config = parse(fs.readFileSync(`${configPath}/server.conf.ini`, 'utf-8'));
 
-const LOGS_FOLDER = path.join(process.cwd(), config.paths.logsFolder);
+const LOGS_FOLDER = config.paths.logsFolder;
 
 interface ResetPayload {
 	id?: string;
