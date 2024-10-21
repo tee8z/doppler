@@ -2,7 +2,7 @@ const { bin } = require('./package.json');
 const execSync = require('child_process').execSync;
 const path = require('path');
 
-// Compute the target we're building for
+// Existing code for bunTargets and platform detection...
 const bunTargets = {
 	'x86_64-pc-windows-msvc': 'bun-windows-x64',
 	'aarch64-apple-darwin': 'bun-darwin-arm64',
@@ -16,12 +16,30 @@ if (!distTarget) {
 }
 const bunTarget = bunTargets[distTarget];
 if (!bunTarget) {
-	throw `To the the best of our knowledge, bun does not support building for ${distTarget}`;
+	throw `To the best of our knowledge, bun does not support building for ${distTarget}`;
 }
 const binExt = distTarget.includes('windows') ? '.exe' : '';
+const isDarwin = distTarget.includes('apple-darwin');
+// Existing build process...
+if (isDarwin) {
+	console.log('Darwin detected. Installing @rollup/rollup-darwin-x64...');
+	execSync('npm install @rollup/rollup-darwin-x64', { stdio: 'inherit' });
+	console.log('Removing old installed dependencies ...');
+	execSync('rm package-lock.json', { stdio: 'inherit' });
+	execSync('rm -rf node_modules', { stdio: 'inherit' });
+}
 
-// setup bun
-execSync('bun install');
+// Setup npm
+console.log('Installing dependencies with npm...');
+execSync('npm install', { stdio: 'inherit' });
+
+// Setup bun
+console.log('Installing dependencies with bun...');
+execSync('bun install', { stdio: 'inherit' });
+
+// Run npm build
+console.log('Running npm build...');
+execSync('bun run build', { stdio: 'inherit' });
 
 // for each binary, run bun
 for (binName of Object.keys(bin)) {
