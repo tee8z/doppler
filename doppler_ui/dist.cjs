@@ -73,7 +73,9 @@ execSync('bun install', { stdio: 'inherit' });
 
 // Run npm build
 console.log('Running npm build...');
-execSync('bun run build', { stdio: 'inherit' });
+execSync('UI_CONFIG_PATH=./ui_config npm run build', {
+	stdio: 'inherit'
+});
 
 // Function to process Doppler scripts
 function processDopplerScripts() {
@@ -166,13 +168,15 @@ const configPath = './ui_config/server.conf.ini';
 // Default configuration
 const defaultConfig = {
 	paths: {
-		dopplerScriptsFolder: '~/.doppler/doppler_scripts',
-		logsFolder: '~/.doppler/doppler_logs',
-		scriptsFolder: '~/.doppler/scripts',
-		dopplerBinaryPath: '~/.doppler/doppler',
-		currentWorkingDirectory: '~/.doppler'
+		dopplerScriptsFolder: '$DEST_FOLDER/doppler_scripts',
+		logsFolder: '$DEST_FOLDER/doppler_logs',
+		scriptsFolder: '$DEST_FOLDER/scripts',
+		dopplerBinaryPath: '$DEST_FOLDER/doppler',
+		currentWorkingDirectory: '$DEST_FOLDER'
 	}
 };
+
+fs.writeFileSync('package.json', '');
 
 // Save the updated config
 const directory = path.dirname(configPath);

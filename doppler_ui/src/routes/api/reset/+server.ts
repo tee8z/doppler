@@ -7,10 +7,10 @@ import { resolve } from 'path';
 import { v7 } from 'uuid';
 
 // Read and parse the INI config file
-const configPath = path.join(process.cwd(), 'ui_config/server.conf.ini');
-const config = parse(fs.readFileSync(configPath, 'utf-8'));
+const configPath = process.env.UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
+const config = parse(fs.readFileSync(`${configPath}/server.conf.ini`, 'utf-8'));
 
-const LOGS_FOLDER = path.join(process.cwd(), config.paths.logsFolder);
+const LOGS_FOLDER = config.paths.logsFolder;
 
 interface ResetPayload {
 	id?: string;
@@ -49,7 +49,7 @@ export const POST: RequestHandler = async function (event) {
 			operationId = v7();
 			logFilename = path.join(LOGS_FOLDER, `reset_${operationId}.log`);
 		}
-		await deleteFile('ui_config/info.conf.ini');
+		await deleteFile(`${configPath}/info.conf.ini`);
 
 		const resetScript = `${config.paths.scriptsFolder}/reset.sh`;
 		console.log(resetScript);

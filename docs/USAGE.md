@@ -14,10 +14,10 @@ doppler -f "examples/doppler_files/many_lnd_channels/only_setup_network.doppler"
 ### How to use the UI (Script builder and node visualizer)
 
 ```
-~/.doppler/doppler_ui
+cd $HOME/.doppler/<release tag> && node ./build
 ```
 
-App will be running on `localhost:5173`
+App will be running on `localhost:3000`
 
 
 ### Example on how to hook up to remote LND nodes
@@ -76,7 +76,7 @@ curl --cacert /path/to/repo/doppler/data/lnd1/.lnd/tls.cert  --header "$MACAROON
 run the doppler with the following flag `-a` in one of the files that sets up the network
 
 ```
-cargo run --bin doppler -- -f "doppler_files/only_setup_network.doppler" -l "debug" -d
+doppler -f "doppler_files/only_setup_network.doppler" -l "debug" -d
 ```
 
 once the cluster as gotten past the `up` command, you'll see a new file which contains the aliases and can be run like below

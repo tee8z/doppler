@@ -10,8 +10,8 @@ Additionally, this DSL can be used against a cluster of remote LND nodes (more i
 - Requires:
   - docker-compose:
     - https://docs.docker.com/compose/install/#scenario-one-install-docker-desktop
-  - bun:
-    - https://bun.sh/docs/installation
+  - nvm:
+    - https://github.com/nvm-sh/nvm
 
 - Install via
 ```
@@ -19,12 +19,15 @@ Additionally, this DSL can be used against a cluster of remote LND nodes (more i
   chmod +x doppler_installer.sh
   doppler_installer.sh <release tag to install>
 ```
-- Run UI
+#### After install it can be run via:
+- Run with UI
 ```
-  cd ~/.doppler/build && bun install
-  bun run ./index.js
+  cd $HOME/.doppler/<release tag> && node ./build
 ```
-
+- Run as cli
+```
+  cd $HOME/.doppler && doppler -h
+```
 - More information on how to use this tool can be found here: [USAGE.md](./docs/USAGE.md)
 
 #### Supports:
