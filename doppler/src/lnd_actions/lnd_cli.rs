@@ -411,6 +411,7 @@ impl LndCli {
         ];
 
         // Used for amp payments
+        #[allow(unused_assignments)]
         let mut subcommand = String::from("");
         if let Some(command) = node_command.subcommand.clone() {
             subcommand = command;

@@ -22,12 +22,12 @@ pub struct Cln {
     pub container_name: String,
     pub name: String,
     pub pubkey: Option<String>,
+    pub rune: Option<String>,
     pub alias: String,
     pub grpc_port: String,
     pub p2p_port: String,
     pub rpc_server: String,
     pub rest_port: String,
-    pub macaroon_path: String,
     pub server_url: String,
     pub path_vol: String,
     pub bitcoind_node_container_name: String,
@@ -49,6 +49,12 @@ impl Cln {
         node_command: &NodeCommand,
     ) -> Result<String, Error> {
         get_peers_short_channel_id(self, options, node_command, "source")
+    }
+    
+    pub fn add_rune(&mut self, options: &Options) -> Result<(), Error> {
+        let rune = get_rune(self, options)?;
+        self.rune = Some(rune);
+        Ok(())
     }
 }
 
@@ -178,7 +184,7 @@ pub fn build_cln(
     // Passing these args on the command line is unavoidable due to how the docker image is setup
     let command = Command::Simple(
         format!(
-            "--network={} --lightning-dir=/home/clightning",
+            "--network={} --lightning-dir=/home/clightning --developer",
             options.network
         )
         .to_string(),
@@ -199,10 +205,7 @@ pub fn build_cln(
         ]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         command: Some(command),
-        volumes: Volumes::Simple(vec![
-            format!("{}:/home/clightning:rw", cln_conf.path_vol),
-            format!("{}/certs:/opt/c-lightning-rest/certs:rw", cln_conf.path_vol),
-        ]),
+        volumes: Volumes::Simple(vec![format!("{}:/home/clightning:rw", cln_conf.path_vol)]),
         networks: Networks::Simple(vec![NETWORK.to_owned()]),
         ..Default::default()
     };
@@ -211,11 +214,8 @@ pub fn build_cln(
         .insert(cln_conf.container_name.clone(), Some(cln));
     cln_conf.server_url = format!("https://localhost:{}", rest_port.to_string());
     info!(
-        "connect to {} via rest using {} with access macaroons at {} and via rpc using localhost:{} ",
-        cln_conf.container_name,
-        cln_conf.server_url,
-        cln_conf.macaroon_path,
-        grpc_port,
+        "connect to {} via rest using {} and via rpc using localhost:{} ",
+        cln_conf.container_name, cln_conf.server_url, grpc_port,
     );
     cln_conf.grpc_port = grpc_port.to_string();
     cln_conf.rest_port = rest_port.to_string();
@@ -275,7 +275,7 @@ pub fn build_and_save_config(
         pubkey: None,
         server_url: format!("http://{}:10000", container_name),
         path_vol: full_path.clone(),
-        macaroon_path: format!("{}/certs/access.macaroon", full_path),
+        rune: None,
         rpc_server: format!("{}:10000", container_name),
         grpc_port: "10000".to_owned(),
         p2p_port: "9735".to_owned(),
@@ -378,13 +378,13 @@ fn load_config(
         alias: name.to_owned(),
         container_name: container_name.to_owned(),
         pubkey: None,
+        rune: None,
         rpc_server: format!("{}:10000", container_name),
         server_url: format!("https://{}:8080", container_name),
         path_vol: full_path.to_owned(),
         grpc_port: "10000".to_owned(),
         p2p_port: "9735".to_owned(),
         rest_port: "8080".to_owned(),
-        macaroon_path: format!("{}/certs/access.macaroon", full_path),
         bitcoind_node_container_name: bitcoind_service,
         network,
     })
@@ -797,4 +797,26 @@ fn get_rhash(node: &Cln, options: &Options) -> Result<String, Error> {
         error!("no r_hash found");
     }
     Ok(found_rhash.unwrap())
+}
+
+fn get_rune(node: &Cln, options: &Options) -> Result<String, Error> {
+    let network: String = format!("--network={}", options.network);
+    let compose_path = options.compose_path.as_ref().unwrap();
+
+    let commands = vec![
+        "-f",
+        compose_path,
+        "exec",
+        node.get_container_name(),
+        "lightning-cli",
+        "--lightning-dir=/home/clightning",
+        &network,
+        "createrune",
+    ];
+    let output = run_command(options, "createrune".to_owned(), commands)?;
+    let found_rune: Option<String> = node.get_property("rune", output);
+    if found_rune.is_none() {
+        error!("no rune found");
+    }
+    Ok(found_rune.unwrap())
 }

@@ -362,6 +362,7 @@ impl Options {
 
         for coreln in self.cln_nodes.iter_mut() {
             coreln.add_pubkey(&options_clone);
+            coreln.add_rune(&options_clone)?;
         }
         Ok(())
     }

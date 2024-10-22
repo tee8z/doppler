@@ -4,9 +4,10 @@ use crate::{
 };
 use anyhow::{anyhow, Error};
 use log::{debug, error, info};
-use std::fs::{File, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::os::unix::prelude::PermissionsExt;
+use std::path::Path;
 use std::process::{Command, Output};
 use std::str::from_utf8;
 use std::thread;
@@ -24,7 +25,9 @@ pub fn load_options_from_external_nodes(
     options.load_lnds()?;
     debug!("loaded lnds");
     let network = options.external_nodes.clone().unwrap()[0].network.clone();
+
     create_ui_config_files(&options, &network)?;
+
     Ok(())
 }
 
@@ -94,8 +97,6 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
     debug!("saved cluster config");
 
     start_docker_compose(options)?;
-    create_ui_config_files(options, &options.network)?;
-
     debug!("started cluster");
     //simple wait for docker-compose to spin up
     thread::sleep(Duration::from_secs(6));
@@ -104,8 +105,10 @@ pub fn run_cluster(options: &mut Options, compose_path: &str) -> Result<(), Erro
         mine_initial_blocks(options)?;
     }
     setup_l2_nodes(options)?;
+    create_ui_config_files(options, &options.network)
+        .map_err(|e| anyhow!("error creating ui config: {}", e))?;
     if options.aliases && options.external_nodes.is_none() {
-        update_bash_alias(options)?;
+        update_bash_alias(options).map_err(|e| anyhow!("error creating alias: {}", e))?;
     }
 
     Ok(())
@@ -230,6 +233,9 @@ fn update_bash_alias(options: &Options) -> Result<(), Error> {
     });
     let script_path = "scripts/aliases.sh";
     let full_path = get_absolute_path(script_path)?;
+    if let Some(parent) = Path::new(&full_path).parent() {
+        fs::create_dir_all(parent)?;
+    }
     let mut file: File = OpenOptions::new()
         .read(true)
         .write(true)
@@ -255,7 +261,7 @@ pub fn update_bash_alias_external(options: &Options) -> Result<(), Error> {
 {name}() {{
      lncli --network={network} --macaroonpath={macaroon_path} --rpcserver={rpcserver} --tlscertpath="" "$@"
 }}
-"#, 
+"#,
         name=lnd.node_alias, network=lnd.network, macaroon_path=lnd.macaroon_path, rpcserver=lnd.api_endpoint));
         script_content.push('\n');
     });

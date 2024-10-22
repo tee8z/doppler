@@ -1,0 +1,6 @@
+/target
+/data
+/scripts
+doppler.db
+doppler-cluster.yaml
+/ui_config

@@ -6,6 +6,7 @@ import * as path from 'path';
 
 export interface ConnectionConfig {
 	macaroon: string;
+	rune: string;
 	password: string;
 	type: string;
 	host: string;
@@ -55,16 +56,13 @@ export const GET: RequestHandler = async function () {
 					macaroon: readMacaroon,
 					host: sectionConfig.API_ENDPOINT,
 					type: sectionConfig.TYPE,
+					rune: '',
 					password: ''
 				};
 			} else if (sectionConfig.TYPE === 'coreln') {
-				const macaroonBuffer = safeReadFileSync(sectionConfig.ACCESS_MACAROON_PATH);
-				if (macaroonBuffer === null) {
-					continue;
-				}
-				const readMacaroon = Buffer.from(macaroonBuffer).toString('hex');
 				connections[section] = {
-					macaroon: readMacaroon,
+					macaroon: '',
+					rune: sectionConfig.RUNE,
 					host: sectionConfig.API_ENDPOINT,
 					type: sectionConfig.TYPE,
 					password: ''
@@ -72,6 +70,7 @@ export const GET: RequestHandler = async function () {
 			} else if (sectionConfig.TYPE === 'eclair') {
 				connections[section] = {
 					macaroon: '',
+					rune: '',
 					host: sectionConfig.API_ENDPOINT,
 					password: sectionConfig.API_PASSWORD,
 					type: sectionConfig.TYPE
