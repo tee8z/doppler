@@ -68,11 +68,8 @@
 			} else if (connectionConfig.type === 'coreln') {
 				const requests = new CorelnRequests(connectionConfig.host, connectionConfig.rune);
 				const channels = await requests.fetchChannels();
-				console.log(channels);
 				const balance = await requests.fetchBalance();
-				console.log(balance);
 				const info = await requests.fetchInfo();
-				console.log(info);
 				if (!info['error'] && info && info.id && key) {
 					nodeConnections.push({ pubkey: info.id, alias: key, connection: requests });
 				}
