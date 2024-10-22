@@ -1,3 +1,7 @@
+<div style="text-align: center;">
+<img src="logo.png" alt="Doppler Radar with Lightning Bolts" width="300"/>
+</div>
+
 ## Doppler (A Lightning Domain-Specific Language)
 
 - GOAL: Create a DSL for Lightning that enables users to easily experiment with and test against various Lightning implementations. Whether it's for discovery testing, inclusion in a comprehensive integration testing suite, or simply investigating the interactions between different components. Given the potential occurrence of intriguing and unique issues across different implementations of Lightning, this project aims to simplify the lives of application developers reliant on the network.
@@ -6,29 +10,34 @@ The DSL should empower developers to compose a concise script that configures an
 
 Additionally, this DSL can be used against a cluster of remote LND nodes (more implementations will follow) to generate activity across them. This could be payments or channel related activity at the moment, but more work can be done to further expand this to include starting and stopping the remote nodes as well as funding them from a configured faucet. Still would not recommend running these doppler files on a mainnet cluster of nodes, but we wont stop you from being reckless :wink:
 
-#### How to use:
-- Requires:
+### Installing
+##### Requires:
   - docker-compose:
     - https://docs.docker.com/compose/install/#scenario-one-install-docker-desktop
   - nvm:
     - https://github.com/nvm-sh/nvm
 
-- Install via
-```
+Download installing script
+```sh
   curl --proto '=https' --tlsv1.2 -LsSf "https://raw.githubusercontent.com/tee8z/doppler/refs/heads/master/doppler-installer.sh" > doppler_installer.sh
+```  
+```sh
   chmod +x doppler_installer.sh
-  doppler_installer.sh <release tag to install>
 ```
-#### After install it can be run via:
-- Run with UI
+Execute installer with a [release tag](https://github.com/tee8z/doppler/releases) 
+```sh
+  ./doppler_installer.sh <release tag to install>
 ```
+### Running after install:
+To run with UI (navigate to `0.0.0.0:3000` in your browser to view the UI)
+```sh
   cd $HOME/.doppler/<release tag> && node ./build
 ```
-- Run as cli
-```
+To run as cli
+```sh
   cd $HOME/.doppler && doppler -h
 ```
-- More information on how to use this tool can be found here: [USAGE.md](./docs/USAGE.md)
+More information on how to use this tool can be found here: [USAGE.md](./docs/USAGE.md)
 
 #### Supports:
 - [x] creating a cluster of bitcoind nodes
