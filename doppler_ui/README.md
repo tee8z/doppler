@@ -5,7 +5,7 @@
   cd /.doppler/<release tag> && node ./build
 ```
 
-- Run from "./doppler/doppler_ui" in the git repo (not recommend for non-developers):
+- Run from "./doppler/doppler_ui" in the git repo (not recommended for non-developers):
 ```
 UI_CONFIG_PATH=./ui_config npm run dev
 ```
