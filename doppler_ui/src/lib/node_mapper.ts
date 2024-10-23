@@ -7,6 +7,7 @@ interface Node {
 
 interface ChannelData {
 	type: string;
+	alias?: string;
 	channel: any;
 	perspective: 'source' | 'target';
 }
@@ -160,59 +161,136 @@ export class ChannelMapper {
 		}
 	}
 
+	private getNodeAlias(pubkey: string): string {
+		// Check our node map first
+		const node = this.nodeMap.get(pubkey);
+		if (node?.alias) {
+			return node.alias;
+		}
+
+		// Check node connections
+		const connection = this.nodeConnections.find((n) => n.pubkey === pubkey);
+		if (connection?.alias) {
+			return connection.alias;
+		}
+
+		// Fallback to pubkey if no alias found
+		return pubkey;
+	}
+
+	private getChannelPoint(type: string, channel: any): string | null {
+		switch (type) {
+			case 'lnd':
+				return channel.channel_point;
+			case 'coreln': {
+				// If we have funding_txid and funding_outnum, use those
+				if (channel.funding_txid && channel.funding_outnum !== undefined) {
+					return `${channel.funding_txid}:${channel.funding_outnum}`;
+				}
+				// Fallback to other potential formats
+				if (channel.channel_point) {
+					return channel.channel_point;
+				}
+				return null;
+			}
+			case 'eclair': {
+				// Get outPoint from active commitments if available
+				const outPoint = channel.data?.commitments?.active[0]?.fundingTx?.outPoint;
+				if (outPoint) {
+					return outPoint;
+				}
+				// If no outPoint, try to construct from channel ID
+				// Note: This is a fallback that might need adjustment based on your needs
+				return null;
+			}
+			default:
+				return null;
+		}
+	}
+
+	private getChannelId(type: string, channel: any): string | null {
+		// First try to get the consistent channel point
+		const channelPoint = this.getChannelPoint(type, channel);
+		if (channelPoint) {
+			return channelPoint;
+		}
+
+		// If we can't get channel point, fall back to channel_id
+		// but we need to ensure it's consistent across implementations
+		switch (type) {
+			case 'eclair':
+				return channel.data?.commitments?.params?.channelId || null;
+			case 'coreln':
+				return channel.channel_id || null;
+			default:
+				return null;
+		}
+	}
+
 	private mapChannels(type: string, nodeKey: string, nodeData: any) {
 		const currentPubkey = this.getNodeId(nodeData);
 		if (!currentPubkey) return;
-
 		const channels = this.getChannels(type, nodeData);
 		if (!channels) return;
 
 		channels.forEach((channel: any) => {
+			// Get both channel point and channel ID
 			const channelPoint = this.getChannelPoint(type, channel);
-			if (!channelPoint) return;
+			const channelId = this.getChannelId(type, channel);
+
+			// If we can't identify the channel through either method, skip it
+			if (!channelPoint && !channelId) return;
 
 			const remotePubkey = this.getRemotePubkey(type, channel);
 			if (!remotePubkey) return;
 
+			// Create a consistent identifier that works across implementations
+			const sortedPubkeys = [currentPubkey, remotePubkey].sort();
+			const consistentChannelId = channelPoint
+				? `${channelPoint}:${sortedPubkeys[0]}:${sortedPubkeys[1]}`
+				: `${channelId}:${sortedPubkeys[0]}:${sortedPubkeys[1]}`;
+
 			// Add remote node if we haven't seen it before
 			this.addNode(remotePubkey, remotePubkey);
 
+			// Get alias
+			const currentAlias = this.getNodeAlias(currentPubkey);
+
 			// Determine channel properties
 			const isInitiator = this.isChannelInitiator(type, channel);
+			const isActive = this.isChannelActive(type, channel);
 
 			// Create data entry for this node's view of the channel
 			const channelData: ChannelData = {
 				type,
+				alias: currentAlias,
 				channel,
 				perspective: isInitiator ? 'source' : 'target'
 			};
 
-			if (!this.channelMap.has(channelPoint)) {
+			if (!this.channelMap.has(consistentChannelId)) {
 				// Creating new channel
 				const channelInfo: Channel = {
 					source: isInitiator ? currentPubkey : remotePubkey,
 					target: isInitiator ? remotePubkey : currentPubkey,
-					channel_id: channelPoint,
+					channel_id: channelPoint || channelId || '', // Prefer channel point if available
 					capacity: this.getChannelCapacity(type, channel),
 					local_balance: this.getLocalBalance(type, channel),
 					remote_balance: this.getRemoteBalance(type, channel),
 					initiator: isInitiator,
-					active: this.isChannelActive(type, channel),
-					data: [channelData] // Start with this node's view
+					active: isActive,
+					data: [channelData]
 				};
-				this.channelMap.set(channelPoint, channelInfo);
+				this.channelMap.set(consistentChannelId, channelInfo);
 				this.edges.push(channelInfo);
-				this.uniqueChannels.add(channelPoint);
+				this.uniqueChannels.add(consistentChannelId);
 			} else {
-				// Channel exists, add this node's view if we don't have it
-				const existingChannel = this.channelMap.get(channelPoint)!;
+				// Channel exists, update with this node's perspective
+				const existingChannel = this.channelMap.get(consistentChannelId)!;
 
 				// Check if we already have data from this node
 				const hasNodeData = existingChannel.data.some(
-					(d) =>
-						d.type === type &&
-						((d.perspective === 'source' && existingChannel.source === currentPubkey) ||
-							(d.perspective === 'target' && existingChannel.target === currentPubkey))
+					(d) => d.type === type && d.alias === currentAlias
 				);
 
 				// Only add if we don't have this node's view yet
@@ -220,12 +298,14 @@ export class ChannelMapper {
 					existingChannel.data.push(channelData);
 				}
 
-				// Update channel properties if we're the initiator
+				// Merge channel properties
+				existingChannel.active = existingChannel.active && isActive;
+
+				// Update balances from initiator's perspective
 				if (isInitiator) {
 					existingChannel.capacity = this.getChannelCapacity(type, channel);
 					existingChannel.local_balance = this.getLocalBalance(type, channel);
 					existingChannel.remote_balance = this.getRemoteBalance(type, channel);
-					existingChannel.active = this.isChannelActive(type, channel);
 				}
 			}
 		});
