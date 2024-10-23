@@ -87,6 +87,22 @@
 	const fetchData = async (cur_connections: Connections) => {
 		if (!cur_connections || Object.keys(cur_connections).length === 0) {
 			console.log('No connections provided. Aborting fetchData.');
+			// Reset all data states
+			nodeConnections = [];
+			nodes.set([]);
+			edges.set([]);
+			nodeInfo = null;
+			nodeBalance = null;
+			nodeType = null;
+			channelInfo = null;
+			currentNodeId = null;
+			info = null;
+			balance = null;
+			type = null;
+			jsonData = null;
+			currentData = null;
+			dataType = null;
+			dataPromise = null;
 			return;
 		}
 		let nodeData: Nodes = {};

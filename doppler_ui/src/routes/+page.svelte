@@ -109,3 +109,20 @@
 		</div>
 	</section>
 </main>
+
+<style>
+	main {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+	}
+
+	:global(.split-container) {
+		height: 100% !important;
+	}
+
+	:global(.left-panel),
+	:global(.right-panel) {
+		min-height: 0;
+	}
+</style>

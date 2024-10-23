@@ -235,11 +235,16 @@
 				'Remote balance:',
 				edge.remote_balance,
 				'Local balance:',
-				edge.local_balance
+				edge.local_balance,
+				'Active:',
+				edge.active
 			);
-			cy.getElementById(edge.channel_id).data(edge);
+			const cyEdge = cy.getElementById(edge.channel_id);
+			// Update both the edge data and its color
+			cyEdge.data(edge);
+			cyEdge.style('line-color', edge.active ? '#b3b3cc' : '#ffa8a8');
+			cyEdge.style('target-arrow-color', edge.active ? '#b3b3cc' : '#ffa8a8');
 		});
-
 		prevNodes = nodes;
 		prevEdges = edges;
 
