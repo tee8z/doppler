@@ -11,6 +11,8 @@
 			<dd>{info.alias}</dd>
 			<dt>Version</dt>
 			<dd>{info.version}</dd>
+			<dt>Balance</dt>
+			<dd><pre>{info.balance}</pre></dd>
 		</dl>
 	</div>
 {/if}

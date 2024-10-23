@@ -6,6 +6,7 @@
 	import { edges, nodes } from './Graph.svelte';
 	import Info from './Info.svelte';
 	import Button from './Button.svelte';
+	import ResizablePanel from './ResizablePanel.svelte';
 	import type { ConnectionConfig, Connections } from '$lib/connections';
 	import { getConnections } from '$lib/connections';
 	import type { NodeRequests, Nodes } from '$lib/nodes';
@@ -285,64 +286,66 @@
 	{#await dataPromise}
 		<p>Loading graph...</p>
 	{:then nodeData}
-		<div class="info-panel">
-			<h1>Visualize</h1>
-			<div>
-				<span>Polling</span>
-				<Button on:click={start}>Start</Button>
-				<Button on:click={stop}>Stop</Button>
-				<Button on:click={() => (showConnections = !showConnections)}>
-					{showConnections ? 'Hide' : 'Show'} Connections
-				</Button>
-				<label class="switch">
-					<input
-						type="checkbox"
-						id="pollingToggle"
-						bind:checked={isPolling}
-						on:change={togglePolling}
-					/>
-					<span class="slider round"> </span></label
-				>
+		<ResizablePanel defaultWidth={400}>
+			<div slot="left" class="info-panel">
+				<h1>Visualize</h1>
+				<div>
+					<span>Polling</span>
+					<Button on:click={start}>Start</Button>
+					<Button on:click={stop}>Stop</Button>
+					<Button on:click={() => (showConnections = !showConnections)}>
+						{showConnections ? 'Hide' : 'Show'} Connections
+					</Button>
+					<label class="switch">
+						<input
+							type="checkbox"
+							id="pollingToggle"
+							bind:checked={isPolling}
+							on:change={togglePolling}
+						/>
+						<span class="slider round"> </span></label
+					>
+				</div>
+				{#if showConnections && connections}
+					<div class="connections-container">
+						<h2>Connection Details</h2>
+						<pre class="connections">{prettyPrintConnections(connections)}</pre>
+					</div>
+				{/if}
+				<Info {info} />
+
+				{#if dataType === 'channel'}
+					<div class="view-selector">
+						<Select
+							bind:value={selectedView}
+							options={[
+								{ value: 'all', label: 'View All' },
+								{ value: 'source', label: 'Source View' },
+								{ value: 'target', label: 'Target View' }
+							]}
+						/>
+					</div>
+				{/if}
+
+				<div>
+					{#if nodeData}
+						{#each Object.keys(nodeData) as key}
+							<Button on:click={() => setNode(nodeData[key])}>{key}</Button>
+						{/each}
+					{/if}
+				</div>
+				<div>
+					{#if jsonData}
+						<pre class="detail">{prettyPrintJson(jsonData)}</pre>
+					{/if}
+				</div>
 			</div>
-			{#if showConnections && connections}
-				<div class="connections-container">
-					<h2>Connection Details</h2>
-					<pre class="connections">{prettyPrintConnections(connections)}</pre>
-				</div>
-			{/if}
-			<Info {info} />
-
-			{#if dataType === 'channel'}
-				<div class="view-selector">
-					<Select
-						bind:value={selectedView}
-						options={[
-							{ value: 'all', label: 'View All' },
-							{ value: 'source', label: 'Source View' },
-							{ value: 'target', label: 'Target View' }
-						]}
-					/>
-				</div>
-			{/if}
-
-			<div>
-				{#if nodeData}
-					{#each Object.keys(nodeData) as key}
-						<Button on:click={() => setNode(nodeData[key])}>{key}</Button>
-					{/each}
+			<div slot="right" class="graph-container">
+				{#if $nodes && $nodes.length > 0}
+					<Graph on:dataEvent={handleClickData} />
 				{/if}
 			</div>
-			<div>
-				{#if jsonData}
-					<pre class="detail">{prettyPrintJson(jsonData)}</pre>
-				{/if}
-			</div>
-		</div>
-		<div class="graph-container">
-			{#if $nodes && $nodes.length > 0}
-				<Graph on:dataEvent={handleClickData} />
-			{/if}
-		</div>
+		</ResizablePanel>
 	{:catch error}
 		<p>Error: {error.message}</p>
 	{/await}
@@ -357,7 +360,6 @@
 	.info-panel {
 		flex: 0 0 30%;
 		max-width: 400px;
-		background: rgba(0, 151, 19, 0.1);
 		padding: 10px;
 		font-size: large;
 		overflow-y: auto;
