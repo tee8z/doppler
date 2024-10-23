@@ -99,12 +99,12 @@
 							'control-point-distances': function (ele: any) {
 								const parallelEdges = ele.parallelEdges();
 								const index = parallelEdges.indexOf(ele);
-								// Add default curve value for single edges
+
 								const baseOffset = 80;
 								if (parallelEdges.length === 1) {
 									return [baseOffset]; // Default curve for single edges
 								}
-								// Original logic for parallel edges
+								// Logic for parallel edges
 								return [baseOffset * (index - (parallelEdges.length - 1) / 2)];
 							},
 							'control-point-weights': [0.5],
