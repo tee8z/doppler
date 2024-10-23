@@ -53,7 +53,9 @@
 		<li>
 			<button
 				type="button"
-				class={isFolder(item) ? 'folder' : isDopplerFile(item) ? 'doppler-file' : 'file'}
+				class={`tree-item ${
+					isFolder(item) ? 'folder' : isDopplerFile(item) ? 'doppler-file' : 'file'
+				}`}
 				on:click={() => (isFolder(item) ? toggleFolder(item) : handleSelect(item))}
 				on:keydown={(event) => handleKeyDown(event, item)}
 				aria-expanded={isFolder(item) ? item.expanded : undefined}
@@ -75,36 +77,58 @@
 	{/each}
 </ul>
 
-<style>
+<style lang="postcss">
 	.tree-list {
-		list-style-type: none;
-		margin: 0;
-		padding: 0;
+		@apply list-none m-0 p-0;
 	}
-	.folder,
-	.file,
+
+	.tree-item {
+		@apply w-full cursor-pointer p-2 flex items-center text-left;
+		@apply bg-transparent border-none rounded transition-colors;
+		@apply text-gray-700 dark:text-gray-100;
+		@apply hover:bg-green-100 dark:hover:bg-green-900/30;
+		@apply focus:outline-none focus:ring-2 focus:ring-green-400 dark:focus:ring-green-500;
+	}
+
+	.folder {
+		@apply font-medium;
+		@apply text-gray-900 dark:text-blue-200;
+	}
+
 	.doppler-file {
-		cursor: pointer;
-		padding: 5px;
-		display: flex;
-		align-items: center;
-		background: none;
-		border: none;
-		width: 100%;
-		text-align: left;
+		@apply text-green-600 dark:text-green-400;
+		@apply hover:text-green-700 dark:hover:text-green-300;
 	}
-	.folder:hover,
-	.file:hover,
-	.doppler-file:hover {
-		background-color: #f0f0f0;
+
+	.file {
+		@apply text-gray-600 dark:text-gray-300;
 	}
+
 	.icon {
-		margin-right: 5px;
+		@apply mr-2 text-lg opacity-90 dark:opacity-100;
 	}
+
 	.name {
-		flex: 1;
+		@apply flex-1 truncate;
 	}
-	.doppler-file {
-		color: #0066cc;
+
+	/* Expanded folder state */
+	.folder[aria-expanded='true'] {
+		@apply bg-green-50 dark:bg-green-900/20;
+		@apply text-green-800 dark:text-green-100;
+	}
+
+	/* Active state */
+	.tree-item:active {
+		@apply bg-green-200 dark:bg-green-800/40;
+	}
+
+	/* Hover states */
+	.tree-item:hover .name {
+		@apply text-green-700 dark:text-green-100;
+	}
+
+	.folder:hover {
+		@apply text-green-800 dark:text-green-100;
 	}
 </style>

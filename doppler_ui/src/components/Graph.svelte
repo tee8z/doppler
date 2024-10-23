@@ -95,17 +95,42 @@
 							'line-color': 'data(color)',
 							'target-arrow-color': 'data(color)',
 							'target-arrow-shape': 'triangle',
-							'curve-style': 'bezier',
+							'curve-style': 'unbundled-bezier',
+							'control-point-distances': function (ele: any) {
+								const parallelEdges = ele.parallelEdges();
+								const index = parallelEdges.indexOf(ele);
+
+								const baseOffset = 80;
+								if (parallelEdges.length === 1) {
+									return [baseOffset]; // Default curve for single edges
+								}
+								// Logic for parallel edges
+								return [baseOffset * (index - (parallelEdges.length - 1) / 2)];
+							},
+							'control-point-weights': [0.5],
+							'edge-distances': 'intersection',
 							'text-rotation': 'autorotate',
 							'text-margin-y': -10,
 							'font-size': '16px',
 							'text-outline-width': 2,
 							'text-background-opacity': 0,
-							label: (ele: any) => {
-								const remote = ele.data('remote_balance');
-								const local = ele.data('local_balance');
-								return `R: ${remote} L: ${local}`;
-							},
+							// Source label (Remote balance)
+							'source-label': (ele: any) => `${ele.data('remote_balance')}`,
+							'source-text-offset': 30,
+							'source-text-margin-y': -10,
+							'source-text-background-opacity': 1,
+							'source-text-background-color': '#1a1a1a',
+							'source-text-color': '#ffffff',
+							'source-text-background-padding': 5,
+
+							// Target label (Local balance)
+							'target-label': (ele: any) => `${ele.data('local_balance')}`,
+							'target-text-offset': 30,
+							'target-text-margin-y': -10,
+							'target-text-background-opacity': 1,
+							'target-text-background-color': '#1a1a1a',
+							'target-text-color': '#ffffff',
+							'target-text-background-padding': 5,
 							'text-wrap': 'wrap',
 							color: 'white',
 							'text-outline-color': '#FF9900'
@@ -115,16 +140,31 @@
 				layout: {
 					name: 'cose-bilkent',
 					animate: false,
-					randomize: false,
-					nodeDimensionsIncludeLabels: false,
-					padding: 50,
+					randomize: true,
+					nodeDimensionsIncludeLabels: true,
+					padding: 100,
 					fit: true,
-					componentSpacing: 200,
-					nodeRepulsion: 8000,
-					idealEdgeLength: 200
+					componentSpacing: 300,
+					nodeRepulsion: 12000,
+					idealEdgeLength: 300,
+					nodeOverlap: 20,
+					preventOverlap: true,
+					minNodeSpacing: 100,
+					spacingFator: 1.6,
+					// Add these parameters:
+					initialEnergyOnIncremental: 0.5,
+					gravity: 0.25,
+					numIter: 2500
 				},
 				zoomingEnabled: false,
 				userPanningEnabled: true
+			});
+
+			cy.on('layoutstop', function () {
+				cy.edges().forEach((edge: any) => {
+					// Force edge style update
+					edge.style('control-point-distances', edge.style('control-point-distances'));
+				});
 			});
 
 			console.log('Cytoscape initialized successfully');
@@ -290,7 +330,7 @@
 				channel_id: data.channel_id,
 				source: data.source,
 				type: 'channel',
-				channel: data.channel
+				channel: data.data
 			};
 			dispatch('dataEvent', identifiers);
 		} else {

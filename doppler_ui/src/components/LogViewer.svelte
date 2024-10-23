@@ -68,8 +68,8 @@
 
 <div class="log-viewer">
 	<label class="auto-scroll-label">
-		<input type="checkbox" bind:checked={autoScroll} />
-		Auto-scroll
+		<input type="checkbox" bind:checked={autoScroll} class="checkbox" />
+		<span class="label-text">Auto-scroll</span>
 	</label>
 	<div bind:this={logContainer} class="log-container">
 		{#each $logs as log}
@@ -80,58 +80,81 @@
 	</div>
 </div>
 
-<style>
+<style lang="postcss">
 	.log-viewer {
-		display: flex;
-		flex-direction: column;
-		height: 100%;
+		@apply flex flex-col h-full;
 	}
+
 	.auto-scroll-label {
-		font-size: 0.8rem;
-		margin-bottom: 0.5rem;
-		display: flex;
-		align-items: center;
+		@apply text-sm mb-2 flex items-center gap-2;
+		@apply text-gray-700 dark:text-gray-300;
 	}
+
+	.checkbox {
+		@apply h-4 w-4 rounded border-gray-300 dark:border-gray-600;
+		@apply text-green-600 dark:text-green-500;
+		@apply focus:ring-green-500 dark:focus:ring-green-400;
+		@apply bg-white dark:bg-gray-700;
+	}
+
+	.label-text {
+		@apply select-none;
+	}
+
 	.log-container {
-		flex-grow: 1;
-		min-height: 500px;
-		max-height: 80vh;
-		overflow-y: auto;
-		border: 1px solid #ccc;
-		padding: 10px;
-		font-size: 0.9rem;
-		line-height: 1.4;
-		background-color: #1e1e1e;
-		color: #d4d4d4;
+		@apply flex-grow min-h-[500px] max-h-[80vh] overflow-y-auto;
+		@apply border border-gray-300 dark:border-gray-600;
+		@apply p-2.5 text-sm leading-relaxed;
+		/* Keep black background for terminal feel in both modes */
+		@apply bg-black;
+		@apply font-mono;
+		/* Add a subtle shadow to make it feel inset */
+		@apply shadow-inner;
 	}
+
 	.log-container p {
-		margin: 0 0 0.5em 0;
-		white-space: pre-wrap;
-		word-break: break-all;
+		@apply m-0 mb-1 whitespace-pre-wrap break-all;
 	}
+
+	/* Log level styles */
 	.log-container :global(.log-level) {
-		font-weight: bold;
+		@apply font-bold;
 	}
+
 	.log-container :global(.log-content) {
-		font-weight: normal;
-		color: white;
+		@apply font-normal text-gray-200;
 	}
+
+	/* Terminal-style log levels - same in both modes */
 	.log-container :global(.trace) {
-		color: white;
+		@apply text-gray-400;
 	}
+
 	.log-container :global(.debug) {
-		color: cyan;
+		@apply text-cyan-400;
 	}
+
 	.log-container :global(.info) {
-		color: green;
+		@apply text-green-400;
 	}
+
 	.log-container :global(.warn) {
-		color: yellow;
+		@apply text-yellow-400;
 	}
+
 	.log-container :global(.error) {
-		color: magenta;
+		@apply text-rose-400;
 	}
+
 	.log-container :global(.default) {
-		color: white;
+		@apply text-gray-200;
+	}
+
+	/* Add a subtle terminal-like glow effect */
+	.log-container :global(.debug),
+	.log-container :global(.info),
+	.log-container :global(.warn),
+	.log-container :global(.error) {
+		text-shadow: 0 0 2px rgba(255, 255, 255, 0.2);
 	}
 </style>

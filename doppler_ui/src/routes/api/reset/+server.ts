@@ -64,6 +64,12 @@ export const POST: RequestHandler = async function (event) {
 			return json({ error: 'Failed to spawn reset process' }, { status: 500 });
 		}
 
+		[LOGS_FOLDER].forEach((folder) => {
+			if (!fs.existsSync(folder)) {
+				fs.mkdirSync(folder, { recursive: true });
+			}
+		});
+
 		const logStream = fs.createWriteStream(logFilename, { flags: 'a' });
 		process.unref();
 

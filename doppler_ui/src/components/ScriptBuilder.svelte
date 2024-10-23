@@ -171,8 +171,8 @@
 	onDestroy(unsubscribe);
 </script>
 
-<main>
-	<h1>Doppler Script Editor</h1>
+<main class="dark:bg-gray-900 dark:text-white">
+	<h1 class="text-green-600 dark:text-green-400">Doppler Script Editor</h1>
 	<div class="editor-layout">
 		<div class="script-editor">
 			<div class="editor-nav">
@@ -181,11 +181,13 @@
 						bind:value={scriptPath}
 						placeholder="Enter script folder path (e.g., folder/subfolder)"
 						type="text"
+						class="input-field"
 					/>
 					<input
 						bind:value={scriptName}
 						placeholder="Enter script name (without _id.doppler)"
 						type="text"
+						class="input-field"
 					/>
 				</div>
 				<div class="button-group">
@@ -201,6 +203,7 @@
 				bind:value={scriptContent}
 				placeholder="Write your custom doppler script here..."
 				disabled={isLoading}
+				class="script-textarea"
 			></textarea>
 			{#if submitResult}
 				<p class="submit-result">{submitResult}</p>
@@ -218,7 +221,7 @@
 						&laquo;
 					{/if}
 				</button>
-				<h2>Script Library</h2>
+				<h2 class="dark:text-green-400">Script Library</h2>
 			</div>
 			{#if isTreeExpanded}
 				<div transition:slide>
@@ -235,130 +238,106 @@
 	</div>
 </main>
 
-<style>
-	textarea:disabled {
-		background-color: #f0f0f0;
-	}
-	.toggle-btn {
-		font-size: 1.5em;
-		line-height: 1;
-		padding: 0 5px;
-	}
-	input {
-		width: 100%;
-		margin-bottom: 10px;
-		padding: 5px;
-	}
+<style lang="postcss">
 	main {
-		max-width: none;
-		margin: 0;
-		padding: 20px;
-		height: 100vh;
-		box-sizing: border-box;
-		display: flex;
-		flex-direction: column;
+		@apply max-w-none m-0 p-5 h-screen box-border flex flex-col;
 	}
+
 	.editor-layout {
-		display: flex;
-		gap: 0;
-		flex: 1;
-		overflow: hidden;
+		@apply flex gap-0 flex-1 overflow-hidden;
 	}
+
 	.tree-view {
-		flex: 0 0 250px;
-		transition: flex-basis 0.3s ease;
-		overflow: hidden;
-		border-left: 1px solid #ccc;
+		@apply flex-none w-[250px] transition-[flex-basis] duration-300 overflow-hidden;
+		@apply border-l border-gray-300 dark:border-gray-600;
 	}
+
 	.tree-view:not(.expanded) {
-		flex-basis: 30px;
+		@apply w-[30px];
 	}
+
 	.script-editor {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
+		@apply flex-1 flex flex-col overflow-hidden;
 	}
+
 	.editor-nav {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: 10px;
-		background-color: #f0f0f0;
-		border-bottom: 1px solid #ccc;
-		align-items: start;
+		@apply flex justify-between p-2.5;
+		@apply bg-gray-100 dark:bg-gray-800;
+		@apply border-b border-gray-300 dark:border-gray-600;
 	}
+
 	.script-info {
-		flex: 1;
-		margin-right: 10px;
+		@apply flex-1 mr-2.5;
 	}
-	.script-info input {
-		width: 100%;
-		margin-bottom: 5px;
-		padding: 5px;
+
+	.input-field {
+		@apply w-full mb-1.5 p-2 rounded;
+		@apply bg-white dark:bg-gray-700;
+		@apply border border-gray-300 dark:border-gray-600;
+		@apply text-gray-900 dark:text-white;
+		@apply focus:outline-none focus:ring-2 focus:ring-green-400 dark:focus:ring-green-500;
+		@apply transition-colors;
 	}
+
 	.button-group {
-		display: flex;
-		flex-direction: column;
-		gap: 5px;
+		@apply flex flex-col gap-1.5;
 	}
+
 	.save-btn,
 	.run-btn {
-		padding: 8px 16px;
-		font-size: 14px;
-		border: none;
-		border-radius: 4px;
-		cursor: pointer;
-		transition: background-color 0.3s;
-		width: 100px;
+		@apply p-2 text-sm border-none rounded cursor-pointer transition-colors w-[100px];
+		@apply text-white;
 	}
+
 	.save-btn {
-		background-color: #4caf50;
-		color: white;
+		@apply bg-green-600 hover:bg-green-400;
+		@apply dark:bg-gray-700 dark:hover:bg-gray-500;
 	}
-	.save-btn:hover {
-		background-color: #45a049;
-	}
+
 	.run-btn {
-		background-color: #008cba;
-		color: white;
+		@apply bg-green-600 hover:bg-green-400;
+		@apply dark:bg-gray-700 dark:hover:bg-gray-500;
 	}
-	.run-btn:hover {
-		background-color: #007b9e;
-	}
+
 	.save-btn:disabled,
 	.run-btn:disabled {
-		background-color: #cccccc;
-		cursor: not-allowed;
+		@apply bg-gray-400 dark:bg-gray-600 cursor-not-allowed;
 	}
-	textarea {
-		flex: 1;
-		width: 100%;
-		padding: 10px;
-		font-family: monospace;
-		resize: none;
-		border: none;
-		border-bottom: 1px solid #ccc;
+
+	.script-textarea {
+		@apply flex-1 w-full p-2.5 font-mono resize-none border-none;
+		@apply bg-white dark:bg-gray-800;
+		@apply text-gray-900 dark:text-white;
+		@apply border-b border-gray-300 dark:border-gray-600;
 	}
+
+	.script-textarea:disabled {
+		@apply bg-gray-100 dark:bg-gray-700;
+	}
+
 	.submit-result,
 	.loading-message {
-		padding: 10px;
-		margin: 0;
-		background-color: #f9f9f9;
+		@apply p-2.5 m-0;
+		@apply bg-gray-50 dark:bg-gray-800;
+		@apply text-gray-900 dark:text-white;
 	}
-	button {
-		padding: 10px 20px;
-		font-size: 16px;
-	}
-	.tree-header {
-		display: flex;
-		align-items: center;
-		padding: 5px;
-	}
+
 	.toggle-btn {
-		background: none;
-		border: none;
-		cursor: pointer;
-		padding: 5px;
+		@apply text-2xl leading-none p-0 px-1.5;
+		@apply bg-transparent border-none cursor-pointer;
+		@apply text-gray-600 dark:text-gray-300;
+		@apply hover:text-green-600 dark:hover:text-green-400;
+		@apply transition-colors;
+	}
+
+	.tree-header {
+		@apply flex items-center p-1.5;
+		@apply bg-gray-100 dark:bg-gray-800;
+		@apply border-b border-gray-300 dark:border-gray-600;
+	}
+
+	.loading,
+	.no-scripts {
+		@apply p-2.5 text-gray-600 dark:text-gray-400;
 	}
 </style>

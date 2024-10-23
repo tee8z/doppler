@@ -2,10 +2,11 @@
 	import { LndRequests } from '$lib/lnd_requests';
 	import { onDestroy, onMount, tick } from 'svelte';
 	import Graph from './Graph.svelte';
+	import Select from './Select.svelte';
 	import { edges, nodes } from './Graph.svelte';
 	import Info from './Info.svelte';
 	import Button from './Button.svelte';
-	import type { Connections } from '$lib/connections';
+	import type { ConnectionConfig, Connections } from '$lib/connections';
 	import { getConnections } from '$lib/connections';
 	import type { NodeRequests, Nodes } from '$lib/nodes';
 	import { CorelnRequests } from '$lib/coreln_requests';
@@ -16,32 +17,51 @@
 	let poller: ReturnType<typeof setInterval>;
 	let isPolling = false;
 	let connections: Connections;
+	let showConnections = false;
 	let info: any = null;
 	let jsonData: any = null;
-	let uniqueNodes = new Set();
-	let uniqueChannels = new Set();
+	let currentData: any = null;
+	let selectedView: 'all' | 'source' | 'target' = 'all';
+	let dataType: 'node' | 'channel' | null = null;
 
 	let nodeConnections: { pubkey: string; alias: string; connection: NodeRequests }[] = [];
+
 	function setNode(node: any) {
 		if (!node) {
 			return;
 		}
 		info = node.info;
 		jsonData = node.info;
+		currentData = node.info;
+		dataType = 'node';
 	}
 
-	const fetchData = async (connections: Connections) => {
-		if (!connections || Object.keys(connections).length === 0) {
+	function updateJsonData() {
+		if (!currentData || dataType === 'node') {
+			jsonData = currentData;
+			return;
+		}
+
+		if (dataType === 'channel') {
+			if (selectedView === 'all') {
+				jsonData = currentData;
+			} else {
+				const perspective = currentData.find((d: any) => d.perspective === selectedView);
+				jsonData = perspective ? perspective : null;
+			}
+		}
+	}
+
+	const fetchData = async (cur_connections: Connections) => {
+		if (!cur_connections || Object.keys(cur_connections).length === 0) {
 			console.log('No connections provided. Aborting fetchData.');
 			return;
 		}
 		let nodeData: Nodes = {};
 		nodeConnections = [];
-		uniqueNodes = new Set();
-		uniqueChannels = new Set();
 
-		const promises = Object.keys(connections).map(async (key) => {
-			const connectionConfig = connections[key];
+		const promises = Object.keys(cur_connections).map(async (key) => {
+			const connectionConfig = cur_connections[key];
 			if (connectionConfig.type === 'lnd') {
 				let requests = new LndRequests(connectionConfig.host, connectionConfig.macaroon);
 				let response = await requests.fetchChannels();
@@ -124,11 +144,15 @@
 				nodeData[key] = data;
 			}
 		});
+
+		// Set initial node data
 		let key = Object.keys(nodeData)[0];
-		//Set starting node
-		setNode(nodeData[key]);
+		if (key && (!info || !jsonData)) {
+			setNode(nodeData[key]);
+		}
 
 		const channelMapper = new ChannelMapper();
+		// use to see what the object look like across the node: console.log(JSON.stringify(nodeData));
 		const { cur_nodes, cur_edges } = channelMapper.processNodeData(nodeData, nodeConnections);
 
 		nodes.set(cur_nodes);
@@ -149,32 +173,60 @@
 		}
 	});
 	function handleClickData(event: any) {
-		console.log(event);
 		const data = event.detail;
-		if (data.type == 'channel') {
-			jsonData = data.channel;
-		} else if (data.type == 'node') {
+
+		if (data.type === 'channel') {
+			currentData = data.channel;
+			dataType = 'channel';
+			updateJsonData();
+		} else if (data.type === 'node') {
+			dataType = 'node';
 			if (data.known) {
 				let connection = nodeConnections.find((connection) => connection.pubkey == data.known);
-				console.log(connection);
 				connection?.connection.fetchInfo().then((nodeInfo) => {
-					console.log(nodeInfo);
-					jsonData = nodeInfo;
+					currentData = nodeInfo;
+					updateJsonData();
 				});
 			} else if (data.id != data.known) {
 				let connection = nodeConnections.find((connection) => connection.pubkey == data.known);
-				console.log(connection);
+
 				connection?.connection.fetchSpecificNodeInfo(data.id).then((nodeInfo) => {
-					console.log(nodeInfo);
-					jsonData = nodeInfo;
+					currentData = nodeInfo;
+					updateJsonData();
 				});
 			}
 		} else {
 			console.error('data type not supported', data);
 		}
 	}
+
 	function prettyPrintJson(jsonData: any) {
 		return JSON.stringify(jsonData, null, 2);
+	}
+
+	function prettyPrintConnections(connections: Connections): string {
+		const filteredConnections = Object.entries(connections).reduce(
+			(acc, [key, config]) => {
+				const filteredConfig = Object.entries(config).reduce((configAcc, [propKey, propValue]) => {
+					if (propValue != null && propValue !== '') {
+						if (isKeyOfConnectionConfig(propKey)) {
+							configAcc[propKey] = propValue;
+						}
+					}
+					return configAcc;
+				}, {} as Partial<ConnectionConfig>);
+
+				acc[key] = filteredConfig;
+				return acc;
+			},
+			{} as { [key: string]: Partial<ConnectionConfig> }
+		);
+
+		return JSON.stringify(filteredConnections, null, 2);
+	}
+
+	function isKeyOfConnectionConfig(key: string): key is keyof ConnectionConfig {
+		return ['macaroon', 'password', 'rune', 'host', 'type'].includes(key);
 	}
 
 	function stop() {
@@ -193,7 +245,7 @@
 	}
 
 	async function fetchAndUpdateData() {
-		const connections = await getConnections();
+		connections = await getConnections();
 		await fetchData(connections);
 	}
 
@@ -225,6 +277,8 @@
 				isPolling = false;
 			});
 	}
+
+	$: jsonData, selectedView, updateJsonData();
 </script>
 
 <div class="visualizer">
@@ -237,6 +291,9 @@
 				<span>Polling</span>
 				<Button on:click={start}>Start</Button>
 				<Button on:click={stop}>Stop</Button>
+				<Button on:click={() => (showConnections = !showConnections)}>
+					{showConnections ? 'Hide' : 'Show'} Connections
+				</Button>
 				<label class="switch">
 					<input
 						type="checkbox"
@@ -247,7 +304,27 @@
 					<span class="slider round"> </span></label
 				>
 			</div>
+			{#if showConnections && connections}
+				<div class="connections-container">
+					<h2>Connection Details</h2>
+					<pre class="connections">{prettyPrintConnections(connections)}</pre>
+				</div>
+			{/if}
 			<Info {info} />
+
+			{#if dataType === 'channel'}
+				<div class="view-selector">
+					<Select
+						bind:value={selectedView}
+						options={[
+							{ value: 'all', label: 'View All' },
+							{ value: 'source', label: 'Source View' },
+							{ value: 'target', label: 'Target View' }
+						]}
+					/>
+				</div>
+			{/if}
+
 			<div>
 				{#if nodeData}
 					{#each Object.keys(nodeData) as key}
