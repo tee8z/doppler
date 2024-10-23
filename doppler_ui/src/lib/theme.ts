@@ -15,7 +15,7 @@ export function toggleDarkMode() {
 		const newThemeIcon = get(themeIcon) === 'sun' ? 'moon' : 'sun';
 		theme.set(newTheme);
 		themeIcon.set(newThemeIcon);
-		console.log('setting local storage them');
+		console.log('Setting local storage them');
 		localStorage.setItem('theme', newTheme);
 		const html = document.querySelector('html');
 		if (html) html.classList.toggle('dark');
