@@ -19,21 +19,12 @@ export class CorelnRequests implements CorelnRequests, NodeRequests {
 
 	async fetchChannels(): Promise<any> {
 		try {
-			const url = `${this.requestHandler.base_url}/v1/listpeers`;
+			const url = `${this.requestHandler.base_url}/v1/listpeerchannels`;
 			const data = await this.requestHandler.send_request(url, 'POST', false);
-			console.log(data);
-			if (!data || !data.peers) {
+			if (!data || !data.channels) {
 				return [];
 			}
-			const filteredPeers = data.peers.filter(
-				(peer: any) => peer.channels && peer.channels.length > 0
-			);
-
-			const chanList = await Promise.all(
-				filteredPeers.map((peer: any) => getAliasForChannels(peer, this.fetchSpecificNodeInfo))
-			);
-			console.log(chanList);
-			return chanList.flatMap((chan) => chan);
+			return data.channels;
 		} catch (err: any) {
 			console.error(err);
 			return {
@@ -52,26 +43,7 @@ export class CorelnRequests implements CorelnRequests, NodeRequests {
 		try {
 			const url = `${this.requestHandler.base_url}/v1/listfunds`;
 			const data = await this.requestHandler.send_request(url, 'POST', false);
-
-			const opArray = data.outputs;
-			let confBalance = 0;
-			let unconfBalance = 0;
-
-			for (const output of opArray) {
-				if (output.status === 'confirmed') {
-					confBalance += output.amount_msat;
-				} else if (output.status === 'unconfirmed') {
-					unconfBalance += output.amount_msat / 1000;
-				}
-			}
-
-			const totalBalance = confBalance + unconfBalance;
-
-			return {
-				totalBalance,
-				confBalance,
-				unconfBalance
-			};
+			return data;
 		} catch (err: any) {
 			console.error(err);
 			return {
@@ -85,76 +57,3 @@ export class CorelnRequests implements CorelnRequests, NodeRequests {
 		return await this.requestHandler.send_request(url, 'POST', false);
 	}
 }
-
-const getAliasForChannels = (peer: any, fetchSpecificNodeInfo: (id: string) => Promise<any>) => {
-	return new Promise(function (resolve, reject) {
-		fetchSpecificNodeInfo(peer.id)
-			.then((data: any) => {
-				resolve(
-					peer.channels
-						.filter((c: any) => c.state !== 'ONCHAIN' && c.state !== 'CLOSED')
-						.reduce((acc: any, channel: any) => {
-							const TO_US_MSATS = channel.msatoshi_to_us || channel.to_us_msat;
-							const TOTAL_MSATS = channel.msatoshi_total || channel.total_msat;
-							acc.push({
-								id: peer.id,
-								alias: data.nodes[0] ? data.nodes[0].alias : peer.id,
-								connected: peer.connected,
-								state: channel.state,
-								short_channel_id: channel.short_channel_id,
-								channel_id: channel.channel_id,
-								funding_txid: channel.funding_txid,
-								private: channel.private,
-								msatoshi_to_us: TO_US_MSATS,
-								msatoshi_total: TOTAL_MSATS,
-								msatoshi_to_them: TOTAL_MSATS - TO_US_MSATS,
-								their_channel_reserve_satoshis:
-									channel.their_channel_reserve_satoshis || channel.their_reserve_msat,
-								our_channel_reserve_satoshis:
-									channel.our_channel_reserve_satoshis || channel.our_reserve_msat,
-								spendable_msatoshi: channel.spendable_msatoshi || channel.spendable_msat,
-								funding_allocation_msat: channel.funding_allocation_msat,
-								opener: channel.opener,
-								direction: channel.direction,
-								htlcs: channel.htlcs
-							});
-							return acc;
-						}, [])
-				);
-			})
-			.catch((err: any) => {
-				console.error(err);
-				resolve(
-					peer.channels
-						.filter((c: any) => c.state !== 'ONCHAIN' && c.state !== 'CLOSED')
-						.reduce((acc: any, channel: any) => {
-							const TO_US_MSATS = channel.msatoshi_to_us || channel.to_us_msat;
-							const TOTAL_MSATS = channel.msatoshi_total || channel.total_msat;
-							acc.push({
-								id: peer.id,
-								alias: peer.id,
-								connected: peer.connected,
-								state: channel.state,
-								short_channel_id: channel.short_channel_id,
-								channel_id: channel.channel_id,
-								funding_txid: channel.funding_txid,
-								private: channel.private,
-								msatoshi_to_us: TO_US_MSATS,
-								msatoshi_total: TOTAL_MSATS,
-								msatoshi_to_them: TOTAL_MSATS - TO_US_MSATS,
-								their_channel_reserve_satoshis:
-									channel.their_channel_reserve_satoshis || channel.their_reserve_msat,
-								our_channel_reserve_satoshis:
-									channel.our_channel_reserve_satoshis || channel.our_reserve_msat,
-								spendable_msatoshi: channel.spendable_msatoshi || channel.spendable_msat,
-								funding_allocation_msat: channel.funding_allocation_msat,
-								opener: channel.opener,
-								direction: channel.direction,
-								htlcs: channel.htlcs
-							});
-							return acc;
-						}, [])
-				);
-			});
-	});
-};

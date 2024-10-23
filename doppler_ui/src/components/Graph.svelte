@@ -290,7 +290,7 @@
 				channel_id: data.channel_id,
 				source: data.source,
 				type: 'channel',
-				channel: data.channel
+				channel: data.data
 			};
 			dispatch('dataEvent', identifiers);
 		} else {

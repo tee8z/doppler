@@ -5,6 +5,12 @@ interface Node {
 	type?: string;
 }
 
+interface ChannelData {
+	type: string;
+	channel: any;
+	perspective: 'source' | 'target';
+}
+
 interface Channel {
 	source: string;
 	target: string;
@@ -14,8 +20,7 @@ interface Channel {
 	remote_balance: number;
 	initiator: boolean;
 	active: boolean;
-	channel: any;
-	types?: string[];
+	data: ChannelData[];
 }
 
 interface NodeConnection {
@@ -51,10 +56,14 @@ export class ChannelMapper {
 		this.clear();
 		this.nodeConnections = nodeConnections;
 
-		// Process each implementation type in order
-		this.map_lnd_channels(nodeData);
-		this.map_coreln_channels(nodeData);
-		this.map_eclair_channels(nodeData);
+		// Map all known nodes first
+		this.mapAllNodes(nodeData);
+
+		// Then map all channels and discover additional nodes
+		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
+			if (!value.online) return;
+			this.mapChannels(value.type, key, value);
+		});
 
 		return {
 			cur_nodes: this.nodes,
@@ -71,211 +80,243 @@ export class ChannelMapper {
 		this.edges = [];
 	}
 
-	private map_lnd_channels(nodeData: Nodes) {
-		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
-			if (value.type !== 'lnd' || !value.online) return;
+	private addNode(nodeId: string, alias: string, type?: string) {
+		if (!this.nodeMap.has(nodeId)) {
+			// First try to find a known connection
+			const known = this.nodeConnections.find((node) => node.pubkey === nodeId);
 
-			const nodeInfo = {
-				id: value.info.identity_pubkey,
-				alias: key,
-				known: value.info.identity_pubkey,
-				type: value.type
+			const nodeInfo: Node = {
+				id: nodeId,
+				alias: known?.alias || alias, // Use known alias if available, otherwise use provided alias
+				known: nodeId
 			};
 
-			if (!this.nodeMap.has(value.info.identity_pubkey)) {
-				this.nodeMap.set(value.info.identity_pubkey, nodeInfo);
-				this.nodes.push(nodeInfo);
-			} else {
-				const existingNode = this.nodeMap.get(value.info.identity_pubkey)!;
-				existingNode.type = value.type;
+			if (type) {
+				nodeInfo.type = type;
 			}
-			this.uniqueNodes.add(value.info.identity_pubkey);
-		});
 
+			this.nodeMap.set(nodeId, nodeInfo);
+			this.nodes.push(nodeInfo);
+			this.uniqueNodes.add(nodeId);
+		} else if (type) {
+			// If node exists and type is provided, update the type
+			const existingNode = this.nodeMap.get(nodeId)!;
+			existingNode.type = type;
+		}
+	}
+
+	private mapAllNodes(nodeData: Nodes) {
 		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
-			if (value.type !== 'lnd' || !value.online) return;
+			if (!value.online) return;
 
-			let current_pubkey = value.info.identity_pubkey;
-			value.channels.forEach((channel: any) => {
-				if (!channel.remote_pubkey || !channel.initiator) return;
+			const nodeId = this.getNodeId(value);
+			if (!nodeId) return;
 
-				if (!this.nodeMap.has(channel.remote_pubkey)) {
-					let known = this.nodeConnections.find((node) => node.pubkey === channel.remote_pubkey);
-					const nodeInfo = {
-						id: channel.remote_pubkey,
-						alias: known?.alias || channel.remote_pubkey,
-						known: channel.remote_pubkey
-					};
-					this.nodeMap.set(channel.remote_pubkey, nodeInfo);
-					this.nodes.push(nodeInfo);
-				}
-				this.uniqueNodes.add(channel.remote_pubkey);
-
-				const channelInfo: Channel = {
-					source: current_pubkey,
-					target: channel.remote_pubkey,
-					channel_id: channel.chan_id,
-					capacity: channel.capacity,
-					local_balance: channel.local_balance,
-					remote_balance: channel.remote_balance,
-					initiator: channel.initiator,
-					active: channel.active,
-					channel: channel,
-					types: ['lnd']
-				};
-
-				if (!this.channelMap.has(channel.chan_id)) {
-					this.channelMap.set(channel.chan_id, channelInfo);
-					this.edges.push(channelInfo);
-					this.uniqueChannels.add(channel.chan_id);
-				} else {
-					const existingChannel = this.channelMap.get(channel.chan_id)!;
-					if (!existingChannel.types?.includes('lnd')) {
-						existingChannel.types = [...(existingChannel.types || []), 'lnd'];
-					}
-					Object.assign(existingChannel, channelInfo);
-				}
-			});
+			this.addNode(nodeId, key, value.type);
 		});
 	}
 
-	private map_coreln_channels(nodeData: Nodes) {
-		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
-			if (value.type !== 'coreln' || !value.online) return;
+	private getNodeId(node: any): string | null {
+		switch (node.type) {
+			case 'lnd':
+				return node.info?.identity_pubkey || null;
+			case 'coreln':
+				return node.info?.id || null;
+			case 'eclair':
+				return node.info?.nodeId || null;
+			default:
+				return null;
+		}
+	}
 
-			const nodeInfo = {
-				id: value.info.id,
-				alias: key,
-				known: value.info.id,
-				type: value.type
+	private getChannelPoint(type: string, channel: any): string | null {
+		switch (type) {
+			case 'lnd':
+				return channel.channel_point;
+			case 'coreln': {
+				// coreln channels have either channel_point or funding_txid + funding_output
+				if (channel.channel_point) {
+					return channel.channel_point;
+				}
+				if (channel.funding?.funding_txid || channel.funding_txid) {
+					const txid = channel.funding?.funding_txid || channel.funding_txid;
+					const output = channel.funding?.funding_output ?? channel.funding_output;
+					if (txid && output !== undefined) {
+						return `${txid}:${output}`;
+					}
+				}
+				// Try getting from fundingTx if available
+				if (channel.funding_txid) {
+					return `${channel.funding_txid}:${channel.funding_output || 0}`;
+				}
+				return null;
+			}
+			case 'eclair': {
+				const outPoint = channel.data?.commitments?.active[0]?.fundingTx?.outPoint;
+				return outPoint || null;
+			}
+			default:
+				return null;
+		}
+	}
+
+	private mapChannels(type: string, nodeKey: string, nodeData: any) {
+		const currentPubkey = this.getNodeId(nodeData);
+		if (!currentPubkey) return;
+
+		const channels = this.getChannels(type, nodeData);
+		if (!channels) return;
+
+		channels.forEach((channel: any) => {
+			const channelPoint = this.getChannelPoint(type, channel);
+			if (!channelPoint) return;
+
+			const remotePubkey = this.getRemotePubkey(type, channel);
+			if (!remotePubkey) return;
+
+			// Add remote node if we haven't seen it before
+			this.addNode(remotePubkey, remotePubkey);
+
+			// Determine channel properties
+			const isInitiator = this.isChannelInitiator(type, channel);
+
+			// Create data entry for this node's view of the channel
+			const channelData: ChannelData = {
+				type,
+				channel,
+				perspective: isInitiator ? 'source' : 'target'
 			};
 
-			if (!this.nodeMap.has(value.info.id)) {
-				this.nodeMap.set(value.info.id, nodeInfo);
-				this.nodes.push(nodeInfo);
-			} else {
-				const existingNode = this.nodeMap.get(value.info.id)!;
-				existingNode.type = value.type;
-			}
-			this.uniqueNodes.add(value.info.id);
-		});
-
-		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
-			if (value.type !== 'coreln' || !value.online) return;
-
-			let current_pubkey = value.info.id;
-			value.channels.forEach((channel: any) => {
-				if (channel.opener !== 'local') return;
-
-				if (!this.nodeMap.has(channel.id)) {
-					let known = this.nodeConnections.find((node) => node.pubkey === channel.id);
-					const nodeInfo = {
-						id: channel.id,
-						alias: known?.alias || channel.id,
-						known: current_pubkey
-					};
-					this.nodeMap.set(channel.id, nodeInfo);
-					this.nodes.push(nodeInfo);
-				}
-				this.uniqueNodes.add(channel.id);
-
+			if (!this.channelMap.has(channelPoint)) {
+				// Creating new channel
 				const channelInfo: Channel = {
-					source: current_pubkey,
-					target: channel.id,
-					channel_id: channel.channel_id,
-					capacity: channel.msatoshi_total,
-					local_balance: Math.floor(channel.msatoshi_to_us / 1000),
-					remote_balance: Math.floor(channel.msatoshi_to_them / 1000),
-					initiator: channel.opener === 'local',
-					active: channel.state === 'CHANNELD_NORMAL',
-					channel: channel,
-					types: ['coreln']
+					source: isInitiator ? currentPubkey : remotePubkey,
+					target: isInitiator ? remotePubkey : currentPubkey,
+					channel_id: channelPoint,
+					capacity: this.getChannelCapacity(type, channel),
+					local_balance: this.getLocalBalance(type, channel),
+					remote_balance: this.getRemoteBalance(type, channel),
+					initiator: isInitiator,
+					active: this.isChannelActive(type, channel),
+					data: [channelData] // Start with this node's view
 				};
+				this.channelMap.set(channelPoint, channelInfo);
+				this.edges.push(channelInfo);
+				this.uniqueChannels.add(channelPoint);
+			} else {
+				// Channel exists, add this node's view if we don't have it
+				const existingChannel = this.channelMap.get(channelPoint)!;
 
-				if (!this.channelMap.has(channel.channel_id)) {
-					this.channelMap.set(channel.channel_id, channelInfo);
-					this.edges.push(channelInfo);
-					this.uniqueChannels.add(channel.channel_id);
-				} else {
-					const existingChannel = this.channelMap.get(channel.channel_id)!;
-					if (!existingChannel.types?.includes('coreln')) {
-						existingChannel.types = [...(existingChannel.types || []), 'coreln'];
-					}
-					Object.assign(existingChannel, channelInfo);
+				// Check if we already have data from this node
+				const hasNodeData = existingChannel.data.some(
+					(d) =>
+						d.type === type &&
+						((d.perspective === 'source' && existingChannel.source === currentPubkey) ||
+							(d.perspective === 'target' && existingChannel.target === currentPubkey))
+				);
+
+				// Only add if we don't have this node's view yet
+				if (!hasNodeData) {
+					existingChannel.data.push(channelData);
 				}
-			});
+
+				// Update channel properties if we're the initiator
+				if (isInitiator) {
+					existingChannel.capacity = this.getChannelCapacity(type, channel);
+					existingChannel.local_balance = this.getLocalBalance(type, channel);
+					existingChannel.remote_balance = this.getRemoteBalance(type, channel);
+					existingChannel.active = this.isChannelActive(type, channel);
+				}
+			}
 		});
 	}
 
-	private map_eclair_channels(nodeData: Nodes) {
-		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
-			if (value.type !== 'eclair' || !value.online) return;
+	private getChannels(type: string, nodeData: any): any[] | null {
+		return nodeData.channels || null;
+	}
 
-			const nodeInfo = {
-				id: value.info.nodeId,
-				alias: key,
-				known: value.info.nodeId,
-				type: value.type
-			};
+	private getRemotePubkey(type: string, channel: any): string | null {
+		switch (type) {
+			case 'lnd':
+				return channel.remote_pubkey;
+			case 'coreln':
+				return channel.peer_id;
+			case 'eclair':
+				return channel.nodeId;
+			default:
+				return null;
+		}
+	}
 
-			if (!this.nodeMap.has(value.info.nodeId)) {
-				this.nodeMap.set(value.info.nodeId, nodeInfo);
-				this.nodes.push(nodeInfo);
-			} else {
-				const existingNode = this.nodeMap.get(value.info.nodeId)!;
-				existingNode.type = value.type;
+	private isChannelInitiator(type: string, channel: any): boolean {
+		switch (type) {
+			case 'lnd':
+				return channel.initiator;
+			case 'coreln':
+				return channel.opener === 'local';
+			case 'eclair':
+				return channel.data?.commitments?.params?.localParams?.isInitiator || false;
+			default:
+				return false;
+		}
+	}
+
+	private getChannelCapacity(type: string, channel: any): number {
+		switch (type) {
+			case 'lnd':
+				return parseInt(channel.capacity) || 0;
+			case 'coreln':
+				return channel.amount_msat ? Math.floor(channel.amount_msat / 1000) : 0;
+			case 'eclair':
+				return channel.data?.commitments?.active[0]?.fundingTx?.amountSatoshis || 0;
+			default:
+				return 0;
+		}
+	}
+
+	private getLocalBalance(type: string, channel: any): number {
+		switch (type) {
+			case 'lnd':
+				return parseInt(channel.local_balance) || 0;
+			case 'coreln':
+				return channel.our_amount_msat ? Math.floor(channel.our_amount_msat / 1000) : 0;
+			case 'eclair':
+				return Math.floor(
+					(channel.data?.commitments?.active[0]?.localCommit?.spec?.toLocal || 0) / 1000
+				);
+			default:
+				return 0;
+		}
+	}
+
+	private getRemoteBalance(type: string, channel: any): number {
+		switch (type) {
+			case 'lnd':
+				return parseInt(channel.remote_balance) || 0;
+			case 'coreln': {
+				const total = channel.amount_msat ? Math.floor(channel.amount_msat / 1000) : 0;
+				const local = channel.our_amount_msat ? Math.floor(channel.our_amount_msat / 1000) : 0;
+				return total - local;
 			}
-			this.uniqueNodes.add(value.info.nodeId);
-		});
+			case 'eclair':
+				return Math.floor(
+					(channel.data?.commitments?.active[0]?.localCommit?.spec?.toRemote || 0) / 1000
+				);
+			default:
+				return 0;
+		}
+	}
 
-		Object.entries(nodeData).forEach(([key, value]: [string, any]) => {
-			if (value.type !== 'eclair' || !value.online) return;
-
-			let current_pubkey = value.info.nodeId;
-			value.channels.forEach((channel: any) => {
-				if (!channel.data.commitments.params.localParams.isInitiator) return;
-
-				if (!this.nodeMap.has(channel.nodeId)) {
-					let known = this.nodeConnections.find((node) => node.pubkey === channel.nodeId);
-					const nodeInfo = {
-						id: channel.nodeId,
-						alias: known?.alias || channel.nodeId,
-						known: current_pubkey
-					};
-					this.nodeMap.set(channel.nodeId, nodeInfo);
-					this.nodes.push(nodeInfo);
-				}
-				this.uniqueNodes.add(channel.nodeId);
-
-				const channelInfo: Channel = {
-					source: current_pubkey,
-					target: channel.nodeId,
-					channel_id: channel.channelId,
-					capacity: channel.data.commitments.active[0].fundingTx.amountSatoshis,
-					local_balance: Math.floor(
-						channel.data.commitments.active[0].localCommit.spec.toLocal / 1000
-					),
-					remote_balance: Math.floor(
-						channel.data.commitments.active[0].localCommit.spec.toRemote / 1000
-					),
-					initiator: channel.data.commitments.params.localParams.isInitiator,
-					active: channel.state === 'NORMAL',
-					channel: channel,
-					types: ['eclair']
-				};
-
-				if (!this.channelMap.has(channel.channelId)) {
-					this.channelMap.set(channel.channelId, channelInfo);
-					this.edges.push(channelInfo);
-					this.uniqueChannels.add(channel.channelId);
-				} else {
-					const existingChannel = this.channelMap.get(channel.channelId)!;
-					if (!existingChannel.types?.includes('eclair')) {
-						existingChannel.types = [...(existingChannel.types || []), 'eclair'];
-					}
-					Object.assign(existingChannel, channelInfo);
-				}
-			});
-		});
+	private isChannelActive(type: string, channel: any): boolean {
+		switch (type) {
+			case 'lnd':
+				return channel.active;
+			case 'coreln':
+				return channel.state === 'CHANNELD_NORMAL';
+			case 'eclair':
+				return channel.state === 'NORMAL';
+			default:
+				return false;
+		}
 	}
 }
