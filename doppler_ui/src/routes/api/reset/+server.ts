@@ -88,7 +88,7 @@ export const POST: RequestHandler = async function (event) {
 		});
 
 		// Handle process completion
-		process.on('close', (code) => {
+		process.on('close', (code: any) => {
 			const closeMessage = `Child process exited with code ${code}\n`;
 			console.log(closeMessage);
 			logStream.write(closeMessage, () => {

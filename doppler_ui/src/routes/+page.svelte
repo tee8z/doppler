@@ -37,7 +37,6 @@
 			}
 
 			const result = await response.json();
-			console.log(result);
 		} catch (error) {
 			console.error('Error requesting reset:', error);
 		}
@@ -72,10 +71,10 @@
 		</div>
 	</section>
 	<section class="flex flex-1">
-		<div class="w-2/3 flex flex-col">
+		<div class="w-2/3 flex flex-col min-w-0">
 			<Visualizer />
 		</div>
-		<div class="w-1/3 flex flex-col">
+		<div class="w-1/3 flex-shrink-0">
 			<div class="bg-gray-200 p-4">
 				<nav class="flex mb-4">
 					<Button

@@ -66,7 +66,7 @@
 			debugMessage = 'Error: Container not found';
 			return;
 		}
-		console.log('Initializing Cytoscape with container:', container);
+		console.log('Initializing Cytoscape');
 		debugMessage = 'Initializing Cytoscape...';
 
 		try {

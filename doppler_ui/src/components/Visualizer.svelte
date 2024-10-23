@@ -6,6 +6,7 @@
 	import { edges, nodes } from './Graph.svelte';
 	import Info from './Info.svelte';
 	import Button from './Button.svelte';
+	import ResizablePanel from './ResizablePanel.svelte';
 	import type { ConnectionConfig, Connections } from '$lib/connections';
 	import { getConnections } from '$lib/connections';
 	import type { NodeRequests, Nodes } from '$lib/nodes';
@@ -18,7 +19,19 @@
 	let isPolling = false;
 	let connections: Connections;
 	let showConnections = false;
+
+	// Separate state for node and channel info
+	let nodeInfo: any = null;
+	let nodeBalance: any = null;
+	let nodeType: any = null;
+	let channelInfo: any = null;
+	let currentNodeId: string | null = null;
+
+	// Combined info for display
 	let info: any = null;
+	let balance: any = null;
+	let type: any = null;
+
 	let jsonData: any = null;
 	let currentData: any = null;
 	let selectedView: 'all' | 'source' | 'target' = 'all';
@@ -26,29 +39,48 @@
 
 	let nodeConnections: { pubkey: string; alias: string; connection: NodeRequests }[] = [];
 
-	function setNode(node: any) {
-		if (!node) {
-			return;
+	async function setNode(node: any, isChannelNode: boolean = false) {
+		if (!node) return;
+
+		// Store node information
+		nodeInfo = node.info;
+		nodeBalance = node.balance;
+		nodeType = node.type;
+		currentNodeId = node.info?.identity_pubkey || node.info?.id || node.info?.nodeId;
+
+		// Update display info
+		info = nodeInfo;
+		balance = nodeBalance;
+		type = nodeType;
+
+		// Only update JSON data if this isn't a channel-related node update
+		if (!isChannelNode) {
+			jsonData = nodeInfo;
+			currentData = node;
+			dataType = 'node';
+			channelInfo = null;
 		}
-		info = node.info;
-		jsonData = node.info;
-		currentData = node.info;
-		dataType = 'node';
 	}
 
 	function updateJsonData() {
-		if (!currentData || dataType === 'node') {
-			jsonData = currentData;
-			return;
-		}
+		if (!currentData) return;
 
-		if (dataType === 'channel') {
+		if (dataType === 'node') {
+			jsonData = nodeInfo;
+			info = nodeInfo;
+			type = nodeType;
+			balance = nodeBalance;
+		} else if (dataType === 'channel') {
 			if (selectedView === 'all') {
 				jsonData = currentData;
 			} else {
 				const perspective = currentData.find((d: any) => d.perspective === selectedView);
-				jsonData = perspective ? perspective : null;
+				jsonData = perspective || null;
 			}
+			// Maintain node info in the Info component
+			info = nodeInfo;
+			type = nodeType;
+			balance = nodeBalance;
 		}
 	}
 
@@ -152,9 +184,7 @@
 		}
 
 		const channelMapper = new ChannelMapper();
-		// use to see what the object look like across the node: console.log(JSON.stringify(nodeData));
 		const { cur_nodes, cur_edges } = channelMapper.processNodeData(nodeData, nodeConnections);
-
 		nodes.set(cur_nodes);
 		edges.set(cur_edges);
 		dataPromise = Promise.resolve(nodeData);
@@ -172,34 +202,139 @@
 			clearInterval(poller);
 		}
 	});
-	function handleClickData(event: any) {
+
+	async function handleClickData(event: any) {
 		const data = event.detail;
 
+		if (!data) return;
+
 		if (data.type === 'channel') {
-			currentData = data.channel;
-			dataType = 'channel';
-			updateJsonData();
+			// First update node info if needed
+			await updateNodeInfoForChannel(data.channel);
+
+			// Then set channel info
+			setChannel(data.channel);
 		} else if (data.type === 'node') {
 			dataType = 'node';
-			if (data.known) {
-				let connection = nodeConnections.find((connection) => connection.pubkey == data.known);
-				connection?.connection.fetchInfo().then((nodeInfo) => {
-					currentData = nodeInfo;
-					updateJsonData();
-				});
-			} else if (data.id != data.known) {
-				let connection = nodeConnections.find((connection) => connection.pubkey == data.known);
+			currentData = data;
 
-				connection?.connection.fetchSpecificNodeInfo(data.id).then((nodeInfo) => {
-					currentData = nodeInfo;
-					updateJsonData();
-				});
+			if (data.known) {
+				const connection = nodeConnections.find((connection) => connection.pubkey === data.known);
+				if (connection) {
+					try {
+						const nodeInfo = await connection.connection.fetchInfo();
+						currentData.info = nodeInfo;
+						await setNode(currentData);
+					} catch (error) {
+						console.error('Error fetching node info:', error);
+					}
+				}
+			} else if (data.id !== data.known) {
+				const connection = nodeConnections.find((connection) => connection.pubkey === data.known);
+				if (connection) {
+					try {
+						const nodeInfo = await connection.connection.fetchSpecificNodeInfo(data.id);
+						currentData.info = nodeInfo;
+						await setNode(currentData);
+					} catch (error) {
+						console.error('Error fetching specific node info:', error);
+					}
+				}
+			} else {
+				await setNode(data);
 			}
 		} else {
-			console.error('data type not supported', data);
+			console.error('Unsupported data type:', data);
+		}
+
+		updateJsonData();
+	}
+
+	async function fetchAndSetNodeInfo(
+		nodeId: string | null,
+		isChannelNode: boolean = false
+	): Promise<boolean> {
+		if (!nodeId) return false;
+
+		// Find the connection that can fetch this node's info
+		for (const connection of nodeConnections) {
+			try {
+				let nodeInfo;
+				if (connection.pubkey === nodeId) {
+					nodeInfo = await connection.connection.fetchInfo();
+				} else {
+					nodeInfo = await connection.connection.fetchSpecificNodeInfo(nodeId);
+				}
+				if (nodeInfo) {
+					await setNode(
+						{
+							info: nodeInfo,
+							type: connection.connection.constructor.name.toLowerCase(),
+							balance: null
+						},
+						isChannelNode
+					);
+					return true;
+				}
+			} catch (error) {
+				console.error(`Error fetching node info using connection ${connection.alias}:`, error);
+			}
+		}
+		return false;
+	}
+
+	function setChannel(channel: any) {
+		if (!channel) return;
+
+		currentData = channel;
+		dataType = 'channel';
+
+		// Store channel information
+		if (selectedView === 'all') {
+			channelInfo = channel;
+		} else {
+			const perspective = channel.find((d: any) => d.perspective === selectedView);
+			channelInfo = perspective || null;
+		}
+
+		// Update JSON display with channel info
+		jsonData = channelInfo;
+	}
+
+	async function updateNodeInfoForChannel(channelData: any) {
+		const { sourceNodeId, targetNodeId } = extractNodeIds(channelData);
+
+		// If current node is neither source nor target, update to most appropriate node
+		if (currentNodeId !== sourceNodeId && currentNodeId !== targetNodeId) {
+			// Try source node first
+			const sourceSuccess = await fetchAndSetNodeInfo(sourceNodeId, true);
+			if (!sourceSuccess) {
+				// Fall back to target node if source fails
+				await fetchAndSetNodeInfo(targetNodeId, true);
+			}
 		}
 	}
 
+	function extractNodeIds(channelData: any): {
+		sourceNodeId: string | null;
+		targetNodeId: string | null;
+	} {
+		let sourceNodeId = null;
+		let targetNodeId = null;
+
+		if (Array.isArray(channelData)) {
+			const sourceView = channelData.find((d: any) => d.perspective === 'source');
+			const targetView = channelData.find((d: any) => d.perspective === 'target');
+
+			sourceNodeId = sourceView?.node_id || sourceView?.nodeId;
+			targetNodeId = targetView?.node_id || targetView?.nodeId;
+		} else {
+			sourceNodeId = channelData.source_node_id || channelData.sourceNodeId;
+			targetNodeId = channelData.target_node_id || channelData.targetNodeId;
+		}
+
+		return { sourceNodeId, targetNodeId };
+	}
 	function prettyPrintJson(jsonData: any) {
 		return JSON.stringify(jsonData, null, 2);
 	}
@@ -281,68 +416,70 @@
 	$: jsonData, selectedView, updateJsonData();
 </script>
 
-<div class="visualizer">
+<div class="visualizer w-full">
 	{#await dataPromise}
 		<p>Loading graph...</p>
 	{:then nodeData}
-		<div class="info-panel">
-			<h1>Visualize</h1>
-			<div>
-				<span>Polling</span>
-				<Button on:click={start}>Start</Button>
-				<Button on:click={stop}>Stop</Button>
-				<Button on:click={() => (showConnections = !showConnections)}>
-					{showConnections ? 'Hide' : 'Show'} Connections
-				</Button>
-				<label class="switch">
-					<input
-						type="checkbox"
-						id="pollingToggle"
-						bind:checked={isPolling}
-						on:change={togglePolling}
-					/>
-					<span class="slider round"> </span></label
-				>
+		<ResizablePanel defaultWidth={400}>
+			<div slot="left" class="info-panel">
+				<h1>Visualize</h1>
+				<div>
+					<span>Polling</span>
+					<Button on:click={start}>Start</Button>
+					<Button on:click={stop}>Stop</Button>
+					<Button on:click={() => (showConnections = !showConnections)}>
+						{showConnections ? 'Hide' : 'Show'} Connections
+					</Button>
+					<label class="switch">
+						<input
+							type="checkbox"
+							id="pollingToggle"
+							bind:checked={isPolling}
+							on:change={togglePolling}
+						/>
+						<span class="slider round"> </span></label
+					>
+				</div>
+				{#if showConnections && connections}
+					<div class="connections-container">
+						<h2>Connection Details</h2>
+						<pre class="connections">{prettyPrintConnections(connections)}</pre>
+					</div>
+				{/if}
+				<Info {info} />
+
+				{#if dataType === 'channel'}
+					<div class="view-selector">
+						<Select
+							bind:value={selectedView}
+							options={[
+								{ value: 'all', label: 'View All' },
+								{ value: 'source', label: 'Source View' },
+								{ value: 'target', label: 'Target View' }
+							]}
+						/>
+					</div>
+				{/if}
+
+				<div>
+					{#if nodeData}
+						{#each Object.keys(nodeData) as key}
+							<Button on:click={() => setNode(nodeData[key])}>{key}</Button>
+						{/each}
+					{/if}
+				</div>
+				<div>
+					{#if jsonData}
+						<pre class="detail">{prettyPrintJson(jsonData)}</pre>
+					{/if}
+				</div>
 			</div>
-			{#if showConnections && connections}
-				<div class="connections-container">
-					<h2>Connection Details</h2>
-					<pre class="connections">{prettyPrintConnections(connections)}</pre>
-				</div>
-			{/if}
-			<Info {info} />
-
-			{#if dataType === 'channel'}
-				<div class="view-selector">
-					<Select
-						bind:value={selectedView}
-						options={[
-							{ value: 'all', label: 'View All' },
-							{ value: 'source', label: 'Source View' },
-							{ value: 'target', label: 'Target View' }
-						]}
-					/>
-				</div>
-			{/if}
-
-			<div>
-				{#if nodeData}
-					{#each Object.keys(nodeData) as key}
-						<Button on:click={() => setNode(nodeData[key])}>{key}</Button>
-					{/each}
+			<div slot="right" class="graph-container">
+				{#if $nodes && $nodes.length > 0}
+					<Graph on:dataEvent={handleClickData} />
 				{/if}
 			</div>
-			<div>
-				{#if jsonData}
-					<pre class="detail">{prettyPrintJson(jsonData)}</pre>
-				{/if}
-			</div>
-		</div>
-		<div class="graph-container">
-			{#if $nodes && $nodes.length > 0}
-				<Graph on:dataEvent={handleClickData} />
-			{/if}
-		</div>
+		</ResizablePanel>
 	{:catch error}
 		<p>Error: {error.message}</p>
 	{/await}
@@ -355,9 +492,6 @@
 		overflow: hidden;
 	}
 	.info-panel {
-		flex: 0 0 30%;
-		max-width: 400px;
-		background: rgba(0, 151, 19, 0.1);
 		padding: 10px;
 		font-size: large;
 		overflow-y: auto;

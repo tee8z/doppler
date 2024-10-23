@@ -28,14 +28,14 @@ class LogStreamManager {
 	getStream(logFilename: string): fs.WriteStream {
 		const existing = this.streams.get(logFilename);
 		if (existing) {
-			console.log(`using exisiting stream: ${logFilename}`);
+			console.log(`Using exisiting stream: ${logFilename}`);
 			existing.lastUsed = Date.now();
 			return existing.stream;
 		}
 
 		const newStream = fs.createWriteStream(logFilename, { flags: 'a' });
 		this.streams.set(logFilename, { stream: newStream, lastUsed: Date.now() });
-		console.log(`new stream created: ${logFilename}`);
+		console.log(`New stream created: ${logFilename}`);
 		newStream.on('error', (error: any) => {
 			console.error(`Error with log stream for ${logFilename}: ${error.message}`);
 			this.closeStream(logFilename);
