@@ -324,7 +324,7 @@ export class ChannelMapper {
 			case 'lnd':
 				return parseInt(channel.local_balance) || 0;
 			case 'coreln':
-				return channel.our_amount_msat ? Math.floor(channel.our_amount_msat / 1000) : 0;
+				return channel.to_us_msat ? Math.floor(channel.to_us_msat / 1000) : 0;
 			case 'eclair':
 				return Math.floor(
 					(channel.data?.commitments?.active[0]?.localCommit?.spec?.toLocal || 0) / 1000
@@ -333,14 +333,15 @@ export class ChannelMapper {
 				return 0;
 		}
 	}
+	//to_us_msat (msat, optional): How much of channel is owed to us.
 
 	private getRemoteBalance(type: string, channel: any): number {
 		switch (type) {
 			case 'lnd':
 				return parseInt(channel.remote_balance) || 0;
 			case 'coreln': {
-				const total = channel.amount_msat ? Math.floor(channel.amount_msat / 1000) : 0;
-				const local = channel.our_amount_msat ? Math.floor(channel.our_amount_msat / 1000) : 0;
+				const total = channel.total_msat ? Math.floor(channel.total_msat / 1000) : 0;
+				const local = channel.to_us_msat ? Math.floor(channel.to_us_msat / 1000) : 0;
 				return total - local;
 			}
 			case 'eclair':

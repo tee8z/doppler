@@ -88,6 +88,7 @@
 	.auto-scroll-label {
 		@apply text-sm mb-2 flex items-center gap-2;
 		@apply text-gray-700 dark:text-gray-300;
+		@apply flex-shrink-0;
 	}
 
 	.checkbox {
@@ -102,21 +103,20 @@
 	}
 
 	.log-container {
-		@apply flex-grow min-h-[500px] max-h-[80vh] overflow-y-auto;
+		@apply flex-1; /* Changed from flex-grow */
+		@apply overflow-y-auto;
 		@apply border border-gray-300 dark:border-gray-600;
 		@apply p-2.5 text-sm leading-relaxed;
-		/* Keep black background for terminal feel in both modes */
 		@apply bg-black;
 		@apply font-mono;
-		/* Add a subtle shadow to make it feel inset */
 		@apply shadow-inner;
+		@apply min-h-0;
 	}
 
 	.log-container p {
 		@apply m-0 mb-1 whitespace-pre-wrap break-all;
 	}
 
-	/* Log level styles */
 	.log-container :global(.log-level) {
 		@apply font-bold;
 	}
@@ -125,7 +125,6 @@
 		@apply font-normal text-gray-200;
 	}
 
-	/* Terminal-style log levels - same in both modes */
 	.log-container :global(.trace) {
 		@apply text-gray-400;
 	}
@@ -150,7 +149,6 @@
 		@apply text-gray-200;
 	}
 
-	/* Add a subtle terminal-like glow effect */
 	.log-container :global(.debug),
 	.log-container :global(.info),
 	.log-container :global(.warn),

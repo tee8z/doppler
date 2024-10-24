@@ -21,7 +21,7 @@ class LogStreamManager {
 
 	init() {
 		if (!this.cleanupInterval) {
-			this.cleanupInterval = setInterval(() => this.cleanup(), 5 * 60 * 1000); // 5 minutes
+			this.cleanupInterval = setInterval(() => this.cleanup(), 60 * 1000); // 1 minutes
 		}
 	}
 
@@ -44,7 +44,7 @@ class LogStreamManager {
 		return newStream;
 	}
 
-	private closeStream(logFilename: string) {
+	closeStream(logFilename: string) {
 		const streamInfo = this.streams.get(logFilename);
 		if (streamInfo) {
 			streamInfo.stream.end();
@@ -54,7 +54,7 @@ class LogStreamManager {
 
 	private cleanup() {
 		const now = Date.now();
-		const MAX_INACTIVE_TIME = 30 * 60 * 1000; // 30 minutes
+		const MAX_INACTIVE_TIME = 5 * 60 * 1000; // 5 minutes
 		for (const [logFilename, { lastUsed }] of this.streams.entries()) {
 			if (now - lastUsed > MAX_INACTIVE_TIME) {
 				console.log(`Closing inactive log stream: ${logFilename}`);
