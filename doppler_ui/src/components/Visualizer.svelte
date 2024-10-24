@@ -77,7 +77,7 @@
 				const perspective = currentData.find((d: any) => d.perspective === selectedView);
 				jsonData = perspective || null;
 			}
-			// Maintain node info in the Info component
+
 			info = nodeInfo;
 			type = nodeType;
 			balance = nodeBalance;
@@ -87,6 +87,22 @@
 	const fetchData = async (cur_connections: Connections) => {
 		if (!cur_connections || Object.keys(cur_connections).length === 0) {
 			console.log('No connections provided. Aborting fetchData.');
+
+			nodeConnections = [];
+			nodes.set([]);
+			edges.set([]);
+			nodeInfo = null;
+			nodeBalance = null;
+			nodeType = null;
+			channelInfo = null;
+			currentNodeId = null;
+			info = null;
+			balance = null;
+			type = null;
+			jsonData = null;
+			currentData = null;
+			dataType = null;
+			dataPromise = null;
 			return;
 		}
 		let nodeData: Nodes = {};
@@ -416,11 +432,16 @@
 	$: jsonData, selectedView, updateJsonData();
 </script>
 
-<div class="visualizer w-full">
+<div class="visualizer">
 	{#await dataPromise}
 		<p>Loading graph...</p>
 	{:then nodeData}
-		<ResizablePanel defaultWidth={400}>
+		<ResizablePanel
+			defaultWidth={400}
+			leftPanelBackground="rgba(0, 151, 19, 0.1)"
+			rightPanelBackground="white"
+			zIndex={1}
+		>
 			<div slot="left" class="info-panel">
 				<h1>Visualize</h1>
 				<div>
@@ -437,8 +458,8 @@
 							bind:checked={isPolling}
 							on:change={togglePolling}
 						/>
-						<span class="slider round"> </span></label
-					>
+						<span class="slider round"></span>
+					</label>
 				</div>
 				{#if showConnections && connections}
 					<div class="connections-container">
@@ -447,7 +468,6 @@
 					</div>
 				{/if}
 				<Info {info} />
-
 				{#if dataType === 'channel'}
 					<div class="view-selector">
 						<Select
@@ -460,7 +480,6 @@
 						/>
 					</div>
 				{/if}
-
 				<div>
 					{#if nodeData}
 						{#each Object.keys(nodeData) as key}
@@ -487,30 +506,38 @@
 
 <style>
 	.visualizer {
-		display: flex;
-		height: 100vh;
+		@apply bg-white dark:bg-gray-900 text-gray-900 dark:text-white;
+		position: relative;
+		height: 100%;
+		width: 100%;
 		overflow: hidden;
 	}
+
 	.info-panel {
+		@apply bg-green-50/10 dark:bg-gray-800/20;
 		padding: 10px;
 		font-size: large;
 		overflow-y: auto;
 		height: 100%;
+		width: 100%;
 	}
+
 	.graph-container {
-		flex: 1;
 		height: 100%;
+		width: 100%;
 		display: flex;
 		justify-content: center;
 		align-items: center;
 		overflow: hidden;
 	}
+
 	.detail {
 		font-size: small;
 		overflow-wrap: break-word;
 		white-space: pre-wrap;
 		word-break: break-all;
 	}
+
 	.switch {
 		position: relative;
 		display: inline-block;

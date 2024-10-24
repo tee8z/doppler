@@ -5,6 +5,7 @@ import { spawn } from 'child_process';
 import { parse } from 'ini';
 import { resolve } from 'path';
 import { v7 } from 'uuid';
+import { logStreamManager } from '$lib/log_stream_manager';
 
 // Read and parse the INI config file
 const configPath = process.env.UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
@@ -92,8 +93,8 @@ export const POST: RequestHandler = async function (event) {
 			const closeMessage = `Child process exited with code ${code}\n`;
 			console.log(closeMessage);
 			logStream.write(closeMessage, () => {
-				// End the stream only after ensuring all data has been written
-				logStream.end();
+				// Close the stream through the manager
+				logStreamManager.closeStream(logFilename);
 			});
 		});
 

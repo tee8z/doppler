@@ -1,22 +1,34 @@
-<script>
+<script lang="ts">
+	import { onMount } from 'svelte';
+
 	export let defaultWidth = 400;
+	export let leftPanelBackground = 'rgba(0, 151, 19, 0.1)';
+	export let rightPanelBackground = 'white';
+	export let zIndex = 0;
 
 	let leftWidth = defaultWidth;
 	let isResizing = false;
-	let container;
+	let container = null;
+	let mounted = false;
+
+	onMount(() => {
+		mounted = true;
+	});
 
 	function startResizing(e) {
 		isResizing = true;
 		e.preventDefault();
 
+		const startX = e.clientX;
+		const startWidth = leftWidth;
+
 		const handleResize = (e) => {
 			if (isResizing) {
-				const containerWidth = container.offsetWidth;
+				const dx = e.clientX - startX;
+				const newWidth = startWidth + dx;
+				const containerWidth = container?.offsetWidth || 0;
 				const maxWidth = containerWidth - 200; // Ensure at least 200px for right panel
-				leftWidth = Math.max(
-					200,
-					Math.min(maxWidth, e.clientX - container.getBoundingClientRect().left)
-				);
+				leftWidth = Math.max(200, Math.min(maxWidth, newWidth));
 			}
 		};
 
@@ -35,15 +47,14 @@
 	}
 </script>
 
-<div class="split-container" bind:this={container}>
+<div class="split-container" bind:this={container} style="position: relative; z-index: {zIndex};">
 	<div
 		class="left-panel"
-		style="width: {leftWidth}px; min-width: {leftWidth}px; max-width: {leftWidth}px;"
+		style="width: {leftWidth}px; min-width: {leftWidth}px; max-width: {leftWidth}px; background: {leftPanelBackground};"
 	>
-		<slot name="left"></slot>
+		<slot name="left" />
 	</div>
 
-	<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
 	<div
 		class="resizer"
 		role="separator"
@@ -55,17 +66,16 @@
 		on:mousedown={startResizing}
 		on:dblclick={handleDoubleClick}
 		title="Double-click to reset width"
-	></div>
+	/>
 
-	<div class="right-panel">
-		<slot name="right"></slot>
+	<div class="right-panel" style="background: {rightPanelBackground};">
+		<slot name="right" />
 	</div>
 </div>
 
 <style>
 	.split-container {
 		display: flex;
-		position: relative;
 		width: 100%;
 		height: 100%;
 		min-width: 0;
@@ -74,16 +84,16 @@
 	.left-panel {
 		flex-shrink: 0;
 		height: 100%;
-		background: rgba(0, 151, 19, 0.1);
 		overflow: auto;
+		position: relative;
 	}
 
 	.right-panel {
 		flex: 1;
 		height: 100%;
 		min-width: 0;
-		background: white;
-		overflow: hidden;
+		overflow: auto;
+		position: relative;
 	}
 
 	.resizer {
@@ -94,6 +104,8 @@
 		border-left: 1px solid #999;
 		border-right: 1px solid #999;
 		flex-shrink: 0;
+		position: relative;
+		z-index: 1;
 	}
 
 	.resizer:hover {

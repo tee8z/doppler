@@ -171,11 +171,11 @@
 	onDestroy(unsubscribe);
 </script>
 
-<main class="dark:bg-gray-900 dark:text-white">
-	<h1 class="text-green-600 dark:text-green-400">Doppler Script Editor</h1>
-	<div class="editor-layout">
-		<div class="script-editor">
-			<div class="editor-nav">
+<div class="script-builder dark:bg-gray-900 dark:text-white">
+	<h1 class="script-builder-title text-green-600 dark:text-green-400">Doppler Script Editor</h1>
+	<div class="script-builder-layout">
+		<div class="script-builder-editor">
+			<div class="script-builder-nav">
 				<div class="script-info">
 					<input
 						bind:value={scriptPath}
@@ -199,20 +199,22 @@
 					</button>
 				</div>
 			</div>
-			<textarea
-				bind:value={scriptContent}
-				placeholder="Write your custom doppler script here..."
-				disabled={isLoading}
-				class="script-textarea"
-			></textarea>
-			{#if submitResult}
-				<p class="submit-result">{submitResult}</p>
-			{/if}
-			{#if isLoading}
-				<p class="loading-message">Loading script...</p>
-			{/if}
+			<div class="script-builder-textarea-container">
+				<textarea
+					bind:value={scriptContent}
+					placeholder="Write your custom doppler script here..."
+					disabled={isLoading}
+					class="script-textarea"
+				></textarea>
+				{#if submitResult}
+					<p class="submit-result">{submitResult}</p>
+				{/if}
+				{#if isLoading}
+					<p class="loading-message">Loading script...</p>
+				{/if}
+			</div>
 		</div>
-		<div class="tree-view" class:expanded={isTreeExpanded}>
+		<div class="script-builder-tree-view" class:expanded={isTreeExpanded}>
 			<div class="tree-header">
 				<button on:click={toggleTree} class="toggle-btn">
 					{#if isTreeExpanded}
@@ -224,7 +226,7 @@
 				<h2 class="dark:text-green-400">Script Library</h2>
 			</div>
 			{#if isTreeExpanded}
-				<div transition:slide>
+				<div transition:slide class="tree-content">
 					{#if $treeStore}
 						<TreeView tree={$treeStore} on:select={handleScriptSelect} />
 					{:else if isLoading}
@@ -236,34 +238,93 @@
 			{/if}
 		</div>
 	</div>
-</main>
+</div>
 
 <style lang="postcss">
-	main {
-		@apply max-w-none m-0 p-5 h-screen box-border flex flex-col;
+	.script-builder {
+		@apply h-full w-full flex flex-col bg-gray-100 dark:bg-gray-800;
+		@apply overflow-hidden;
 	}
 
-	.editor-layout {
-		@apply flex gap-0 flex-1 overflow-hidden;
+	.script-builder-title {
+		@apply flex-shrink-0 p-2.5;
 	}
 
-	.tree-view {
-		@apply flex-none w-[250px] transition-[flex-basis] duration-300 overflow-hidden;
-		@apply border-l border-gray-300 dark:border-gray-600;
+	.script-builder-layout {
+		@apply flex gap-0 flex-1 bg-gray-100 dark:bg-gray-800;
+		@apply overflow-hidden;
+		height: calc(100vh - 4rem);
 	}
 
-	.tree-view:not(.expanded) {
-		@apply w-[30px];
+	.script-builder-editor {
+		@apply flex-1 flex flex-col;
+		@apply bg-gray-100 dark:bg-gray-800;
+		@apply overflow-hidden;
+		min-width: 0;
 	}
 
-	.script-editor {
-		@apply flex-1 flex flex-col overflow-hidden;
-	}
-
-	.editor-nav {
+	.script-builder-nav {
 		@apply flex justify-between p-2.5;
 		@apply bg-gray-100 dark:bg-gray-800;
 		@apply border-b border-gray-300 dark:border-gray-600;
+		@apply flex-shrink-0;
+	}
+
+	.script-builder-textarea-container {
+		@apply flex flex-col;
+		@apply bg-gray-100 dark:bg-gray-800;
+		@apply overflow-hidden;
+		height: calc(100vh - 9rem);
+		min-height: 0;
+	}
+
+	.script-textarea {
+		@apply w-full p-2.5 font-mono;
+		@apply bg-white dark:bg-gray-700;
+		@apply text-gray-900 dark:text-white;
+		@apply border-none outline-none;
+		@apply overflow-auto;
+		flex: 1 1 0%;
+		min-height: 0;
+		resize: none;
+	}
+
+	.script-textarea:disabled {
+		@apply bg-gray-100 dark:bg-gray-700;
+	}
+
+	.submit-result,
+	.loading-message {
+		@apply p-2.5 m-0;
+		@apply bg-gray-50 dark:bg-gray-800;
+		@apply text-gray-900 dark:text-white;
+		@apply flex-shrink-0;
+		@apply border-t border-gray-300 dark:border-gray-600;
+	}
+
+	.script-builder-tree-view {
+		@apply flex-none w-[250px] flex flex-col;
+		@apply bg-gray-100 dark:bg-gray-800;
+		@apply border-l border-gray-300 dark:border-gray-600;
+		@apply transition-[width] duration-300;
+		@apply overflow-hidden;
+		height: calc(100vh - 4rem);
+	}
+
+	.script-builder-tree-view:not(.expanded) {
+		@apply w-[30px];
+	}
+
+	.tree-header {
+		@apply flex items-center p-1.5;
+		@apply bg-gray-100 dark:bg-gray-800;
+		@apply border-b border-gray-300 dark:border-gray-600;
+		@apply flex-shrink-0;
+	}
+
+	.tree-content {
+		@apply flex-1 overflow-auto;
+		@apply bg-gray-100 dark:bg-gray-800;
 	}
 
 	.script-info {
@@ -304,22 +365,9 @@
 		@apply bg-gray-400 dark:bg-gray-600 cursor-not-allowed;
 	}
 
-	.script-textarea {
-		@apply flex-1 w-full p-2.5 font-mono resize-none border-none;
-		@apply bg-white dark:bg-gray-800;
-		@apply text-gray-900 dark:text-white;
-		@apply border-b border-gray-300 dark:border-gray-600;
-	}
-
-	.script-textarea:disabled {
-		@apply bg-gray-100 dark:bg-gray-700;
-	}
-
-	.submit-result,
-	.loading-message {
-		@apply p-2.5 m-0;
-		@apply bg-gray-50 dark:bg-gray-800;
-		@apply text-gray-900 dark:text-white;
+	.loading,
+	.no-scripts {
+		@apply p-2.5 text-gray-600 dark:text-gray-400;
 	}
 
 	.toggle-btn {
@@ -328,16 +376,5 @@
 		@apply text-gray-600 dark:text-gray-300;
 		@apply hover:text-green-600 dark:hover:text-green-400;
 		@apply transition-colors;
-	}
-
-	.tree-header {
-		@apply flex items-center p-1.5;
-		@apply bg-gray-100 dark:bg-gray-800;
-		@apply border-b border-gray-300 dark:border-gray-600;
-	}
-
-	.loading,
-	.no-scripts {
-		@apply p-2.5 text-gray-600 dark:text-gray-400;
 	}
 </style>

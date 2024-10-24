@@ -115,7 +115,7 @@
 							'text-outline-width': 2,
 							'text-background-opacity': 0,
 							// Source label (Remote balance)
-							'source-label': (ele: any) => `${ele.data('remote_balance')}`,
+							'source-label': (ele: any) => `${ele.data('local_balance')}`,
 							'source-text-offset': 30,
 							'source-text-margin-y': -10,
 							'source-text-background-opacity': 1,
@@ -124,7 +124,7 @@
 							'source-text-background-padding': 5,
 
 							// Target label (Local balance)
-							'target-label': (ele: any) => `${ele.data('local_balance')}`,
+							'target-label': (ele: any) => `${ele.data('remote_balance')}`,
 							'target-text-offset': 30,
 							'target-text-margin-y': -10,
 							'target-text-background-opacity': 1,
@@ -235,11 +235,16 @@
 				'Remote balance:',
 				edge.remote_balance,
 				'Local balance:',
-				edge.local_balance
+				edge.local_balance,
+				'Active:',
+				edge.active
 			);
-			cy.getElementById(edge.channel_id).data(edge);
-		});
+			const cyEdge = cy.getElementById(edge.channel_id);
 
+			cyEdge.data(edge);
+			cyEdge.style('line-color', edge.active ? '#b3b3cc' : '#ffa8a8');
+			cyEdge.style('target-arrow-color', edge.active ? '#b3b3cc' : '#ffa8a8');
+		});
 		prevNodes = nodes;
 		prevEdges = edges;
 
