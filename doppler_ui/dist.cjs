@@ -60,7 +60,7 @@ if (isDarwin) {
   console.log('Darwin platform detected. Installing required dependencies...');
   try {
 	console.log('Installing @rollup/rollup-darwin-x64...');
-    execSync('npm install @rollup/rollup-darwin-x64', { stdio: 'inherit' });
+    execSync('npm install --save @rollup/rollup-darwin-x64', { stdio: 'inherit' });
   } catch (error) {
     console.error('Error during Darwin setup:', error);
     process.exit(1);
