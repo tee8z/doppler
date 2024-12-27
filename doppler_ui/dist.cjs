@@ -59,8 +59,8 @@ const isDarwin = process.platform === 'darwin';
 if (isDarwin) {
   console.log('Darwin platform detected. Installing required dependencies...');
   try {
-	console.log('Cleaning up old dependencies...');
-    execSync('rm -f package-lock.json && rm -rf node_modules', { stdio: 'inherit' });
+    console.log('Removing package-lock.json...');
+    execSync('rm -f package-lock.json', { stdio: 'inherit' });
 
 	console.log('Installing @rollup/rollup-darwin-x64...');
     execSync('npm install @rollup/rollup-darwin-x64', { stdio: 'inherit' });
