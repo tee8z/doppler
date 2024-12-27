@@ -16,6 +16,6 @@ pr-run-mode = "upload"
 # The installers to generate for each app
 installers = []
 
-[github-custom-runners]
+[dist.github-custom-runners]
 aarch64-apple-darwin = "macos-14"
 x86_64-apple-darwin = "macos-latest"
