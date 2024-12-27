@@ -1,6 +1,7 @@
 //used in build process please do not touch
 const { bin } = require('./package.json');
 const execSync = require('child_process').execSync;
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -53,14 +54,17 @@ if (!bunTarget) {
 	throw `To the best of our knowledge, bun does not support building for ${distTarget}`;
 }
 const binExt = distTarget.includes('windows') ? '.exe' : '';
-const isDarwin = distTarget.includes('apple-darwin');
-// Existing build process...
+const isDarwin = process.platform === 'darwin';
+
 if (isDarwin) {
-	console.log('Darwin detected. Installing @rollup/rollup-darwin-x64...');
-	execSync('npm install @rollup/rollup-darwin-x64', { stdio: 'inherit' });
-	console.log('Removing old installed dependencies ...');
-	execSync('rm package-lock.json', { stdio: 'inherit' });
-	execSync('rm -rf node_modules', { stdio: 'inherit' });
+  console.log('Darwin platform detected. Installing required dependencies...');
+  try {
+	console.log('Installing @rollup/rollup-darwin-x64...');
+    execSync('npm install --save @rollup/rollup-darwin-x64', { stdio: 'inherit' });
+  } catch (error) {
+    console.error('Error during Darwin setup:', error);
+    process.exit(1);
+  }
 }
 
 // Setup npm
