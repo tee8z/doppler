@@ -59,7 +59,8 @@ const isDarwin = process.platform === 'darwin';
 if (isDarwin) {
     console.log('Darwin platform detected. Installing required dependencies...');
     try {
-        const rollupPackage = `@rollup/rollup-darwin-${process.arch}`;
+		const arch = distTarget.includes('aarch64') ? 'arm64' : 'x64';
+        const rollupPackage = `@rollup/rollup-darwin-${arch}`;
         console.log(`Installing ${rollupPackage}...`);
         execSync(`npm install --save ${rollupPackage}`, { stdio: 'inherit' });
     } catch (error) {
