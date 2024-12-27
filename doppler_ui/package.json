@@ -1,6 +1,6 @@
 {
 	"name": "doppler",
-	"version": "0.3.5",
+	"version": "0.3.6",
 	"repository": "github:tee8z/doppler",
 	"bin": {
 		"doppler_ui": "build/index.js"
