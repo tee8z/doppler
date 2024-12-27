@@ -15,3 +15,6 @@ install-updater = false
 pr-run-mode = "plan"
 # The installers to generate for each app
 installers = []
+
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-14"

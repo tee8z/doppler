@@ -57,14 +57,16 @@ const binExt = distTarget.includes('windows') ? '.exe' : '';
 const isDarwin = process.platform === 'darwin';
 
 if (isDarwin) {
-  console.log('Darwin platform detected. Installing required dependencies...');
-  try {
-	console.log('Installing @rollup/rollup-darwin-x64...');
-    execSync('npm install --save @rollup/rollup-darwin-x64', { stdio: 'inherit' });
-  } catch (error) {
-    console.error('Error during Darwin setup:', error);
-    process.exit(1);
-  }
+    console.log('Darwin platform detected. Installing required dependencies...');
+    try {
+		const arch = distTarget.includes('aarch64') ? 'arm64' : 'x64';
+        const rollupPackage = `@rollup/rollup-darwin-${arch}`;
+        console.log(`Installing ${rollupPackage}...`);
+        execSync(`npm install --save ${rollupPackage}`, { stdio: 'inherit' });
+    } catch (error) {
+        console.error('Error during Darwin setup:', error);
+        process.exit(1);
+    }
 }
 
 // Setup npm
