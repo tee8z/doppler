@@ -15,3 +15,9 @@ install-updater = false
 pr-run-mode = "upload"
 # The installers to generate for each app
 installers = []
+
+[target.aarch64-apple-darwin]
+runner = "macos-14"
+
+[target.x86_64-apple-darwin]
+runner = "macos-latest"
