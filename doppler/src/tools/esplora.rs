@@ -1,10 +1,10 @@
 use crate::{create_folder, get_absolute_path, Bitcoind, Options, NETWORK};
 use anyhow::{anyhow, Result};
 use docker_compose_types::{
-    Command, DependsCondition, DependsOnOptions, Entrypoint, Environment, Networks, Ports, Service,
-    Volumes,
+    DependsCondition, DependsOnOptions, Entrypoint, Environment, Networks, Ports, Service, Volumes,
 };
 use indexmap::IndexMap;
+use std::{path::Path, process::Command};
 
 use super::ToolImageInfo;
 
@@ -28,6 +28,7 @@ pub fn build_esplora(
     }
     let electrum_port = options.new_port();
     let esplora_web_port = options.new_port();
+    let elects_port = options.new_port();
 
     let bitcoind: &Bitcoind = match options.get_bitcoind_by_name(target_node) {
         Ok(bitcoind) => bitcoind,
@@ -41,9 +42,25 @@ pub fn build_esplora(
             condition: String::from("service_healthy"),
         },
     );
-    let volume = &format!("data/{}", name);
+    let volume = &format!("data/{}/logs", name);
     create_folder(volume)?;
+    let log_paths = [
+        format!("{}/electrs/debug.log", volume),
+        format!("{}/nginx/access.log", volume),
+        format!("{}/nginx/error.log", volume),
+        format!("{}/nginx/current", volume),
+        format!("{}/prerenderer/current", volume),
+        format!("{}/websocket/current", volume),
+    ];
+    for log_path in &log_paths {
+        if let Some(parent) = Path::new(log_path).parent() {
+            create_folder(parent.to_str().unwrap())?;
+        }
+        std::fs::File::create(log_path)?;
+    }
     let full_path = get_absolute_path(volume)?.to_str().unwrap().to_string();
+
+    let (uid, gid) = get_user_ids();
 
     let esplora = Service {
         image: Some(image.get_tag()),
@@ -52,29 +69,53 @@ pub fn build_esplora(
         ports: Ports::Short(vec![
             format!("{}:50001", electrum_port), // Electrum RPC
             format!("{}:80", esplora_web_port), // Esplora Web Interface And API Server Port
+            format!("{}:3000", elects_port),    // Esplora Web Interface And API Server Port
         ]),
-        volumes: Volumes::Simple(vec![format!("{}:/data:rw", full_path)]),
-        command: Some(Command::Args(vec![
-            format!("bitcoin-{}", options.network),
-            "explorer".to_owned(),
-            "verbose".to_owned(),
-        ])),
+        volumes: Volumes::Simple(vec![
+            format!(
+                "{}/electrs/debug.log:/data/logs/electrs/debug.log:rw",
+                full_path
+            ),
+            format!("{}/nginx/error.log:/var/log/nginx/error.log:rw", full_path),
+            format!(
+                "{}/nginx/access.log:/var/log/nginx/access.log:rw",
+                full_path
+            ),
+            format!("{}/nginx/current:/data/logs/nginx/current:rw", full_path),
+            format!(
+                "{}/prerenderer/current:/data/logs/prerenderer/current:rw",
+                full_path
+            ),
+            format!(
+                "{}/websocket/current:/data/logs/websocket/current:rw",
+                full_path
+            ),
+        ]),
         environment: Environment::List(vec![
+            format!("FLAVOR=bitcoin-{}", options.network),
+            String::from("MODE=explorer"),
+            String::from("DEBUG=verbose"),
+            format!("FLAVOR=bitcoin-{}", options.network),
             format!("NETWORK={}", options.network),
             format!("DAEMON_RPC_ADDR={}", bitcoind.container_name),
             format!("DAEMON_RPC_PORT={}", bitcoind.rpcport),
             format!("RPC_USER={}", bitcoind.user),
             format!("RPC_PASS={}", bitcoind.password),
+            format!("USER_ID={}", uid),
+            format!("GROUP_ID={}", gid),
+            String::from("STATIC_ROOT=http://localhost:5000/"),
         ]),
         networks: Networks::Simple(vec![NETWORK.to_owned()]),
         entrypoint: Some(Entrypoint::List(vec![
             "bash".to_owned(),
             "-c".to_owned(),
             format!(
-                r#"cat > /srv/explorer/custom_run.sh << 'EOL'
+                r#"chown $$USER_ID:$$GROUP_ID /data && \
+cat > /srv/explorer/custom_run.sh << 'EOL'
 {}
 EOL
-chmod +x /srv/explorer/custom_run.sh && exec /srv/explorer/custom_run.sh "$@""#,
+chmod +x /srv/explorer/custom_run.sh && \
+exec /srv/explorer/custom_run.sh "$@""#,
                 CUSTOM_RUN_SCRIPT
             ),
         ])),
@@ -94,20 +135,60 @@ chmod +x /srv/explorer/custom_run.sh && exec /srv/explorer/custom_run.sh "$@""#,
     Ok(())
 }
 
+fn get_user_ids() -> (String, String) {
+    #[cfg(target_os = "macos")]
+    {
+        // On macOS staff group is typically 20
+        let default_gid = "20".to_string();
+        let uid = Command::new("id")
+            .arg("-u")
+            .output()
+            .ok()
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .unwrap_or("501".to_string()) // macOS typically starts user IDs at 501
+            .trim()
+            .to_string();
+
+        (uid, default_gid)
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let uid = Command::new("id")
+            .arg("-u")
+            .output()
+            .ok()
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .unwrap_or("1000".to_string())
+            .trim()
+            .to_string();
+
+        let gid = Command::new("id")
+            .arg("-g")
+            .output()
+            .ok()
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .unwrap_or("1000".to_string())
+            .trim()
+            .to_string();
+
+        (uid, gid)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        ("1000".to_string(), "1000".to_string())
+    }
+}
+
 // This custom script allows us to point esplora at an existing bitcoind instance instead of having it create one while it starts up \
 // (which fixes many locking issues of two bitcoind instance trying to access the same data)
 const CUSTOM_RUN_SCRIPT: &str = r#"#!/bin/bash
 set -eo pipefail
 
-# Initialize required variables
-FLAVOR=$${0:-}
-MODE=$${1:-}
-DEBUG=$${2:-}
-
-# Debug - list content of relevant directories
-echo "Checking binary locations:"
-ls -l /srv/explorer/
-ls -l /srv/explorer/electrs*/bin/ || echo "No electrs binary found in expected location"
+echo "FLAVOR: $$FLAVOR"
+echo "MODE: $$MODE"
+echo "DEBUG: $$DEBUG"
 
 # Validate required environment variables
 if [ -z "$$NETWORK" ] || [ -z "$$DAEMON_RPC_ADDR" ] || [ -z "$$DAEMON_RPC_PORT" ] || [ -z "$$RPC_USER" ] || [ -z "$$RPC_PASS" ]; then
@@ -135,9 +216,15 @@ fi
 
 echo "Enabled mode $${MODE} for bitcoin-$${NETWORK}"
 
-# Set up directories
-mkdir -p /data/logs/electrs
+# Set up all required directories
+mkdir -p /data/logs/{electrs,nginx,prerenderer,websocket}
 mkdir -p /data/electrs_db/$$NETWORK
+mkdir -p /etc/service/{nginx,prerenderer,websocket}/log
+mkdir -p /etc/run_once
+mkdir -p /var/run/electrs
+mkdir -p /etc/service/socat
+
+cp /srv/explorer/source/contrib/runits/socat.runit /etc/service/socat/run
 
 # Configure nginx
 NGINX_PATH="$${NETWORK}/"
@@ -145,7 +232,7 @@ NGINX_NOSLASH_PATH="$${NETWORK}"
 NGINX_REWRITE="rewrite ^/$${NETWORK}(/.*)$$ \$$1 break;"
 NGINX_REWRITE_NOJS="rewrite ^/$${NETWORK}(/.*)$$ \"/$${NETWORK}/nojs\$$1?\" permanent"
 NGINX_CSP="default-src 'self'; script-src 'self' 'unsafe-eval'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'"
-NGINX_LOGGING="access_log off"
+NGINX_LOGGING="access_log /var/log/nginx/access.log"
 
 # Configure electrs
 ELECTRS_DB_DIR="/data/electrs_db/$$NETWORK"
@@ -183,26 +270,19 @@ fi
 
 ELECTRS_PID=$!
 
-# Set up minimal runit services for nginx and other required services
-mkdir -p /etc/service/{nginx,prerenderer,websocket}/log
-mkdir -p /data/logs/{nginx,prerenderer,websocket}
-
-# Configure nginx
+# Configure services
 cp /srv/explorer/source/contrib/runits/nginx.runit /etc/service/nginx/run
 cp /srv/explorer/source/contrib/runits/nginx-log.runit /etc/service/nginx/log/run
 cp /srv/explorer/source/contrib/runits/nginx-log-config.runit /data/logs/nginx/config
 
-# Set up prerenderer
 cp /srv/explorer/source/contrib/runits/prerenderer.runit /etc/service/prerenderer/run
 cp /srv/explorer/source/contrib/runits/prerenderer-log.runit /etc/service/prerenderer/log/run
 cp /srv/explorer/source/contrib/runits/prerenderer-log-config.runit /data/logs/prerenderer/config
 
-# Set up websocket
 cp /srv/explorer/source/contrib/runits/websocket.runit /etc/service/websocket/run
 cp /srv/explorer/source/contrib/runits/websocket-log.runit /etc/service/websocket/log/run
 cp /srv/explorer/source/contrib/runits/websocket-log-config.runit /data/logs/websocket/config
 
-# Make scripts executable
 chmod +x /etc/service/*/run
 
 # Process nginx configuration
@@ -229,15 +309,8 @@ function preprocess(){
 preprocess /srv/explorer/source/contrib/nginx.conf.in /etc/nginx/sites-enabled/default
 sed -i 's/user www-data;/user root;/' /etc/nginx/nginx.conf
 
-echo "Checking processed nginx config:"
-cat /etc/nginx/sites-enabled/default
-
-# Test nginx configuration
 echo "Testing nginx configuration..."
 nginx -t
 
-# Create required directory for runit
-mkdir -p /etc/run_once
-
-# Start runit services (nginx, prerenderer, websocket)
+# Start runit services
 exec /srv/explorer/source/contrib/runit_boot.sh"#;

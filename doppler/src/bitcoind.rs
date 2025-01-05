@@ -136,7 +136,7 @@ pub fn build_bitcoind(
         env_file: Some(EnvFile::Simple(".env".to_owned())),
         healthcheck: Some(Healthcheck {
             test: Some(HealthcheckTest::Single(
-                vec![
+                [
                     "bitcoin-cli".to_string(),
                     format!("-rpcuser={}", bitcoind_conf.user),
                     format!("-rpcpassword={}", bitcoind_conf.password),
@@ -290,7 +290,7 @@ fn get_bitcoind_config(
 }
 
 fn set_network_section(conf: &mut FileConf, options: &mut Options) -> Result<Section, Error> {
-    if conf.sections.get(&options.network).is_none() {
+    if !conf.sections.contains_key(&options.network) {
         conf.sections
             .insert(options.network.clone(), Section::new());
     }

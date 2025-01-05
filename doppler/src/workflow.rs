@@ -99,23 +99,12 @@ pub fn run_workflow_until_stop(
     Ok(())
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+#[derive(PartialEq, Default, Eq, PartialOrd, Ord, Hash, Clone)]
 struct LoopOptions {
     name: String,
     iterations: Option<i64>,
     sleep_time_interval_type: Option<char>,
     sleep_time_amt: Option<u64>,
-}
-
-impl Default for LoopOptions {
-    fn default() -> Self {
-        Self {
-            name: String::from(""),
-            iterations: None,
-            sleep_time_interval_type: None,
-            sleep_time_amt: None,
-        }
-    }
 }
 
 fn process_start_loop(line: Pair<Rule>) -> LoopOptions {
@@ -301,7 +290,7 @@ fn run_loop(
 }
 
 fn get_image(options: &mut Options, node_kind: NodeKind, possible_name: &str) -> ImageInfo {
-    let image_info = if !possible_name.is_empty() {
+    if !possible_name.is_empty() {
         if let Some(image) = options.get_image(possible_name) {
             image
         } else {
@@ -309,8 +298,7 @@ fn get_image(options: &mut Options, node_kind: NodeKind, possible_name: &str) ->
         }
     } else {
         options.get_default_image(node_kind)
-    };
-    image_info
+    }
 }
 
 fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
@@ -566,7 +554,7 @@ fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
                 // convert to seconds
                 match time_type {
                     'h' => time_num = time_num * 60 * 60,
-                    'm' => time_num = time_num * 60,
+                    'm' => time_num *= 60,
                     _ => (),
                 }
                 node_command.timeout = Some(time_num)
@@ -600,7 +588,7 @@ fn process_btc_action(line: Pair<Rule>) -> NodeCommand {
     let mut line_inner = line_inner.clone().peekable();
     let btc_node = line_inner.next().expect("invalid input").as_str();
     let command_name = line_inner.next().expect("invalid input").as_str();
-    if let None = line_inner.peek() {
+    if line_inner.peek().is_none() {
         return NodeCommand {
             name: command_name.to_owned(),
             from: btc_node.to_owned(),
