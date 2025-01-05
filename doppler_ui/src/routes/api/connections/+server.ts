@@ -3,13 +3,17 @@ import fs from 'fs';
 import { parse } from 'ini';
 import { resolve } from 'path';
 import * as path from 'path';
+import { UI_CONFIG_PATH } from '$env/static/private';
 
 export interface ConnectionConfig {
 	macaroon: string;
 	rune: string;
+	user: String;
 	password: string;
 	type: string;
 	host: string;
+	rpc_port: string;
+	p2p_port: string;
 }
 
 export interface Connections {
@@ -29,7 +33,7 @@ function safeReadFileSync(path: string): Buffer | null {
 	}
 }
 
-const configPath = process.env.UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
+const configPath = UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
 
 //TODO: have the info.conf be change based on the run script
 export const GET: RequestHandler = async function () {
@@ -57,7 +61,10 @@ export const GET: RequestHandler = async function () {
 					host: sectionConfig.API_ENDPOINT,
 					type: sectionConfig.TYPE,
 					rune: '',
-					password: ''
+					password: '',
+					user: '',
+					rpc_port: '',
+					p2p_port: ''
 				};
 			} else if (sectionConfig.TYPE === 'coreln') {
 				connections[section] = {
@@ -65,7 +72,10 @@ export const GET: RequestHandler = async function () {
 					rune: sectionConfig.RUNE,
 					host: sectionConfig.API_ENDPOINT,
 					type: sectionConfig.TYPE,
-					password: ''
+					password: '',
+					user: '',
+					rpc_port: '',
+					p2p_port: ''
 				};
 			} else if (sectionConfig.TYPE === 'eclair') {
 				connections[section] = {
@@ -73,7 +83,32 @@ export const GET: RequestHandler = async function () {
 					rune: '',
 					host: sectionConfig.API_ENDPOINT,
 					password: sectionConfig.API_PASSWORD,
-					type: sectionConfig.TYPE
+					type: sectionConfig.TYPE,
+					user: '',
+					rpc_port: '',
+					p2p_port: ''
+				};
+			} else if (sectionConfig.TYPE === 'bitcoind') {
+				connections[section] = {
+					macaroon: '',
+					rune: '',
+					host: '',
+					password: sectionConfig.PASSWORD,
+					type: sectionConfig.TYPE,
+					user: sectionConfig.USER,
+					rpc_port: sectionConfig.RPC,
+					p2p_port: sectionConfig.P2P
+				};
+			} else if (sectionConfig.TYPE === 'esplora') {
+				connections[section] = {
+					macaroon: '',
+					rune: '',
+					host: sectionConfig.API_ENDPOINT,
+					password: '',
+					type: sectionConfig.TYPE,
+					user: '',
+					rpc_port: sectionConfig.ELECTRUM_PORT,
+					p2p_port: ''
 				};
 			} else {
 				throw Error(`node type ${sectionConfig.TYPE} not supported yet!`);

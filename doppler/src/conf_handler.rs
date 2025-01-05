@@ -20,8 +20,8 @@ use std::{
 use crate::{
     add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_external_lnd_nodes, add_lnd_nodes,
     get_latest_polar_images, get_polar_images, get_supported_tool_images, new,
-    update_bash_alias_external, Bitcoind, Cln, CloneableHashMap, Eclair, ImageInfo, L1Node, L2Node,
-    Lnd, NodeKind, SupportedTool, Tag, Tags, ToolImageInfo, NETWORK,
+    update_bash_alias_external, Bitcoind, Cln, CloneableHashMap, Eclair, Esplora, ImageInfo,
+    L1Node, L2Node, Lnd, NodeKind, SupportedTool, Tag, Tags, ToolImageInfo, NETWORK,
 };
 
 #[derive(Subcommand)]
@@ -66,6 +66,7 @@ pub struct Options {
     known_polar_images: CloneableHashMap<NodeKind, Vec<ImageInfo>>,
     pub images: Vec<ImageInfo>,
     pub bitcoinds: Vec<Bitcoind>,
+    pub esplora: Vec<Esplora>,
     pub lnd_nodes: Vec<Lnd>,
     pub eclair_nodes: Vec<Eclair>,
     pub cln_nodes: Vec<Cln>,
@@ -164,6 +165,7 @@ impl Options {
             lnd_nodes: vec::Vec::new(),
             eclair_nodes: vec::Vec::new(),
             cln_nodes: vec::Vec::new(),
+            esplora: vec::Vec::new(),
             ports: starting_port,
             compose_path: None,
             services: indexmap::IndexMap::new(),
