@@ -28,7 +28,6 @@ pub fn build_esplora(
     }
     let electrum_port = options.new_port();
     let esplora_web_port = options.new_port();
-    let elects_port = options.new_port();
 
     let bitcoind: &Bitcoind = match options.get_bitcoind_by_name(target_node) {
         Ok(bitcoind) => bitcoind,
@@ -69,7 +68,6 @@ pub fn build_esplora(
         ports: Ports::Short(vec![
             format!("{}:50001", electrum_port), // Electrum RPC
             format!("{}:80", esplora_web_port), // Esplora Web Interface And API Server Port
-            format!("{}:3000", elects_port),    // Esplora Web Interface And API Server Port
         ]),
         volumes: Volumes::Simple(vec![
             format!(
