@@ -33,7 +33,7 @@ function safeReadFileSync(path: string): Buffer | null {
 	}
 }
 
-const configPath = UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
+const configPath = UI_CONFIG_PATH || process.env.UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
 
 //TODO: have the info.conf be change based on the run script
 export const GET: RequestHandler = async function () {

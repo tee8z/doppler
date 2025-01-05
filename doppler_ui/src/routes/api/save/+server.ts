@@ -4,7 +4,7 @@ import path from 'path';
 import { parse } from 'ini';
 import { UI_CONFIG_PATH } from '$env/static/private';
 
-const configPath = UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
+const configPath = UI_CONFIG_PATH || process.env.UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
 const config = parse(fs.readFileSync(`${configPath}/server.conf.ini`, 'utf-8'));
 
 const DOPPLER_SCRIPTS_FOLDER = config.paths.dopplerScriptsFolder;
