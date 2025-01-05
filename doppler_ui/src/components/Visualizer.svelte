@@ -120,7 +120,11 @@
 				let balance = await requests.fetchBalance();
 				let info = await requests.fetchInfo();
 				if (!response['error'] && info && info.identity_pubkey && key) {
-					nodeConnections.push({ pubkey: info.identity_pubkey, alias: key, connection: requests });
+					nodeConnections.push({
+						pubkey: info.identity_pubkey,
+						alias: key,
+						connection: requests
+					});
 				}
 				if (channels && balance && info && key) {
 					return {
@@ -153,7 +157,10 @@
 					};
 				}
 			} else if (connectionConfig.type === 'eclair') {
-				const requests = new EclairRequests(connectionConfig.host, connectionConfig.password);
+				const requests = new EclairRequests(
+					connectionConfig.host,
+					connectionConfig.password
+				);
 				const channels = await requests.fetchChannels();
 				const balance = await requests.fetchBalance();
 				const info = await requests.fetchInfo();
@@ -235,7 +242,9 @@
 			currentData = data;
 
 			if (data.known) {
-				const connection = nodeConnections.find((connection) => connection.pubkey === data.known);
+				const connection = nodeConnections.find(
+					(connection) => connection.pubkey === data.known
+				);
 				if (connection) {
 					try {
 						const nodeInfo = await connection.connection.fetchInfo();
@@ -246,7 +255,9 @@
 					}
 				}
 			} else if (data.id !== data.known) {
-				const connection = nodeConnections.find((connection) => connection.pubkey === data.known);
+				const connection = nodeConnections.find(
+					(connection) => connection.pubkey === data.known
+				);
 				if (connection) {
 					try {
 						const nodeInfo = await connection.connection.fetchSpecificNodeInfo(data.id);
@@ -293,7 +304,10 @@
 					return true;
 				}
 			} catch (error) {
-				console.error(`Error fetching node info using connection ${connection.alias}:`, error);
+				console.error(
+					`Error fetching node info using connection ${connection.alias}:`,
+					error
+				);
 			}
 		}
 		return false;
@@ -358,14 +372,17 @@
 	function prettyPrintConnections(connections: Connections): string {
 		const filteredConnections = Object.entries(connections).reduce(
 			(acc, [key, config]) => {
-				const filteredConfig = Object.entries(config).reduce((configAcc, [propKey, propValue]) => {
-					if (propValue != null && propValue !== '') {
-						if (isKeyOfConnectionConfig(propKey)) {
-							configAcc[propKey] = propValue;
+				const filteredConfig = Object.entries(config).reduce(
+					(configAcc, [propKey, propValue]) => {
+						if (propValue != null && propValue !== '') {
+							if (isKeyOfConnectionConfig(propKey)) {
+								configAcc[propKey] = propValue;
+							}
 						}
-					}
-					return configAcc;
-				}, {} as Partial<ConnectionConfig>);
+						return configAcc;
+					},
+					{} as Partial<ConnectionConfig>
+				);
 
 				acc[key] = filteredConfig;
 				return acc;
@@ -377,7 +394,16 @@
 	}
 
 	function isKeyOfConnectionConfig(key: string): key is keyof ConnectionConfig {
-		return ['macaroon', 'password', 'rune', 'host', 'type'].includes(key);
+		return [
+			'macaroon',
+			'password',
+			'user',
+			'rune',
+			'host',
+			'type',
+			'rpc_port',
+			'p2p_port'
+		].includes(key);
 	}
 
 	function stop() {

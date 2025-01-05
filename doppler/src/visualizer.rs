@@ -55,6 +55,36 @@ pub fn create_ui_config_files(options: &Options, network: &str) -> Result<(), Er
         node_config.write_all(network.as_bytes())?;
     }
 
+    for node in &options.bitcoinds {
+        let header = format!("[{}] \n", node.name);
+        let password = format!("PASSWORD={} \n", node.password);
+        let user = format!("USER={} \n", node.user);
+        let network = format!("NETWORK={} \n", network);
+        let node_type = format!("TYPE={} \n", "bitcoind");
+        let public_p2p = format!("P2P=localhost:{} \n", node.public_p2p.unwrap());
+        let public_rpc = format!("RPC=localhost:{} \n", node.public_rpc.unwrap());
+        node_config.write_all(header.as_bytes())?;
+        node_config.write_all(node_type.as_bytes())?;
+        node_config.write_all(password.as_bytes())?;
+        node_config.write_all(user.as_bytes())?;
+        node_config.write_all(public_p2p.as_bytes())?;
+        node_config.write_all(public_rpc.as_bytes())?;
+        node_config.write_all(network.as_bytes())?;
+    }
+
+    for node in &options.esplora {
+        let header = format!("[{}] \n", node.name);
+        let api_endpoint = format!("API_ENDPOINT={} \n", node.http_connection);
+        let electrum_port = format!("ELECTRUM_PORT={} \n", node.electrum_port);
+        let network = format!("NETWORK={} \n", network);
+        let node_type = format!("TYPE={} \n", "esplora");
+        node_config.write_all(header.as_bytes())?;
+        node_config.write_all(node_type.as_bytes())?;
+        node_config.write_all(api_endpoint.as_bytes())?;
+        node_config.write_all(electrum_port.as_bytes())?;
+        node_config.write_all(network.as_bytes())?;
+    }
+
     node_config.flush()?;
 
     Ok(())

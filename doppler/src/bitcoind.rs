@@ -3,7 +3,9 @@ use crate::{
 };
 use anyhow::{anyhow, Error, Result};
 use conf_parser::processer::{FileConf, Section};
-use docker_compose_types::{EnvFile, Networks, Ports, Service, Volumes};
+use docker_compose_types::{
+    EnvFile, Healthcheck, HealthcheckTest, Networks, Ports, Service, Volumes,
+};
 use log::{error, info};
 use std::{
     fs::{File, OpenOptions},
@@ -24,6 +26,9 @@ pub struct Bitcoind {
     pub zmqpubhashblock: String,
     pub zmqpubrawtx: String,
     pub path_vol: String,
+    // Only added when initially creating the docker compose
+    pub public_p2p: Option<i64>,
+    pub public_rpc: Option<i64>,
 }
 
 pub enum L1Enum {
@@ -113,25 +118,48 @@ pub fn build_bitcoind(
     image: &ImageInfo,
     is_miner: bool,
 ) -> Result<()> {
-    let bitcoind_conf = get_config(options, name, is_miner).unwrap();
+    let mut bitcoind_conf = get_config(options, name, is_miner).unwrap();
+    let public_p2p = options.new_port();
+    let public_rpc = options.new_port();
+
     let bitcoind = Service {
         image: Some(image.get_image()),
         container_name: Some(bitcoind_conf.container_name.clone()),
         ports: Ports::Short(vec![
-            format!("{}:{}", options.new_port(), bitcoind_conf.p2pport),
-            format!("{}:{}", options.new_port(), bitcoind_conf.rpcport),
+            format!("{}:{}", public_p2p, bitcoind_conf.p2pport),
+            format!("{}:{}", public_rpc, bitcoind_conf.rpcport),
         ]),
         volumes: Volumes::Simple(vec![format!(
             "{}:/home/bitcoin/.bitcoin:rw",
             bitcoind_conf.path_vol
         )]),
         env_file: Some(EnvFile::Simple(".env".to_owned())),
+        healthcheck: Some(Healthcheck {
+            test: Some(HealthcheckTest::Single(
+                [
+                    "bitcoin-cli".to_string(),
+                    format!("-rpcuser={}", bitcoind_conf.user),
+                    format!("-rpcpassword={}", bitcoind_conf.password),
+                    format!("-rpcport={}", bitcoind_conf.rpcport),
+                    "getblockchaininfo".to_string(),
+                ]
+                .join(" "),
+            )),
+            interval: Some("30s".to_string()),
+            timeout: Some("10s".to_string()),
+            retries: 3,
+            disable: false,
+            start_period: Some("40s".to_string()),
+        }),
         networks: Networks::Simple(vec![NETWORK.to_owned()]),
         ..Default::default()
     };
     options
         .services
         .insert(bitcoind_conf.container_name.clone(), Some(bitcoind));
+
+    bitcoind_conf.public_p2p = Some(public_p2p);
+    bitcoind_conf.public_rpc = Some(public_rpc);
     options.bitcoinds.push(bitcoind_conf);
     Ok(())
 }
@@ -180,6 +208,8 @@ fn load_config(name: &str, container_name: &str, network: &str) -> Result<Bitcoi
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
         container_name: container_name.to_owned(),
         path_vol: full_path,
+        public_p2p: None,
+        public_rpc: None,
         user: network_section.get_property("rpcuser"),
         password: network_section.get_property("rpcpassword"),
         p2pport: network_section.get_property("port"),
@@ -232,6 +262,8 @@ fn get_bitcoind_config(
         data_dir: "/home/bitcoin/.bitcoin".to_owned(),
         container_name,
         path_vol: full_path,
+        public_p2p: None,
+        public_rpc: None,
         user: network_section.get_property("rpcuser"),
         password: network_section.get_property("rpcpassword"),
         p2pport: network_section.get_property("port"),
@@ -258,30 +290,29 @@ fn get_bitcoind_config(
 }
 
 fn set_network_section(conf: &mut FileConf, options: &mut Options) -> Result<Section, Error> {
-    if conf.sections.get(&options.network).is_none() {
+    if !conf.sections.contains_key(&options.network) {
         conf.sections
             .insert(options.network.clone(), Section::new());
     }
     let bitcoin = conf.sections.get_mut(&options.network).unwrap();
-    let port = options.new_port();
-    let rpc_port = options.new_port();
+    let port = match options.network.as_ref() {
+        "signet" => "38333",
+        _ => "18444",
+    };
+    let rpc_port = match options.network.as_ref() {
+        "signet" => "38332",
+        _ => "18443",
+    };
+
     bitcoin.set_property("bind", "0.0.0.0");
-    bitcoin.set_property("port", &port.to_string());
-    bitcoin.set_property("rpcport", &rpc_port.to_string());
-    bitcoin.set_property("rpcuser", "admin");
-    bitcoin.set_property("rpcpassword", "1234");
-    bitcoin.set_property(
-        "zmqpubrawblock",
-        &format!("tcp://0.0.0.0:{}", options.new_port()),
-    );
-    bitcoin.set_property(
-        "zmqpubrawtx",
-        &format!("tcp://0.0.0.0:{}", options.new_port()),
-    );
-    bitcoin.set_property(
-        "zmqpubhashblock",
-        &format!("tcp://0.0.0.0:{}", options.new_port()),
-    );
+    bitcoin.set_property("port", port);
+    bitcoin.set_property("rpcport", rpc_port);
+    bitcoin.set_property("rpcuser", "bitcoin");
+    bitcoin.set_property("rpcpassword", "bitcoin");
+    bitcoin.set_property("zmqpubrawblock", "tcp://0.0.0.0:28332");
+    bitcoin.set_property("zmqpubrawtx", "tcp://0.0.0.0:28333");
+    bitcoin.set_property("zmqpubhashtx", "tcp://0.0.0.0:28332");
+    bitcoin.set_property("zmqpubhashblock", "tcp://0.0.0.0:28332");
     let network_section = get_network_section(conf, &options.network)?;
     Ok(network_section)
 }

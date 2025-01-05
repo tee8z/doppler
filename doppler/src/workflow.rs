@@ -1,7 +1,7 @@
 use crate::{
-    build_bitcoind, build_cln, build_eclair, build_lnd, load_options_from_compose,
-    load_options_from_external_nodes, run_cluster, DopplerParser, ImageInfo, L1Node, MinerTime,
-    NodeCommand, NodeKind, Options, Rule, Tag,
+    build_bitcoind, build_cln, build_eclair, build_esplora, build_lnd, load_options_from_compose,
+    load_options_from_external_nodes, run_cluster, DopplerParser, ImageInfo, L1Node, LnNodeKind,
+    MinerTime, NodeCommand, NodeKind, Options, Rule, SupportedTool, Tag, ToolImageInfo,
 };
 use anyhow::{Error, Result};
 use log::{debug, error, info};
@@ -99,23 +99,12 @@ pub fn run_workflow_until_stop(
     Ok(())
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+#[derive(PartialEq, Default, Eq, PartialOrd, Ord, Hash, Clone)]
 struct LoopOptions {
     name: String,
     iterations: Option<i64>,
     sleep_time_interval_type: Option<char>,
     sleep_time_amt: Option<u64>,
-}
-
-impl Default for LoopOptions {
-    fn default() -> Self {
-        Self {
-            name: String::from(""),
-            iterations: None,
-            sleep_time_interval_type: None,
-            sleep_time_amt: None,
-        }
-    }
 }
 
 fn process_start_loop(line: Pair<Rule>) -> LoopOptions {
@@ -301,7 +290,7 @@ fn run_loop(
 }
 
 fn get_image(options: &mut Options, node_kind: NodeKind, possible_name: &str) -> ImageInfo {
-    let image_info = if !possible_name.is_empty() {
+    if !possible_name.is_empty() {
         if let Some(image) = options.get_image(possible_name) {
             image
         } else {
@@ -309,8 +298,7 @@ fn get_image(options: &mut Options, node_kind: NodeKind, possible_name: &str) ->
         }
     } else {
         options.get_default_image(node_kind)
-    };
-    image_info
+    }
 }
 
 fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
@@ -344,26 +332,26 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
             let node_name = inner.next().expect("node name").as_str();
             let image: ImageInfo = match inner.next() {
                 Some(image) => get_image(options, kind.clone(), image.as_str()),
-                None => options.get_default_image(kind.clone()),
+                _ => options.get_default_image(kind.clone()),
             };
             handle_build_command(options, node_name, kind, &image, None)?;
         }
         Rule::node_pair => {
-            let kind: NodeKind = inner
+            let kind: LnNodeKind = inner
                 .next()
-                .expect("node")
+                .expect("ln node kind")
                 .try_into()
-                .expect("invalid node kind");
-            if options.external_nodes.is_some() && kind != NodeKind::Lnd {
+                .expect("invalid ln node kind");
+            if options.external_nodes.is_some() && kind != LnNodeKind::Lnd {
                 unimplemented!("can only support LND nodes at the moment for remote nodes");
             }
             let name = inner.next().expect("ident").as_str();
             let image = match inner.peek().unwrap().as_rule() {
                 Rule::image_name => {
                     let image_name = inner.next().expect("image name").as_str();
-                    get_image(options, kind.clone(), image_name)
+                    get_image(options, kind.clone().into(), image_name)
                 }
-                _ => options.get_default_image(kind.clone()),
+                _ => options.get_default_image(kind.clone().into()),
             };
             let to_pair = inner.next().expect("invalid layer 1 node name").as_str();
             let amount = match inner.peek().is_some() {
@@ -378,10 +366,25 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
             handle_build_command(
                 options,
                 name,
-                kind,
+                kind.into(),
                 &image,
                 BuildDetails::new_pair(to_pair.to_owned(), amount),
             )?;
+        }
+        Rule::tool_def => {
+            let tool_type: SupportedTool = inner
+                .next()
+                .expect("supported tool")
+                .try_into()
+                .expect("invalid tool type");
+
+            let tool_name = inner.next().expect("tool name").as_str();
+
+            let image: ToolImageInfo = options.get_default_tool_image(tool_type.clone());
+
+            let target_node = inner.next().expect("target node name").as_str();
+
+            handle_tool_command(options, tool_name, tool_type, &image, target_node)?;
         }
         _ => (),
     }
@@ -450,6 +453,18 @@ fn handle_build_command(
         NodeKind::Lnd => build_lnd(options, name, image, &details.unwrap().pair.unwrap()),
         NodeKind::Eclair => build_eclair(options, name, image, &details.unwrap().pair.unwrap()),
         NodeKind::Coreln => build_cln(options, name, image, &details.unwrap().pair.unwrap()),
+    }
+}
+
+fn handle_tool_command(
+    options: &mut Options,
+    tool_name: &str,
+    tool_type: SupportedTool,
+    image: &ToolImageInfo,
+    target_node: &str,
+) -> Result<()> {
+    match tool_type {
+        SupportedTool::Esplora => build_esplora(options, tool_name, image, target_node),
     }
 }
 
@@ -539,7 +554,7 @@ fn process_ln_action(line: Pair<Rule>) -> NodeCommand {
                 // convert to seconds
                 match time_type {
                     'h' => time_num = time_num * 60 * 60,
-                    'm' => time_num = time_num * 60,
+                    'm' => time_num *= 60,
                     _ => (),
                 }
                 node_command.timeout = Some(time_num)
@@ -573,7 +588,7 @@ fn process_btc_action(line: Pair<Rule>) -> NodeCommand {
     let mut line_inner = line_inner.clone().peekable();
     let btc_node = line_inner.next().expect("invalid input").as_str();
     let command_name = line_inner.next().expect("invalid input").as_str();
-    if let None = line_inner.peek() {
+    if line_inner.peek().is_none() {
         return NodeCommand {
             name: command_name.to_owned(),
             from: btc_node.to_owned(),

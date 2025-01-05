@@ -4,6 +4,8 @@ export interface ConnectionConfig {
 	rune: string;
 	host: string;
 	type: string;
+	rpc_port: string;
+	p2p_port: string;
 }
 
 export interface Connections {

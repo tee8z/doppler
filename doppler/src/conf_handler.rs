@@ -19,8 +19,9 @@ use std::{
 
 use crate::{
     add_bitcoinds, add_coreln_nodes, add_eclair_nodes, add_external_lnd_nodes, add_lnd_nodes,
-    get_latest_polar_images, get_polar_images, new, update_bash_alias_external, Bitcoind, Cln,
-    CloneableHashMap, Eclair, ImageInfo, L1Node, L2Node, Lnd, NodeKind, Tag, Tags, NETWORK,
+    get_latest_polar_images, get_polar_images, get_supported_tool_images, new,
+    update_bash_alias_external, Bitcoind, Cln, CloneableHashMap, Eclair, Esplora, ImageInfo,
+    L1Node, L2Node, Lnd, NodeKind, SupportedTool, Tag, Tags, ToolImageInfo, NETWORK,
 };
 
 #[derive(Subcommand)]
@@ -61,9 +62,11 @@ impl std::fmt::Display for ShellType {
 #[derive(Clone)]
 pub struct Options {
     default_images: CloneableHashMap<NodeKind, ImageInfo>,
+    default_tool_images: CloneableHashMap<SupportedTool, ToolImageInfo>,
     known_polar_images: CloneableHashMap<NodeKind, Vec<ImageInfo>>,
     pub images: Vec<ImageInfo>,
     pub bitcoinds: Vec<Bitcoind>,
+    pub esplora: Vec<Esplora>,
     pub lnd_nodes: Vec<Lnd>,
     pub eclair_nodes: Vec<Eclair>,
     pub cln_nodes: Vec<Cln>,
@@ -152,14 +155,17 @@ impl Options {
         if external_nodes_path.is_some() {
             rest = true;
         }
+        let default_tool_images = get_supported_tool_images();
         Self {
             default_images: latest_polar_images,
+            default_tool_images,
             known_polar_images: all_polar_images,
             images: vec::Vec::new(),
             bitcoinds: vec::Vec::new(),
             lnd_nodes: vec::Vec::new(),
             eclair_nodes: vec::Vec::new(),
             cln_nodes: vec::Vec::new(),
+            esplora: vec::Vec::new(),
             ports: starting_port,
             compose_path: None,
             services: indexmap::IndexMap::new(),
@@ -172,19 +178,21 @@ impl Options {
             loop_count: Arc::new(AtomicI64::new(0)),
             read_end_of_doppler_file: Arc::new(AtomicBool::new(true)),
             tags: Arc::new(Mutex::new(new(connection))),
-            rest: rest,
-            external_nodes_path: external_nodes_path,
+            rest,
+            external_nodes_path,
             external_nodes: None,
             ui_config_path,
             network,
         }
     }
+
     pub fn get_image(&self, name: &str) -> Option<ImageInfo> {
         self.images
             .iter()
             .find(|image| image.is_image(name))
             .map(|image| image.clone())
     }
+
     pub fn get_default_image(&self, node_kind: NodeKind) -> ImageInfo {
         match self.default_images.get(node_kind) {
             Some(image) => image,
@@ -192,6 +200,15 @@ impl Options {
         }
         .clone()
     }
+
+    pub fn get_default_tool_image(&self, tool: SupportedTool) -> ToolImageInfo {
+        match self.default_tool_images.get(tool) {
+            Some(image) => image,
+            None => panic!("error no default images found!"),
+        }
+        .clone()
+    }
+
     pub fn add_thread(&self, thread_handler: Thread) {
         self.thread_handlers.lock().unwrap().push(thread_handler);
     }

@@ -196,6 +196,7 @@ impl ImageInfo {
     pub fn is_image(&self, name: &str) -> bool {
         self.name == name
     }
+
     pub fn get_name(&self) -> String {
         self.name.clone()
     }

@@ -1,0 +1,9 @@
+BITCOIND_MINER bd1
+
+LND lnd1 PAIR bd1
+LND lnd2 PAIR bd1
+LND lnd3 PAIR bd1
+
+TOOL ESPLORA esp FOR bd1
+
+UP

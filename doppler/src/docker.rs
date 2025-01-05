@@ -1,4 +1,3 @@
-extern crate ini;
 use crate::{
     create_ui_config_files, get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options,
 };
@@ -26,7 +25,7 @@ pub fn load_options_from_external_nodes(
     debug!("loaded lnds");
     let network = options.external_nodes.clone().unwrap()[0].network.clone();
 
-    create_ui_config_files(&options, &network)?;
+    create_ui_config_files(options, &network)?;
 
     Ok(())
 }
