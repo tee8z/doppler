@@ -3,7 +3,6 @@ import fs from 'fs';
 import { parse } from 'ini';
 import { resolve } from 'path';
 import * as path from 'path';
-import { UI_CONFIG_PATH } from '$env/static/private';
 
 export interface ConnectionConfig {
 	macaroon: string;
@@ -33,7 +32,7 @@ function safeReadFileSync(path: string): Buffer | null {
 	}
 }
 
-const configPath = UI_CONFIG_PATH || process.env.UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
+const configPath = process.env.UI_CONFIG_PATH || path.join(process.cwd(), '/build/ui_config');
 
 //TODO: have the info.conf be change based on the run script
 export const GET: RequestHandler = async function () {
