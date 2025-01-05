@@ -1,7 +1,7 @@
 use crate::{
-    build_bitcoind, build_cln, build_eclair, build_lnd, load_options_from_compose,
-    load_options_from_external_nodes, run_cluster, DopplerParser, ImageInfo, L1Node, MinerTime,
-    NodeCommand, NodeKind, Options, Rule, Tag,
+    build_bitcoind, build_cln, build_eclair, build_esplora, build_lnd, load_options_from_compose,
+    load_options_from_external_nodes, run_cluster, DopplerParser, ImageInfo, L1Node, LnNodeKind,
+    MinerTime, NodeCommand, NodeKind, Options, Rule, SupportedTool, Tag, ToolImageInfo,
 };
 use anyhow::{Error, Result};
 use log::{debug, error, info};
@@ -344,26 +344,26 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
             let node_name = inner.next().expect("node name").as_str();
             let image: ImageInfo = match inner.next() {
                 Some(image) => get_image(options, kind.clone(), image.as_str()),
-                None => options.get_default_image(kind.clone()),
+                _ => options.get_default_image(kind.clone()),
             };
             handle_build_command(options, node_name, kind, &image, None)?;
         }
         Rule::node_pair => {
-            let kind: NodeKind = inner
+            let kind: LnNodeKind = inner
                 .next()
-                .expect("node")
+                .expect("ln node kind")
                 .try_into()
-                .expect("invalid node kind");
-            if options.external_nodes.is_some() && kind != NodeKind::Lnd {
+                .expect("invalid ln node kind");
+            if options.external_nodes.is_some() && kind != LnNodeKind::Lnd {
                 unimplemented!("can only support LND nodes at the moment for remote nodes");
             }
             let name = inner.next().expect("ident").as_str();
             let image = match inner.peek().unwrap().as_rule() {
                 Rule::image_name => {
                     let image_name = inner.next().expect("image name").as_str();
-                    get_image(options, kind.clone(), image_name)
+                    get_image(options, kind.clone().into(), image_name)
                 }
-                _ => options.get_default_image(kind.clone()),
+                _ => options.get_default_image(kind.clone().into()),
             };
             let to_pair = inner.next().expect("invalid layer 1 node name").as_str();
             let amount = match inner.peek().is_some() {
@@ -378,10 +378,25 @@ fn handle_conf(options: &mut Options, line: Pair<Rule>) -> Result<()> {
             handle_build_command(
                 options,
                 name,
-                kind,
+                kind.into(),
                 &image,
                 BuildDetails::new_pair(to_pair.to_owned(), amount),
             )?;
+        }
+        Rule::tool_def => {
+            let tool_type: SupportedTool = inner
+                .next()
+                .expect("supported tool")
+                .try_into()
+                .expect("invalid tool type");
+
+            let tool_name = inner.next().expect("tool name").as_str();
+
+            let image: ToolImageInfo = options.get_default_tool_image(tool_type.clone());
+
+            let target_node = inner.next().expect("target node name").as_str();
+
+            handle_tool_command(options, tool_name, tool_type, &image, target_node)?;
         }
         _ => (),
     }
@@ -450,6 +465,18 @@ fn handle_build_command(
         NodeKind::Lnd => build_lnd(options, name, image, &details.unwrap().pair.unwrap()),
         NodeKind::Eclair => build_eclair(options, name, image, &details.unwrap().pair.unwrap()),
         NodeKind::Coreln => build_cln(options, name, image, &details.unwrap().pair.unwrap()),
+    }
+}
+
+fn handle_tool_command(
+    options: &mut Options,
+    tool_name: &str,
+    tool_type: SupportedTool,
+    image: &ToolImageInfo,
+    target_node: &str,
+) -> Result<()> {
+    match tool_type {
+        SupportedTool::Esplora => build_esplora(options, tool_name, image, target_node),
     }
 }
 

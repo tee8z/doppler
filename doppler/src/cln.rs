@@ -50,7 +50,7 @@ impl Cln {
     ) -> Result<String, Error> {
         get_peers_short_channel_id(self, options, node_command, "source")
     }
-    
+
     pub fn add_rune(&mut self, options: &Options) -> Result<(), Error> {
         let rune = get_rune(self, options)?;
         self.rune = Some(rune);

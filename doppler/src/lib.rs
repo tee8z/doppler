@@ -10,6 +10,7 @@ mod node_kind;
 mod parser;
 mod polar_default_images;
 mod simple_storage;
+mod tools;
 mod visualizer;
 mod workflow;
 
@@ -25,5 +26,6 @@ pub use node_kind::*;
 pub use parser::*;
 pub use polar_default_images::*;
 pub use simple_storage::*;
+pub use tools::*;
 pub use visualizer::*;
 pub use workflow::*;

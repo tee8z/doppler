@@ -1,4 +1,3 @@
-extern crate ini;
 use crate::{
     create_ui_config_files, get_absolute_path, pair_bitcoinds, L1Node, L2Node, NodeCommand, Options,
 };
