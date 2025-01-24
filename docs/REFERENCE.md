@@ -30,6 +30,7 @@ These commands perform operations relating to setting up the cluster of Nodes or
 - [`SKIP_CONF`](): If this command is used, it must be the first line in the program. Cluster configuration is already setup
 It tells Doppler that the cluster configuration is already setup, and therefore any commands following it should assume that the network of nodes intended for use in the program is already setup. This function is mutually exclusive with the [UP]() command, and either `SKIP_CONF` or `UP` MUST be present in a given program. 
 
+- [UP](): Spins up the cluster of nodes as defined by the `Command`s preceding it.
 
 **Example**:
 ```doppler
@@ -44,7 +45,6 @@ TOOL ESPLORA esp FOR bd1
 UP
 ```
 
-- [UP](): Spins up the cluster of nodes as defined by the `Command`s preceding it.
 
 ### Node Keywords
 
