@@ -27,10 +27,9 @@ An example of a `Command`:
 
 These commands perform operations relating to setting up the cluster of Nodes or `TOOL`(s) (i.e. the `docker-compose` commands):
 
-- [`SKIP_CONF`](): If this command is used, it must be the first line in the program. Cluster configuration is already setup
+- `SKIP_CONF`: If this command is used, it must be the first line in the program. Cluster configuration is already setup
 It tells Doppler that the cluster configuration is already setup, and therefore any commands following it should assume that the network of nodes intended for use in the program is already setup. This function is mutually exclusive with the [UP]() command, and either `SKIP_CONF` or `UP` MUST be present in a given program. 
 
-- [UP](): Spins up the cluster of nodes as defined by the `Command`s preceding it.
 
 **Example**:
 ```doppler
@@ -45,11 +44,39 @@ TOOL ESPLORA esp FOR bd1
 UP
 ```
 
+- [UP](): Spins up the cluster of nodes as defined by the `Command`s preceding it. Runs `docker compose up` under the hood.
 
-### Node Keywords
+### Lightning Node Keywords
 
 These `Command`s perform operations on either the `BITCOIND` or various Lightning Node implementations. The following implementations are available:
 
-- [LND]()
-- [Core Lightning]()
-- [Eclair]()
+- [LND]() (referenced as `LND`)
+- [Core Lightning]() (referenced as `CORELN`)
+- [Eclair]() (referenced as `ECLAIR`)
+
+- `(LND/CORELN/ECLAIR) <new-lightning-node-name> PAIR <bitcoin-node-name>`: Creates a new lightning node and connects it to a bitcoin node. The bitcoin node must already have previously been created using `BITCOIND_MINER` 
+  - Example: to connect an LND node `lnd1` to a bitcoin node `bd1`:
+    `LND lnd1 PAIR bd1`
+- `SEND_LN`: Send a lightning payment.
+  - Example: to send 30 satoshis from `sender` to `receiver`:
+    - `sender SEND_LN receiver AMT 30`
+- `SEND_HOLD_LN`: Send a [hold](https://www.voltage.cloud/blog/understanding-hold-invoices-on-the-lightning-network) invoice.
+  - Example: to send a hold invoice of 350 satoshis from `sender` to `receiver`:
+    - `sender SEND_HOLD_LN receiver AMT 350`
+- `STOP_LN`: Stop a lightning node.
+  - Example: to stop `lnd1`:
+    - `lnd1 STOP_LN` 
+
+### Bitcoin Node Keywords
+
+- `BITCOIND_MINER`: Used to create a bitcoin mining node.
+  - Example: create `bd1`
+    - `BITCOIND_MINER bd1`
+- `BITCOIND`: Used to create a `bitcoind` node.
+
+
+### General/Control Flow Keywords
+
+- `TIMEOUT`: Stop program execution for a given number of seconds.
+  - Example: to stop for 10 seconds:
+    - `TIMEOUT 60s`
