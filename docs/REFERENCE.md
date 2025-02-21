@@ -50,9 +50,9 @@ UP
 
 These `Command`s perform operations on either the `BITCOIND` or various Lightning Node implementations. The following implementations are available:
 
-- [LND]() (referenced as `LND`)
-- [Core Lightning]() (referenced as `CORELN`)
-- [Eclair]() (referenced as `ECLAIR`)
+- [LND](https://lightning.engineering/api-docs/api/lnd/) (referenced as `LND`)
+- [Core Lightning](https://corelightning.org/) (referenced as `CORELN`)
+- [Eclair](https://github.com/ACINQ/eclair) (referenced as `ECLAIR`)
 
 - `(LND/CORELN/ECLAIR) <new-lightning-node-name> PAIR <bitcoin-node-name>`: Creates a new lightning node and connects it to a bitcoin node. The bitcoin node must already have previously been created using `BITCOIND_MINER` 
   - Example: to connect an LND node `lnd1` to a bitcoin node `bd1`:
@@ -73,7 +73,6 @@ These `Command`s perform operations on either the `BITCOIND` or various Lightnin
   - Example: create `bd1`
     - `BITCOIND_MINER bd1`
 - `BITCOIND`: Used to create a `bitcoind` node.
-
 
 ### General/Control Flow Keywords
 
