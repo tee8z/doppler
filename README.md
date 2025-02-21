@@ -19,14 +19,14 @@ Additionally, this DSL can be used against a cluster of remote LND nodes (more i
 
 Download installing script
 ```sh
-  curl --proto '=https' --tlsv1.2 -LsSf "https://raw.githubusercontent.com/tee8z/doppler/refs/heads/master/doppler-installer.sh" > doppler_installer.sh
+  curl --proto '=https' --tlsv1.2 -LsSf "https://raw.githubusercontent.com/tee8z/doppler/refs/heads/master/doppler-installer.sh" > doppler-installer.sh
 ```  
 ```sh
-  chmod +x doppler_installer.sh
+  chmod +x doppler-installer.sh
 ```
 Execute installer with a [release tag](https://github.com/tee8z/doppler/releases) 
 ```sh
-  ./doppler_installer.sh <release tag to install>
+  ./doppler-installer.sh <release tag to install>
 ```
 ### Running after install:
 To run with UI (navigate to `0.0.0.0:3000` in your browser to view the UI)
