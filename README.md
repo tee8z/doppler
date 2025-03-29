@@ -24,7 +24,7 @@ Download installing script
 ```sh
   chmod +x doppler-installer.sh
 ```
-Execute installer with a [release tag](https://github.com/tee8z/doppler/releases) 
+Execute installer with a [release tag](https://github.com/tee8z/doppler/releases)
 ```sh
   ./doppler-installer.sh <release tag to install>
 ```
@@ -37,6 +37,26 @@ To run as cli
 ```sh
   cd $HOME/.doppler && doppler -h
 ```
+
+### Deploy on DigitalOcean in One Step
+
+#### 1. Create a 1-Click Droplet
+[![Create Droplet](https://img.shields.io/badge/DO-Create%20Docker%20Droplet-blue)](https://cloud.digitalocean.com/droplets/new?image=docker-20-04)
+
+When creating your Droplet:
+- Select the **Basic** plan
+- Choose the **Regular CPU** with **2GB RAM / 1 CPU** option ($12/month)
+- This option is sufficient for running Doppler and provides the best value
+
+#### 2. Run the Automatic Setup Script
+Connect to your Droplet and run:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/tee8z/doppler/add-easy-deploy/deploy.sh | bash
+```
+- NOTE: we have a cors-proxy setup for the deployed nodes, it will be at a port 1000 more, so 9090 -> 10090 for example
+This will allow you to hit any of the nodes via the browser easily
+
 More information on how to use this tool can be found here: [USAGE.md](./docs/USAGE.md)
 
 #### Supports:

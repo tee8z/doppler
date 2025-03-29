@@ -157,10 +157,7 @@
 					};
 				}
 			} else if (connectionConfig.type === 'eclair') {
-				const requests = new EclairRequests(
-					connectionConfig.host,
-					connectionConfig.password
-				);
+				const requests = new EclairRequests(connectionConfig.host, connectionConfig.password);
 				const channels = await requests.fetchChannels();
 				const balance = await requests.fetchBalance();
 				const info = await requests.fetchInfo();
@@ -242,9 +239,7 @@
 			currentData = data;
 
 			if (data.known) {
-				const connection = nodeConnections.find(
-					(connection) => connection.pubkey === data.known
-				);
+				const connection = nodeConnections.find((connection) => connection.pubkey === data.known);
 				if (connection) {
 					try {
 						const nodeInfo = await connection.connection.fetchInfo();
@@ -255,9 +250,7 @@
 					}
 				}
 			} else if (data.id !== data.known) {
-				const connection = nodeConnections.find(
-					(connection) => connection.pubkey === data.known
-				);
+				const connection = nodeConnections.find((connection) => connection.pubkey === data.known);
 				if (connection) {
 					try {
 						const nodeInfo = await connection.connection.fetchSpecificNodeInfo(data.id);
@@ -304,10 +297,7 @@
 					return true;
 				}
 			} catch (error) {
-				console.error(
-					`Error fetching node info using connection ${connection.alias}:`,
-					error
-				);
+				console.error(`Error fetching node info using connection ${connection.alias}:`, error);
 			}
 		}
 		return false;
@@ -369,20 +359,35 @@
 		return JSON.stringify(jsonData, null, 2);
 	}
 
+	function isDeploymentEnvironment() {
+		return window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+	}
+
 	function prettyPrintConnections(connections: Connections): string {
+		const isDeployed = isDeploymentEnvironment();
+
 		const filteredConnections = Object.entries(connections).reduce(
 			(acc, [key, config]) => {
-				const filteredConfig = Object.entries(config).reduce(
-					(configAcc, [propKey, propValue]) => {
-						if (propValue != null && propValue !== '') {
-							if (isKeyOfConnectionConfig(propKey)) {
+				const filteredConfig = Object.entries(config).reduce((configAcc, [propKey, propValue]) => {
+					if (propValue != null && propValue !== '') {
+						if (isKeyOfConnectionConfig(propKey)) {
+							if (isDeployed && propKey === 'host' && typeof propValue === 'string') {
+								try {
+									const hostUrl = new URL(propValue);
+									const proxyPort = parseInt(hostUrl.port) + 1000;
+									// Replace the host with the proxy URL
+									configAcc[propKey] = `http://${window.location.hostname}:${proxyPort}`;
+								} catch (e) {
+									console.error('Error parsing host URL:', e);
+									configAcc[propKey] = propValue; // Fallback to original if parsing fails
+								}
+							} else {
 								configAcc[propKey] = propValue;
 							}
 						}
-						return configAcc;
-					},
-					{} as Partial<ConnectionConfig>
-				);
+					}
+					return configAcc;
+				}, {} as Partial<ConnectionConfig>);
 
 				acc[key] = filteredConfig;
 				return acc;
