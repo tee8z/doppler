@@ -113,9 +113,7 @@ EOF
 # Create the CORS proxy server script
 cat > /opt/cors-proxy/server.js << 'EOF'
 const http = require("http");
-const https = require("https");
 const httpProxy = require("http-proxy");
-const net = require('net');
 
 // Define port range
 const START_PORT = 9090;
@@ -123,134 +121,118 @@ const END_PORT = 10010;
 const PORT_OFFSET = 1000; // External ports will be internal + 1000
 
 console.log(`Starting CORS proxy for ports ${START_PORT}-${END_PORT}`);
-console.log(`External ports will be ${START_PORT + PORT_OFFSET}-${END_PORT + PORT_OFFSET}`);
-
-// Add global error handler
-process.on('uncaughtException', function(err) {
-    console.error('Uncaught Exception:', err);
-});
-
-process.on('unhandledRejection', function(reason, p) {
-    console.error('Unhandled Rejection at:', p, 'reason:', reason);
-});
-
-// Check if a port is HTTPS
-const checkProtocol = (port) => {
-    return new Promise((resolve) => {
-        const socket = net.connect(port, 'localhost');
-
-        socket.once('error', () => {
-            socket.destroy();
-            resolve('http:');
-        });
-
-        socket.once('connect', () => {
-            socket.write('GET / HTTP/1.1\r\n\r\n');
-        });
-
-        socket.once('data', (data) => {
-            socket.destroy();
-            if (data.toString().indexOf('HTTP/1.1') === 0) {
-                resolve('http:');
-            } else {
-                resolve('https:');
-            }
-        });
-
-        // Timeout after 1 second
-        setTimeout(() => {
-            socket.destroy();
-            resolve('http:');
-        }, 1000);
-    });
-};
 
 // Process ports in sequence
-const setupProxy = async (index) => {
-    const internalPort = START_PORT + index;
+const setupProxy = (index) => {
+  const internalPort = START_PORT + index;
+  
+  if (internalPort > END_PORT) {
+    console.log("All CORS proxies are now running");
+    return;
+  }
+  
+  const externalPort = internalPort + PORT_OFFSET;
+  
+  try {
+    // Create both HTTP and HTTPS proxies for each port
+    const httpProxyServer = httpProxy.createProxyServer({
+      target: `http://localhost:${internalPort}`,
+      ws: true,
+      secure: false,
+      changeOrigin: true
+    });
 
-    if (internalPort > END_PORT) {
-        console.log("All CORS proxies are now running");
+    const httpsProxyServer = httpProxy.createProxyServer({
+      target: `https://localhost:${internalPort}`,
+      ws: true,
+      secure: false,
+      changeOrigin: true
+    });
+
+    const setupProxyEvents = (proxy) => {
+      proxy.on("error", (err, req, res) => {
+        // Only log errors if not handled elsewhere
+        if (res && !res.headersSent && !req._handledError) {
+          req._handledError = true;
+          console.error(`Proxy error (${externalPort}->${internalPort}):`, err.message);
+        }
+      });
+
+      proxy.on("proxyRes", function (proxyRes, req, res) {
+        // Add CORS headers
+        proxyRes.headers["Access-Control-Allow-Origin"] = "*";
+        proxyRes.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE, PATCH";
+        proxyRes.headers["Access-Control-Allow-Headers"] = "X-Requested-With, Content-Type, Authorization, Grpc-Metadata-macaroon, Rune";
+        proxyRes.headers["Access-Control-Expose-Headers"] = "*";
+      });
+    };
+
+    setupProxyEvents(httpProxyServer);
+    setupProxyEvents(httpsProxyServer);
+
+    // Create handler for requests
+    const requestHandler = (req, res) => {
+      // Handle preflight OPTIONS requests directly
+      if (req.method === "OPTIONS") {
+        res.writeHead(200, {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE, PATCH",
+          "Access-Control-Allow-Headers": "X-Requested-With, Content-Type, Authorization, Grpc-Metadata-macaroon, Rune",
+          "Access-Control-Expose-Headers": "*"
+        });
+        res.end();
         return;
-    }
+      }
 
-    const externalPort = internalPort + PORT_OFFSET;
-
-    try {
-        console.log(`Setting up proxy for external port ${externalPort} -> internal port ${internalPort}`);
-
-        // Detect protocol
-        const protocol = await checkProtocol(internalPort);
-        console.log(`Detected ${protocol} for port ${internalPort}`);
-
-        // Create a proxy server
-        const proxy = httpProxy.createProxyServer({
-            target: {
-                protocol: protocol,
-                host: 'localhost',
-                port: internalPort
-            },
-            ws: true,
-            secure: false,
-            changeOrigin: true,
-            xfwd: true
-        });
-
-        proxy.on("error", (err, req, res) => {
-            console.error(`Proxy error (${externalPort}->${internalPort}):`, err.message);
-            if (res && !res.headersSent) {
-                res.writeHead(502, {"Content-Type": "text/plain"});
-                res.end(`Proxy error: service on port ${internalPort} may not be available: ${err.message}`);
+      // Try HTTPS first, fallback to HTTP
+      httpsProxyServer.web(req, res, {}, (err) => {
+        if (err) {
+          // If HTTPS fails, try HTTP
+          httpProxyServer.web(req, res, {}, (httpErr) => {
+            if (httpErr) {
+              // If both fail, return an error
+              if (!res.headersSent) {
+                res.writeHead(502, { "Content-Type": "text/plain" });
+                res.end(`Service on port ${internalPort} is not available via either HTTP or HTTPS`);
+              }
             }
-        });
+          });
+        }
+      });
+    };
 
-        proxy.on("proxyRes", function(proxyRes, req, res) {
-            proxyRes.headers["Access-Control-Allow-Origin"] = "*";
-            proxyRes.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE, PATCH";
-            proxyRes.headers["Access-Control-Allow-Headers"] = "X-Requested-With, Content-Type, Authorization, Grpc-Metadata-macaroon, Rune";
-            proxyRes.headers["Access-Control-Expose-Headers"] = "*";
-        });
-
-        const requestHandler = (req, res) => {
-            if (req.method === "OPTIONS") {
-                res.writeHead(200, {
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE, PATCH",
-                    "Access-Control-Allow-Headers": "X-Requested-With, Content-Type, Authorization, Grpc-Metadata-macaroon, Rune",
-                    "Access-Control-Expose-Headers": "*"
-                });
-                res.end();
-                return;
+    // Create HTTP server for the proxy
+    const server = http.createServer(requestHandler);
+    
+    // Handle WebSocket connections
+    server.on('upgrade', function (req, socket, head) {
+      // Try HTTPS first, fallback to HTTP for WebSockets
+      httpsProxyServer.ws(req, socket, head, (err) => {
+        if (err) {
+          httpProxyServer.ws(req, socket, head, (httpErr) => {
+            if (httpErr) {
+              socket.end();
             }
+          });
+        }
+      });
+    });
 
-            proxy.web(req, res);
-        };
+    server.on('error', (err) => {
+      console.error(`Server error on port ${externalPort}:`, err.message);
+    });
 
-        // Create HTTP server
-        const server = http.createServer(requestHandler);
-
-        // Handle WebSocket connections
-        server.on('upgrade', function(req, socket, head) {
-            const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
-            proxy.ws(req, socket, head, {
-                target: {
-                    protocol: wsProtocol,
-                    host: 'localhost',
-                    port: internalPort
-                }
-            });
-        });
-
-        server.listen(externalPort, '0.0.0.0', () => {
-            console.log(`CORS proxy running on port ${externalPort} -> port ${internalPort} (${protocol})`);
-        });
-
-        // Move to the next port
-        setTimeout(() => setupProxy(index + 1), 100);
-    } catch (err) {
-        console.error(`Failed to set up proxy for port ${externalPort}:`, err.message);
-        setTimeout(() => setupProxy(index + 1), 100);
-    }
+    // Start HTTP server
+    server.listen(externalPort, '0.0.0.0', () => {
+      console.log(`CORS proxy running on port ${externalPort} -> port ${internalPort} (trying HTTPS, fallback to HTTP)`);
+      // Move to the next port after a small delay
+      setTimeout(() => setupProxy(index + 1), 100);
+    });
+  } catch (err) {
+    console.error(`Failed to set up proxy for port ${externalPort}:`, err.message);
+    // Continue with next port even if this one fails
+    setTimeout(() => setupProxy(index + 1), 100);
+  }
 };
 
 // Start setting up proxies sequentially
