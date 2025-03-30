@@ -52,7 +52,7 @@ When creating your Droplet:
 Connect to your Droplet and run:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/tee8z/doppler/add-easy-deploy/deploy.sh | bash
+curl -sSL https://raw.githubusercontent.com/tee8z/doppler/master/deploy.sh | bash
 ```
 
 More information on how to use this tool can be found here: [USAGE.md](./docs/USAGE.md)
