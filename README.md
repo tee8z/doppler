@@ -38,9 +38,9 @@ To run as cli
   cd $HOME/.doppler && doppler -h
 ```
 
-### Deploy on DigitalOcean in One Step
+### Deploy on DigitalOcean
 
-#### 1. Create a 1-Click Droplet
+#### 1. Create a Droplet
 [![Create Droplet](https://img.shields.io/badge/DO-Create%20Docker%20Droplet-blue)](https://cloud.digitalocean.com/droplets/new?image=docker-20-04)
 
 When creating your Droplet:
@@ -48,7 +48,7 @@ When creating your Droplet:
 - Choose the **Regular CPU** with **2GB RAM / 1 CPU** option ($12/month)
 - This option is sufficient for running Doppler and provides the best value
 
-#### 2. Run the Automatic Setup Script
+#### 2. Run the Deploy Script
 Connect to your Droplet and run:
 
 ```bash
