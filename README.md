@@ -54,8 +54,6 @@ Connect to your Droplet and run:
 ```bash
 curl -sSL https://raw.githubusercontent.com/tee8z/doppler/add-easy-deploy/deploy.sh | bash
 ```
-- NOTE: we have a cors-proxy setup for the deployed nodes, it will be at a port 1000 more, so 9090 -> 10090 for example
-This will allow you to hit any of the nodes via the browser easily
 
 More information on how to use this tool can be found here: [USAGE.md](./docs/USAGE.md)
 
