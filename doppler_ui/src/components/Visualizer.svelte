@@ -371,15 +371,36 @@
 				const filteredConfig = Object.entries(config).reduce((configAcc, [propKey, propValue]) => {
 					if (propValue != null && propValue !== '') {
 						if (isKeyOfConnectionConfig(propKey)) {
-							if (isDeployed && propKey === 'host' && typeof propValue === 'string') {
-								try {
-									const hostUrl = new URL(propValue);
-									const proxyPort = parseInt(hostUrl.port) + 1000;
-									// Replace the host with the proxy URL
-									configAcc[propKey] = `http://${window.location.hostname}:${proxyPort}`;
-								} catch (e) {
-									console.error('Error parsing host URL:', e);
-									configAcc[propKey] = propValue; // Fallback to original if parsing fails
+							if (isDeployed) {
+								switch (propKey) {
+									case 'host':
+										if (typeof propValue === 'string') {
+											try {
+												const hostUrl = new URL(propValue);
+												const proxyPort = parseInt(hostUrl.port) + 1000;
+												// Replace the host with the proxy URL
+												configAcc[propKey] = `http://${window.location.hostname}:${proxyPort}`;
+											} catch (e) {
+												console.error('Error parsing host URL:', e);
+												configAcc[propKey] = propValue; // Fallback to original if parsing fails
+											}
+										}
+										break;
+									case 'rpc_port':
+									case 'p2p_port':
+										if (typeof propValue === 'string') {
+											try {
+												// Handle "localhost:PORT" format
+												const [, port] = propValue.split(':');
+												configAcc[propKey] = `${window.location.hostname}:${port}`;
+											} catch (e) {
+												console.error(`Error parsing ${propKey}:`, e);
+												configAcc[propKey] = propValue; // Fallback to original if parsing fails
+											}
+										}
+										break;
+									default:
+										configAcc[propKey] = propValue;
 								}
 							} else {
 								configAcc[propKey] = propValue;
