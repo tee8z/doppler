@@ -53,7 +53,7 @@ nvm install --lts
 
 # Download and run the Doppler installer script
 echo "Installing Doppler..."
-curl -sSL https://raw.githubusercontent.com/tee8z/doppler/add-easy-deploy/doppler-installer.sh | bash -s "$DOPPLER_VERSION"
+curl -sSL https://raw.githubusercontent.com/tee8z/doppler/master/doppler-installer.sh | bash -s "$DOPPLER_VERSION"
 
 # Set up HAProxy for UI authentication
 echo "Configuring HAProxy for UI authentication..."
