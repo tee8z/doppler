@@ -31,11 +31,11 @@ Execute installer with a [release tag](https://github.com/tee8z/doppler/releases
 ### Running after install:
 To run with UI (navigate to `0.0.0.0:3000` in your browser to view the UI)
 ```sh
-  cd $HOME/.doppler/<release tag> && node ./build
+  node $HOME/.doppler/<release tag>/build
 ```
 To run as cli
 ```sh
-  cd $HOME/.doppler && doppler -h
+  doppler -h $HOME/.doppler
 ```
 
 ### Deploy on DigitalOcean
