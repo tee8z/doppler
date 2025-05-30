@@ -1,4 +1,4 @@
-## How to create local docker image of mutiny net signet node
+## How to create local docker image of mutinynet signet node
 ```
 cd ./bitcoind_images
 docker build -f "./Docker.mutinynet" -t mutinynet/bitcoind .
@@ -7,7 +7,7 @@ Then a docker image with the tag mutinynet/bitcoind should exist when doing this
 ```
 docker images
 ```
-## How to create local docker image of eclair that supports mutiny net signet
+## How to create local docker image of eclair that supports mutinynet signet
 ```
 cd ./eclair_images
 docker build -f "./Docker.eclair" -t mutinynet/eclair .
