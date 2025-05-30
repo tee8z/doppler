@@ -1,56 +1,13 @@
 BITCOIND IMAGE mutiny mutinynet/bitcoind
+// To use eclair, need to create custom image
+// (waiting for next release to allow for custom signets otherwise)
+//ECLAIR IMAGE eclair mutinynet/eclair
 
 BITCOIND_MINER bd1 mutiny
 
-LND lnd1 PAIR bd1
-LND lnd2 PAIR bd1
-LND lnd3 PAIR bd1
-LND lnd4 PAIR bd1
-LND lnd5 PAIR bd1
-LND lnd6 PAIR bd1
-LND lnd7 PAIR bd1
-LND lnd8 PAIR bd1
-LND lnd9 PAIR bd1
-LND lnd10 PAIR bd1
-LND lnd11 PAIR bd1
-LND lnd12 PAIR bd1
-LND lnd13 PAIR bd1
-LND lnd14 PAIR bd1
-LND lnd15 PAIR bd1
-LND lnd16 PAIR bd1
-LND lnd17 PAIR bd1
-LND lnd18 PAIR bd1
-LND lnd19 PAIR bd1
-LND lnd20 PAIR bd1
-LND lnd21 PAIR bd1
-LND lnd22 PAIR bd1
-LND lnd23 PAIR bd1
-LND lnd24 PAIR bd1
-LND lnd25 PAIR bd1
-LND lnd26 PAIR bd1
-LND lnd27 PAIR bd1
-LND lnd28 PAIR bd1
-LND lnd29 PAIR bd1
-LND lnd30 PAIR bd1
-LND lnd31 PAIR bd1
-LND lnd32 PAIR bd1
-LND lnd33 PAIR bd1
-LND lnd34 PAIR bd1
-LND lnd35 PAIR bd1
-LND lnd36 PAIR bd1
-LND lnd37 PAIR bd1
-LND lnd38 PAIR bd1
-LND lnd39 PAIR bd1
-LND lnd40 PAIR bd1
-LND lnd41 PAIR bd1
-LND lnd42 PAIR bd1
-LND lnd43 PAIR bd1
-LND lnd44 PAIR bd1
-LND lnd45 PAIR bd1
-LND lnd46 PAIR bd1
-LND lnd47 PAIR bd1
-LND lnd48 PAIR bd1
-LND lnd49 PAIR bd1
-LND lnd50 PAIR bd1
+CORELN coreln PAIR bd1
+LND lnd PAIR bd1
+
+//ECLAIR eclair PAIR bd1
 
 UP

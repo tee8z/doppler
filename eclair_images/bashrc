@@ -1,0 +1,17 @@
+# Set up aliases
+alias ll='ls -la'
+alias l='ls -l'
+alias eclair-cli='/sbin/eclair-cli'
+
+# Set prompt
+export PS1='eclair@\h:\w\$ '
+
+# Enable bash completion if available
+if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+fi
+
+# Add helpful message
+echo "Eclair node container (built from master branch)"
+echo "Use 'eclair-cli' to interact with the node"
+echo ""
