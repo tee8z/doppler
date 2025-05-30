@@ -1,6 +1,6 @@
 FROM debian:stable-slim
 
-ARG BITCOIN_VERSION="f036909dbe28"
+ARG BITCOIN_VERSION="d4a86277ed8a"
 ARG TRIPLET=${TRIPLET:-"x86_64-linux-gnu"}
 ENV PATH=/opt/bitcoin-${BITCOIN_VERSION}/bin:$PATH
 
@@ -10,7 +10,7 @@ RUN apt-get update -y \
   && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN SYS_ARCH="$(uname -m)" \
-  && curl -SLO https://github.com/benthecarman/bitcoin/releases/download/mutinynet-covtools/bitcoin-${BITCOIN_VERSION}-${TRIPLET}.tar.gz \
+  && curl -SLO https://github.com/benthecarman/bitcoin/releases/download/paircommit/bitcoin-${BITCOIN_VERSION}-${TRIPLET}.tar.gz \
   && tar -xzf *.tar.gz -C /opt \
   && rm *.tar.gz
 
