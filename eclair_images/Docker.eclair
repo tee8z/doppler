@@ -1,0 +1,82 @@
+
+FROM eclipse-temurin:21-jdk-alpine as BUILD
+
+# Install git to clone the repository
+RUN apk add --no-cache git
+
+# Clone the latest master branch from Eclair repository
+WORKDIR /usr/repo
+RUN git clone https://github.com/ACINQ/eclair.git . && \
+    git checkout master && \
+    git pull
+
+# Set up the build directory
+WORKDIR /usr/src
+
+# Copy Maven wrapper and configuration files
+RUN cp -r /usr/repo/mvnw mvnw
+RUN cp -r /usr/repo/.mvn .mvn
+RUN cp /usr/repo/pom.xml pom.xml
+RUN mkdir -p eclair-core && cp /usr/repo/eclair-core/pom.xml eclair-core/pom.xml
+RUN mkdir -p eclair-front && cp /usr/repo/eclair-front/pom.xml eclair-front/pom.xml
+RUN mkdir -p eclair-node && cp /usr/repo/eclair-node/pom.xml eclair-node/pom.xml
+RUN mkdir -p eclair-node/modules && cp /usr/repo/eclair-node/modules/assembly.xml eclair-node/modules/assembly.xml
+
+# Create dummy source file for dependency fetching
+RUN mkdir -p eclair-core/src/main/scala && touch eclair-core/src/main/scala/empty.scala
+
+# Fetch dependencies (this layer will be cached)
+RUN ./mvnw install -pl eclair-node -am
+RUN ./mvnw clean
+
+# Copy the actual source code
+RUN cp -R -f /usr/repo/* .
+
+# Build the project
+RUN ./mvnw package -pl eclair-node -am -DskipTests -Dgit.commit.id=master -Dgit.commit.id.abbrev=master
+
+# Runtime stage
+FROM eclipse-temurin:21-jre-alpine
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apk add --no-cache bash jq curl unzip
+
+# Copy eclair-cli executable
+COPY --from=BUILD /usr/src/eclair-core/eclair-cli .
+RUN chmod +x eclair-cli && mv eclair-cli /sbin/eclair-cli
+
+# Copy the built eclair-node.zip
+COPY --from=BUILD /usr/src/eclair-node/target/eclair-node-*.zip ./eclair-node.zip
+RUN unzip eclair-node.zip && mv eclair-node-* eclair-node && chmod +x eclair-node/bin/eclair-node.sh
+
+# Set up environment
+ENV ECLAIR_DATADIR=/data
+ENV JAVA_OPTS=
+
+RUN mkdir -p "$ECLAIR_DATADIR"
+
+# Add bash completion
+RUN curl -SLO https://raw.githubusercontent.com/ACINQ/eclair/master/contrib/eclair-cli.bash-completion \
+  && mkdir -p /etc/bash_completion.d \
+  && mv eclair-cli.bash-completion /etc/bash_completion.d/ \
+  && curl -SLO https://raw.githubusercontent.com/scop/bash-completion/master/bash_completion \
+  && mkdir -p /usr/share/bash-completion/ \
+  && mv bash_completion /usr/share/bash-completion/
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /entrypoint.sh
+RUN chmod a+x /entrypoint.sh
+
+# Copy bashrc for convenience
+COPY bashrc /root/.bashrc
+
+VOLUME ["/data"]
+
+# Lightning P2P port and API port
+EXPOSE 9735 8080
+
+ENTRYPOINT ["/entrypoint.sh"]
+
+CMD ["eclair-node"]
