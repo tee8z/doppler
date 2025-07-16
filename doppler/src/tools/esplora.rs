@@ -93,7 +93,6 @@ pub fn build_esplora(
             format!("FLAVOR=bitcoin-{}", options.network),
             String::from("MODE=explorer"),
             String::from("DEBUG=verbose"),
-            format!("FLAVOR=bitcoin-{}", options.network),
             format!("NETWORK={}", options.network),
             format!("DAEMON_RPC_ADDR={}", bitcoind.container_name),
             format!("DAEMON_RPC_PORT={}", bitcoind.rpcport),
@@ -113,7 +112,7 @@ cat > /srv/explorer/custom_run.sh << 'EOL'
 {}
 EOL
 chmod +x /srv/explorer/custom_run.sh && \
-exec /srv/explorer/custom_run.sh "$@""#,
+exec /srv/explorer/custom_run.sh "$$@""#,
                 CUSTOM_RUN_SCRIPT
             ),
         ])),
@@ -266,7 +265,7 @@ else
         -vvvv > "$$ELECTRS_LOG_FILE" 2>&1 &
 fi
 
-ELECTRS_PID=$!
+ELECTRS_PID=$$!
 
 # Configure services
 cp /srv/explorer/source/contrib/runits/nginx.runit /etc/service/nginx/run
